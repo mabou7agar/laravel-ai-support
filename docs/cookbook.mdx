@@ -31,6 +31,11 @@ All examples reference real classes (`LaravelAIEngine\…`) and config keys.
 - [Structured Collection Flows](#structured-collection-flows)
 - [Admin, Catalog, Diagnostics & SDK](#admin-catalog-diagnostics-sdk)
 - [Federation (Nodes) & Security](#federation-nodes-security)
+- [Specialized Providers (search, stock images, plagiarism)](#specialized-providers-search-stock-images-plagiarism)
+- [Generating Characters](#generating-characters)
+- [Frontend Previews](#frontend-previews)
+- [Field Assistants](#field-assistants)
+- [Command-line Reference](#command-line-reference)
 
 ---
 
@@ -344,6 +349,8 @@ return ActionResult::failure(
 ---
 
 This cookbook section is grounded in the actual source code at `/Volumes/M.2/Work/laravel-ai-demo/packages/laravel-ai-engine/src/Services/Agent/Tools/` and configuration in `config/ai-agent.php` and `config/ai-engine.php`.
+
+---
 
 ---
 
@@ -772,6 +779,8 @@ This skill:
 
 ---
 
+---
+
 ## Using Any Model & Engine
 
 The Laravel AI Engine provides a unified interface for working with multiple AI providers and their models. You can switch between engines (OpenAI, Anthropic, Gemini, etc.) and models either globally in configuration or per-request, with built-in automatic failover to backup engines when errors occur.
@@ -992,6 +1001,8 @@ If credits are enabled (`AI_ENGINE_CREDITS_ENABLED=true`), the package automatic
 - **Debug mode**: Set `AI_ENGINE_DEBUG=true` to log full prompts, responses, failover attempts, and timing.
 - **Request resolution metadata**: The `AIRequest` object includes a `_request_resolution` metadata key tracking whether engine/model were explicitly chosen or auto-selected from config.
 - **User context**: When a user is authenticated, the package automatically injects their ID into requests (controlled via `AI_ENGINE_INJECT_USER_CONTEXT=true`).
+
+---
 
 ---
 
@@ -1242,6 +1253,8 @@ Key classes and namespaces:
 - `LaravelAIEngine\Services\Agent\Tools\AiResource` — fluent API for `with()` and `detail()`
 
 There are no opt-in config flags; relation resolution is always available when you use the trait.
+
+---
 
 ---
 
@@ -1757,6 +1770,8 @@ $similarPosts = $post->similarTo(limit: 3);
 
 ---
 
+---
+
 ## Generating & Understanding Images
 
 The Laravel AI Engine supports image generation via multiple specialized providers (Stable Diffusion, fal_ai, OpenAI's DALL-E, Clipdrop) and image understanding through GPT-4o vision capabilities.
@@ -1947,6 +1962,8 @@ $suggestions = $service->suggestActions($extractedText, 'invoice.pdf');
 //     ],
 // ]
 ```
+
+---
 
 ---
 
@@ -2190,6 +2207,8 @@ $credits = $estimator->estimate($request);
 
 ---
 
+---
+
 ## Characters, Personas & Sub-agents
 
 Laravel AI Engine supports delegating work to specialized sub-agents through a goal-oriented architecture. Each sub-agent can have a distinct personality or role (name, description, capabilities) and handle tasks either through tool execution, conversational reasoning, or custom callables.
@@ -2405,6 +2424,8 @@ if ($response->success) {
     }
 }
 ```
+
+---
 
 ---
 
@@ -2647,6 +2668,8 @@ All core classes reside in the `LaravelAIEngine\` namespace:
 
 ---
 
+---
+
 ## Scaling Tool Context
 
 As your tool registry grows (through AiResource, custom tools, or MCP integrations), every tool's full JSON schema is injected into the planner's prompt, inflating context and costs. The Laravel AI Engine provides configurable **tool selection strategies** and **progressive disclosure** to keep the prompt efficient while ensuring the right tools are available.
@@ -2777,6 +2800,8 @@ The selection logic lives in `\LaravelAIEngine\Services\Agent\Tools\Selectors\`:
 The `\LaravelAIEngine\Services\Agent\Tools\FindToolsTool` implements the `find_tools` meta-tool, which searches all registered tools by keyword (same scoring as KeywordToolSelector) and returns the full schemas of matches.
 
 Progressive disclosure is applied in `\LaravelAIEngine\Services\Agent\AiNative\AiNativePromptBuilder::toolDocuments()`: when enabled, each tool (except `find_tools`) is reduced to `{ "name": "...", "description": "..." }` before being injected into the prompt.
+
+---
 
 ---
 
@@ -3013,6 +3038,8 @@ Each entry in `ai-engine.data_query.models` accepts:
 2. **Allowlists, not wildcards**: Only columns in `filterable`, `groupable`, or `aggregatable` can be queried or grouped—no arbitrary SELECT.
 3. **Use exact filters for subset queries**: To answer "how much has customer X spent", pass `filters: {customer_id: 'x'}` so the total is for that subset, not the whole table.
 4. **Date and status detection**: Built-in inference of "this month", "paid status" from natural language—no special setup needed if you name columns and values conventionally.
+
+---
 
 ---
 
@@ -3289,6 +3316,8 @@ Memory models are in `LaravelAIEngine\Models\Conversation`, `LaravelAIEngine\Mod
 
 ---
 
+---
+
 ## Streaming & Realtime
 
 Stream agent run events live via Server-Sent Events (SSE), or establish realtime voice/tool sessions with OpenAI, Google Gemini, or LiveKit while keeping provider keys and execution policy server-side in Laravel.
@@ -3558,6 +3587,8 @@ Echo.private(`agent-run.${runId}`)
   .listen('.tool.completed', (event) => console.log('Tool done:', event))
   .listen('.run.completed', (event) => console.log('Run finished:', event));
 ```
+
+---
 
 ---
 
@@ -3843,6 +3874,8 @@ Or set in `.env`:
 ```bash
 AI_ENGINE_OBSERVABILITY_ENABLED=false
 ```
+
+---
 
 ---
 
@@ -4232,6 +4265,8 @@ try {
 
 ---
 
+---
+
 ## Graph & Hybrid (Neo4j) RAG
 
 Laravel AI Engine can store entities, chunks, and relationships in Neo4j alongside your vector store (Qdrant) for hybrid retrieval that combines semantic search with relationship expansion. Entities publish their scoped access metadata and graph relationships; retrieval then enforces per-user `CAN_ACCESS` edges so results are tenant-safe.
@@ -4508,6 +4543,8 @@ Key settings in `config/ai-engine.php`:
     'password' => env('AI_ENGINE_NEO4J_PASSWORD'),
 ],
 ```
+
+---
 
 ---
 
@@ -4919,6 +4956,8 @@ foreach ($transcriptions as $t) {
 - **Cost-aware routing**: Use `MediaProviderRouter` to select TTS/STT providers by cost, latency, or quality for production workloads.
 - **Streaming TTS**: ElevenLabs offers `generateAudioStream()` for low-latency audio chunk delivery; use in real-time voice chat contexts.
 - **Local first**: Running LocalAI with Whisper and Kokoro avoids API costs and latency; use for privacy-sensitive or high-volume workloads.
+
+---
 
 ---
 
@@ -5350,6 +5389,8 @@ To disable lifecycle recording:
 
 ---
 
+---
+
 ## Multi-tenancy & Scope
 
 The laravel-ai-engine automatically isolates AI operations (RAG, agent memory, data queries) by tenant and workspace, ensuring strict data segregation in multi-tenant architectures. Scopes are resolved from your authenticated user, session, or custom resolvers—then automatically applied to every vector search, structured data query, and memory lookup.
@@ -5721,6 +5762,8 @@ This is handled by `AIScopeOptionsService::normalizeAliases()`, so both forms wo
 
 ---
 
+---
+
 ## Learning & Design Generation
 
 The Learn layer stores and retrieves reusable design examples, workflows, rules, and guidance scoped to tenants, workspaces, or sessions. It works as a generic knowledge repository: learned sources are extracted into sections, optionally indexed for semantic retrieval, and later searched by agents or design generators to influence output.
@@ -5997,6 +6040,8 @@ The generator is generic—it takes learned context and a user prompt, and produ
 
 ---
 
+---
+
 ## Model Council
 
 Run a single prompt across multiple AI models simultaneously and compare their responses side-by-side. Each model member executes independently—if one fails (provider error, bad model, network issue), the rest continue unaffected. Members run sequentially; the council's value is comprehensive comparison, not throughput.
@@ -6229,6 +6274,8 @@ $totalCredits = array_sum(array_map(
 ```
 
 Use the council sparingly for real-time UX (since all members run sequentially), and reserve it for comparison workflows where latency is acceptable (e.g., batch analysis, offline reports).
+
+---
 
 ---
 
@@ -6491,6 +6538,8 @@ This keeps the session open after completion so you can extend or re-run without
 ### Multi-Language & Localization
 
 The AI detects the user's language and replies in that language. It **never translates JSON keys or enum values**—those remain canonical. The `fields` array in the response includes locale-aware labels for select options via the `StructuredCollectionFieldPresenter`, which respects the `labels` map and falls back to humanized `value` if no label is found.
+
+---
 
 ---
 
@@ -6855,6 +6904,8 @@ Secrets (API keys, tokens, passwords) are automatically redacted in output.
 
 ---
 
+---
+
 ## Federation (Nodes) & Security
 
 Federation lets you scale AI across multiple Laravel applications. The optional `laravel-ai-engine-federation` package provides deterministic node routing where ownership metadata decides which app executes an operation—master node plans, child nodes execute their owned data and actions. Security is enforced through JWT-based inter-node authentication and fail-closed IDOR guards on both routing and data access.
@@ -7153,3 +7204,121 @@ In routing mode (default), the planner chooses one node based on ownership. In f
 - **Authentication failures in logs:** Verify `AI_ENGINE_JWT_SECRET` matches on all nodes and no token is expired.
 - **Stale nodes in database:** Use `ai:node-cleanup --status=error --days=0 --apply --force` to remove nodes that have not pinged in `N` days.
 - **Circuit breaker open:** Wait `AI_ENGINE_CB_TIMEOUT` seconds or manually reset with `AINode::updateStatus($node, 'active')`.
+
+---
+
+## Specialized Providers (search, stock images, plagiarism)
+
+Beyond chat/LLM engines, several drivers expose non-text capabilities. They are invoked the
+same way as any engine — `AIEngineService::generate(new AIRequest(..., engine: '<name>'))` —
+where the engine name is a `LaravelAIEngine\Enums\EngineEnum` case value.
+
+| Capability | Engine name | Driver |
+| --- | --- | --- |
+| Web search | `serper`, `perplexity` | `SerperEngineDriver`, `PerplexityEngineDriver` |
+| Stock images | `pexels`, `unsplash` | `PexelsEngineDriver`, `UnsplashEngineDriver` |
+| Image generation | `midjourney` | `MidjourneyEngineDriver` |
+| Plagiarism check | `plagiarism_check` | `PlagiarismCheckEngineDriver` |
+| Extra LLM providers | `azure`, `xai` (Grok), `deepseek` | `AzureEngineDriver`, `GrokEngineDriver`, `DeepSeekEngineDriver` |
+
+```php
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\DTOs\AIRequest;
+
+// Web search
+$results = app(AIEngineService::class)->generate(new AIRequest(
+    prompt: 'latest Laravel 12 release notes', engine: 'serper',
+));
+
+// Stock images
+$photos = app(AIEngineService::class)->generate(new AIRequest(
+    prompt: 'mountain landscape at dawn', engine: 'unsplash',
+));
+```
+
+Each driver needs its credentials under `ai-engine.engines.<name>.api_key`. Run
+`php artisan ai:doctor` to see which providers are configured. (Grok is the `Xai` engine case,
+labelled "xAI Grok".)
+
+---
+
+## Generating Characters
+
+Create a reusable **character reference set** (consistent look + optional voice) for later
+image/video prompts via the `ai:generate-character` command — complements the personas &
+sub-agents section.
+
+```bash
+php artisan ai:generate-character \
+  --name="Nova" \
+  --save-as=nova \
+  --voice-id=<elevenlabs_voice_id> \
+  --user-id=1
+```
+
+It generates the character (FAL "Nano Banana") and saves it under the `--save-as` alias; reuse
+it later by alias (e.g. with `--from-character`) and in video generation (`character_sources`).
+Optional ElevenLabs voice flags (`--voice-id`, `--voice-stability`, `--voice-similarity-boost`,
+`--voice-style`, `--voice-speaker-boost`) attach a consistent TTS voice to the character.
+
+---
+
+## Frontend Previews
+
+Structured collection can return a **preview object** so a chat UI can render a live form
+beside the assistant message. The preview is package-rendered — the package never asks the
+model to generate HTML or JavaScript.
+
+```bash
+php artisan vendor:publish --tag=ai-engine-collection-ui
+# publishes /vendor/ai-engine/structured-collection.css and .js
+```
+
+See `docs/frontend-preview.mdx` for HTML vs JSON preview modes and how to wire the published
+assets into your chat UI.
+
+---
+
+## Field Assistants
+
+During structured collection (and guided forms), four built-in tools help a user fill a single
+field — the planner calls them while collecting input:
+
+- `validate_field` — validate a value against the field's rules.
+- `explain_field` — explain what a field is for and what to enter.
+- `suggest_value` — suggest a likely value from context.
+- `search_options` — search the available options for a field (enum / lookup).
+
+They are registered like any tool (`config/ai-agent.php` → `tools`).
+
+---
+
+## Command-line Reference
+
+The package ships ~80 artisan commands (all prefixed `ai:`). Run `php artisan list ai` for the
+full set with descriptions; the main groups:
+
+- **Setup / scaffold:** `ai:init`, `ai:configure-all`, `ai:generate-config`, `ai:make-tool`,
+  `ai:make-skill`, `ai:make-agent`, `ai:scaffold`, `ai:design`, `ai:generate-character`.
+- **Diagnostics / health:** `ai:doctor`, `ai:manifest:doctor`, `ai:system-health`,
+  `ai:infra-health`, `ai:backend-status`, `ai:model-status`, `ai:failover-status`,
+  `ai:runtime-capabilities`, `ai:validate-runtime-config`.
+- **Models / engines:** `ai:list-models`, `ai:sync-models`, `ai:analyze-model`, `ai:test-engines`.
+- **Vector / RAG:** `ai:vector-index`, `ai:vector-search`, `ai:vector-status`,
+  `ai:vector-analytics`, `ai:vector-clean`, `ai:vector-fix-indexes`, `ai:create-indexes`,
+  `ai:evaluate-rag-fixtures`.
+- **Graph (Neo4j):** `ai:neo4j-init`, `ai:neo4j-sync`, `ai:neo4j-stats`, `ai:neo4j-diagnose`,
+  `ai:neo4j-repair`, `ai:neo4j-kb-build`, `ai:neo4j-kb-warm`, `ai:neo4j-drift`, and several
+  `ai:neo4j-*-benchmark` commands.
+- **Agent runs:** `ai:agent-runs:recover-stuck`, `ai:agent-runs:replay-step`,
+  `ai:agent-runs:cleanup-expired`, `ai:agent-runs:retention-cleanup`.
+- **Skills / learning:** `ai:skills:discover`, `ai:skills:test`, `ai:tools:test`, `ai:learn`,
+  `ai:docs-index`, `ai:generate-reference-pack`.
+- **Pricing / usage:** `ai:pricing-audit`, `ai:pricing-simulate`, `ai:usage-report`,
+  `ai:analytics-report`.
+- **Decisions / feedback:** `ai:decision-policy:create|activate|evaluate`,
+  `ai:decision-feedback:report`, `ai:graph-ranking-feedback`.
+- **Streaming & cache:** `ai:streaming-server`, `ai:clear-cache`, `ai:clear-discovery-cache`,
+  `ai:warm-discovery-cache`.
+- **Test harness:** `ai:test-everything`, `ai:test-package`, `ai:test-rag`,
+  `ai:test-orchestration`, `ai:test-vector-journey`, `ai:chat-benchmark`, and more.
