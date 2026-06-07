@@ -160,6 +160,18 @@ class AggregateQueryToolTest extends TestCase
         $this->assertEqualsWithDelta(400.0, $r->data['value'], 0.001); // Apollo's 100 + 300 only
     }
 
+    public function test_list_all_returns_full_breakdown_not_top_n(): void
+    {
+        // setUp has Apollo + Mohamed; add 6 more so a default top-5 would truncate.
+        foreach (['c1', 'c2', 'c3', 'c4', 'c5', 'c6'] as $c) {
+            AqOrder::create(['customer' => $c, 'status' => 'paid', 'amount' => 10]);
+        }
+
+        $r = $this->aggregate(['query' => 'list all customers by spend', 'group_by' => 'customer', 'operation' => 'sum', 'metric' => 'amount']);
+
+        $this->assertGreaterThan(5, count($r->data['groups']), '"list all" returns the full breakdown, not a top-5.');
+    }
+
     public function test_query_is_optional_for_structured_calls(): void
     {
         // The planner may call with structured params only — this must NOT fail validation

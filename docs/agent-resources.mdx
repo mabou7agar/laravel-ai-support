@@ -188,7 +188,11 @@ closed** unless the model declares which columns may be aggregated:
 ```
 
 It supports `sum`, `avg`, `min`, `max`, `count`, ranked records (`top`/`bottom`), and a
-per-group breakdown (`group_by`). The planner fills these structured params from the
+per-group breakdown (`group_by`). `count` + `group_by` returns the **distinct count** of that
+dimension ("how many different products" → `COUNT(DISTINCT product_name)`), and a "list
+all / every" question returns the full breakdown rather than just the top few. `query` is
+optional — the planner may call with structured params only (`entity`, `operation`, `metric`,
+`group_by`, `filters`). The planner fills these structured params from the
 question, but they are also inferred from natural language. Examples it now answers exactly:
 
 | Question | operation |
