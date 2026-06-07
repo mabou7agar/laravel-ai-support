@@ -193,7 +193,7 @@ class AIEngineService
 
         // Get failover engines from config
         $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
-        $enginesToTry = array_merge([$originalEngine->value], $fallbackEngines);
+        $enginesToTry = array_merge([$originalEngine->value], $this->usableFallbackEngines((array) $fallbackEngines));
 
         foreach ($enginesToTry as $engineName) {
             try {
@@ -369,7 +369,7 @@ class AIEngineService
 
         // Get failover engines from config
         $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
-        $enginesToTry = array_merge([$originalEngine->value], $fallbackEngines);
+        $enginesToTry = array_merge([$originalEngine->value], $this->usableFallbackEngines((array) $fallbackEngines));
         $lastException = null;
 
         foreach ($enginesToTry as $engineName) {
@@ -465,6 +465,39 @@ class AIEngineService
         $config = config("ai-engine.engines.{$engine->value}", []);
 
         return new $driverClass($config);
+    }
+
+    /**
+     * Is a fallback engine usable — i.e. does it have credentials configured? A failover
+     * chain often lists engines whose API keys are not set in this deployment; attempting
+     * them only wastes an attempt and can surface a misleading "<engine> API key is required"
+     * error that masks the real upstream failure. Engines with no api_key concept (local
+     * models) and engines whose config we cannot introspect are treated as available.
+     */
+    protected function fallbackEngineIsConfigured(string $engineName): bool
+    {
+        $config = config("ai-engine.engines.{$engineName}");
+        if (!is_array($config) || !array_key_exists('api_key', $config)) {
+            return true;
+        }
+
+        return !empty($config['api_key']);
+    }
+
+    /**
+     * Drop fallback engines that have no credentials, preserving order. The primary engine
+     * is never filtered here — it is always attempted so an explicit choice surfaces a real
+     * error.
+     *
+     * @param array<int, string> $fallbackEngines
+     * @return array<int, string>
+     */
+    protected function usableFallbackEngines(array $fallbackEngines): array
+    {
+        return array_values(array_filter(
+            $fallbackEngines,
+            fn ($engineName): bool => is_string($engineName) && $this->fallbackEngineIsConfigured($engineName)
+        ));
     }
 
     /**

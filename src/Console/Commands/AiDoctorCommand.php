@@ -71,10 +71,13 @@ class AiDoctorCommand extends Command
             'nodes' => count($nodes),
         ];
 
+        $engineHealth = $this->engineHealth();
+
         return [
             'counts' => $counts,
             'tools' => $tools,
             'skills' => $skills,
+            'engines' => $engineHealth['engines'],
             'config' => [
                 'agent_enabled' => (bool) config('ai-agent.enabled', true),
                 'intent_understanding_mode' => (string) config('ai-agent.intent_understanding.mode', 'heuristic'),
@@ -89,18 +92,75 @@ class AiDoctorCommand extends Command
                 'default_engine_api_key' => $apiKey !== '',
                 'vector_driver_resolves' => $vectorOk,
             ],
-            'warnings' => $this->warnings($counts, $tools, $apiKey !== '', $vectorOk),
+            'warnings' => $this->warnings($counts, $tools, $apiKey !== '', $vectorOk, $engineHealth['keyless_in_chain']),
         ];
+    }
+
+    /**
+     * Per-engine credential health for the default engine and every engine referenced in a
+     * failover chain. `keyless_in_chain` are fallback engines with no API key — they are
+     * skipped at runtime, but flagged so the chain can be made meaningful.
+     *
+     * @return array{engines: array<string, bool>, keyless_in_chain: array<int, string>}
+     */
+    protected function engineHealth(): array
+    {
+        $default = (string) config('ai-engine.default', 'openai');
+        $chains = (array) config('ai-engine.error_handling.fallback_engines', []);
+
+        $names = [$default];
+        foreach ($chains as $primary => $fallbacks) {
+            $names[] = (string) $primary;
+            foreach ((array) $fallbacks as $fallback) {
+                $names[] = (string) $fallback;
+            }
+        }
+        $names = array_values(array_unique(array_filter($names, static fn ($n): bool => $n !== '')));
+
+        $engines = [];
+        $keylessInChain = [];
+        foreach ($names as $name) {
+            $config = config("ai-engine.engines.{$name}");
+            $hasKeyConcept = is_array($config) && array_key_exists('api_key', $config);
+            $engines[$name] = !$hasKeyConcept || !empty($config['api_key']);
+
+            if ($hasKeyConcept && empty($config['api_key']) && $this->isFallbackEngine($name, $chains)) {
+                $keylessInChain[] = $name;
+            }
+        }
+
+        return ['engines' => $engines, 'keyless_in_chain' => array_values(array_unique($keylessInChain))];
+    }
+
+    /**
+     * @param array<string, mixed> $chains
+     */
+    protected function isFallbackEngine(string $name, array $chains): bool
+    {
+        foreach ($chains as $fallbacks) {
+            if (in_array($name, (array) $fallbacks, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
      * @param array<string, int> $counts
      * @param array<int, string> $tools
+     * @param array<int, string> $keylessInChain
      * @return array<int, string>
      */
-    protected function warnings(array $counts, array $tools, bool $hasApiKey, bool $vectorOk): array
+    protected function warnings(array $counts, array $tools, bool $hasApiKey, bool $vectorOk, array $keylessInChain = []): array
     {
         $warnings = [];
+
+        if ($keylessInChain !== []) {
+            $warnings[] = 'Failover chain lists engine(s) with no API key: ' . implode(', ', $keylessInChain)
+                . '. They are skipped at runtime (so they no longer surface a misleading "<engine> API key is required" '
+                . 'error), but add their keys or remove them from ai-engine.error_handling.fallback_engines to make the chain meaningful.';
+        }
 
         if ($counts['tools'] === 0 && $counts['skills'] === 0 && $counts['nodes'] === 0) {
             $warnings[] = 'No tools, skills, or nodes registered — the orchestrator will only ever answer conversationally/RAG. Register tools (app/AI/Tools or ModelToolConfig), skills (app/AI/Skills), or enable nodes.';
@@ -147,6 +207,14 @@ class AiDoctorCommand extends Command
         $rows[] = ['default_engine_api_key', $report['providers']['default_engine_api_key'] ? 'set' : 'MISSING'];
         $rows[] = ['vector_driver_resolves', $report['providers']['vector_driver_resolves'] ? 'yes' : 'NO'];
         $this->table(['Setting', 'Value'], $rows);
+
+        if (!empty($report['engines'])) {
+            $engineRows = [];
+            foreach ($report['engines'] as $name => $configured) {
+                $engineRows[] = [$name, $configured ? 'configured' : 'NO KEY'];
+            }
+            $this->table(['Engine', 'Key'], $engineRows);
+        }
 
         if ($report['counts']['tools'] > 0) {
             $this->line('Tools: ' . implode(', ', $report['tools']));
