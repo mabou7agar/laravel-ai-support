@@ -187,11 +187,19 @@ return array_replace_recursive($defaults, [
         'enabled' => env('AI_ENGINE_FILE_ANALYSIS', data_get($defaults, 'file_analysis.enabled', false)),
         // Only files inside this directory may be analyzed (defeats path traversal / LFI).
         'base_path' => env('AI_ENGINE_FILE_ANALYSIS_PATH', data_get($defaults, 'file_analysis.base_path', storage_path('app/uploads'))),
-        'allowed_extensions' => data_get($defaults, 'file_analysis.allowed_extensions', ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'csv']),
+        'allowed_extensions' => data_get($defaults, 'file_analysis.allowed_extensions', ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'webp', 'gif']),
         'max_bytes' => (int) env('AI_ENGINE_FILE_ANALYSIS_MAX_BYTES', data_get($defaults, 'file_analysis.max_bytes', 10 * 1024 * 1024)),
         'preview_chars' => (int) data_get($defaults, 'file_analysis.preview_chars', 1500),
         // Only suggest create actions that exist as registered tools.
         'validate_actions' => (bool) data_get($defaults, 'file_analysis.validate_actions', true),
+        // Phase 2: extract each suggested create action's fields from the file (LLM) so the
+        // create payload can be pre-filled. Opt-in (one model call per suggested action).
+        'prefill' => env('AI_ENGINE_FILE_ANALYSIS_PREFILL', data_get($defaults, 'file_analysis.prefill', false)),
+        'max_content_chars' => (int) data_get($defaults, 'file_analysis.max_content_chars', 12000),
+        'extraction_max_tokens' => (int) data_get($defaults, 'file_analysis.extraction_max_tokens', 1500),
+        // Vision model used to OCR image/scanned uploads into text.
+        'vision_model' => env('AI_ENGINE_FILE_ANALYSIS_VISION_MODEL', data_get($defaults, 'file_analysis.vision_model', 'gpt-4o')),
+        'vision_max_tokens' => (int) data_get($defaults, 'file_analysis.vision_max_tokens', 2000),
         // pattern => action mapping. Generic: add one entry per entity you want detected.
         //   ['pattern' => '/\\binvoice\\b/i', 'action_id' => 'create_invoice',
         //    'action_label' => 'Create an invoice from this file', 'confidence' => 80],

@@ -303,12 +303,49 @@ class FileAnalysisService
      */
     public function extractAndSuggestFromPath(string $path, string $extension, string $name = ''): array
     {
-        $content = $this->documentService->extractText($path, $extension);
+        $content = $this->extractTextFromPath($path, $extension);
 
         return [
             'content' => $content,
             'suggestions' => $this->suggestActions($content, $name),
         ];
+    }
+
+    /**
+     * Text from a stored document path (PDF/Word/txt/csv/xlsx) via DocumentService.
+     */
+    public function extractTextFromPath(string $path, string $extension): string
+    {
+        return $this->documentService->extractText($path, $extension);
+    }
+
+    /**
+     * OCR/transcribe an image at a path into text via a vision model, so the same generic
+     * field-extraction can run on scanned/photographed documents. Live (vision) call.
+     */
+    public function extractImageText(string $path): string
+    {
+        $apiKey = (string) config('ai-engine.engines.openai.api_key', '');
+        if ($apiKey === '') {
+            throw new \RuntimeException('A vision-capable engine (OpenAI) API key is required to read images.');
+        }
+
+        $mimeType = function_exists('mime_content_type') ? (mime_content_type($path) ?: 'image/png') : 'image/png';
+        $dataUrl = 'data:' . $mimeType . ';base64,' . base64_encode((string) file_get_contents($path));
+
+        $response = \OpenAI::client($apiKey)->chat()->create([
+            'model' => (string) config('ai-engine.file_analysis.vision_model', 'gpt-4o'),
+            'max_tokens' => (int) config('ai-engine.file_analysis.vision_max_tokens', 2000),
+            'messages' => [
+                ['role' => 'system', 'content' => 'Transcribe ALL text and structured data visible in this document image (parties, dates, line items, quantities, unit prices, totals, taxes). Output the raw extracted text only.'],
+                ['role' => 'user', 'content' => [
+                    ['type' => 'text', 'text' => 'Extract the full text of this document.'],
+                    ['type' => 'image_url', 'image_url' => ['url' => $dataUrl]],
+                ]],
+            ],
+        ]);
+
+        return (string) ($response->choices[0]->message->content ?? '');
     }
 
     /**
