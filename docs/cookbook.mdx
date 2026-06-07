@@ -1,0 +1,3004 @@
+# Cookbook — Everything in laravel-ai-engine
+
+A practical, source-grounded guide to every capability of the package: building tools and
+skills, using any model/engine, relating records, embeddings & RAG, images, video,
+characters & sub-agents, file intake, tool-context scaling, and structured analytics.
+All examples reference real classes (`LaravelAIEngine\…`) and config keys.
+
+## Contents
+
+- [Creating Tools](#creating-tools)
+- [Creating Skills](#creating-skills)
+- [Using Any Model & Engine](#using-any-model-engine)
+- [Relating Records](#relating-records)
+- [Embeddings & RAG](#embeddings-rag)
+- [Generating & Understanding Images](#generating-understanding-images)
+- [Generating Video](#generating-video)
+- [Characters, Personas & Sub-agents](#characters-personas-sub-agents)
+- [File Intake (upload → extract → suggest → pre-fill)](#file-intake-upload-extract-suggest-pre-fill)
+- [Scaling Tool Context](#scaling-tool-context)
+- [Structured Data & Analytics](#structured-data-analytics)
+
+---
+
+## Creating Tools
+
+Custom tools extend the agent's capabilities to perform actions, query data, or integrate with external systems. The Laravel AI Engine provides a base class and registry system for building and registering tools that the agent can discover and invoke.
+
+### Basic Tool Structure
+
+Every tool extends `LaravelAIEngine\Services\Agent\Tools\AgentTool` and implements five abstract methods:
+
+```php
+<?php
+
+namespace App\AI\Tools;
+
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\DTOs\ActionResult;
+
+class SendEmailTool extends AgentTool
+{
+    public function getName(): string
+    {
+        return 'send_email';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Send an email to a recipient with a subject and body.';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'to' => [
+                'type' => 'string',
+                'description' => 'Email address of the recipient',
+                'required' => true,
+            ],
+            'subject' => [
+                'type' => 'string',
+                'description' => 'Email subject line',
+                'required' => true,
+            ],
+            'body' => [
+                'type' => 'string',
+                'description' => 'Email body text',
+                'required' => true,
+            ],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+    {
+        // Validate and execute the tool
+        if (!filter_var($parameters['to'], FILTER_VALIDATE_EMAIL)) {
+            return ActionResult::failure('Invalid email address.');
+        }
+
+        // Perform the actual work
+        Mail::raw($parameters['body'], function ($message) use ($parameters) {
+            $message->to($parameters['to'])->subject($parameters['subject']);
+        });
+
+        return ActionResult::success('Email sent successfully.');
+    }
+}
+```
+
+### SimpleAgentTool for Less Boilerplate
+
+For simple tools, extend `SimpleAgentTool` instead — it provides default implementations for many methods and derives the tool name automatically from your class name (removing the `Tool` suffix and converting to snake_case):
+
+```php
+<?php
+
+namespace App\AI\Tools;
+
+use LaravelAIEngine\Services\Agent\Tools\SimpleAgentTool;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\DTOs\ActionResult;
+
+class GetWeatherTool extends SimpleAgentTool
+{
+    public string $description = 'Fetch current weather for a city.';
+
+    public array $parameters = [
+        'city' => [
+            'type' => 'string',
+            'description' => 'City name',
+            'required' => true,
+        ],
+    ];
+
+    protected function handle(array $parameters, UnifiedActionContext $context): ActionResult
+    {
+        $weather = WeatherService::getForCity($parameters['city']);
+        return ActionResult::success('Weather retrieved.', $weather);
+    }
+}
+// Tool is automatically named: get_weather
+```
+
+### Registering Tools via Configuration
+
+Register tools in `config/ai-agent.php` under the `tools` key:
+
+```php
+'tools' => [
+    'send_email' => \App\AI\Tools\SendEmailTool::class,
+    'get_weather' => \App\AI\Tools\GetWeatherTool::class,
+],
+```
+
+The framework will auto-resolve these through Laravel's service container when the `ToolRegistry` is initialized.
+
+### Confirmation and Validation
+
+Tools can require user confirmation before execution and define custom validation:
+
+```php
+public function requiresConfirmation(): bool
+{
+    return true;
+}
+
+public function getConfirmationMessage(): ?string
+{
+    return 'This will send an email. Proceed?';
+}
+
+public function validate(array $parameters): array
+{
+    $errors = [];
+    if (empty($parameters['to'] ?? null)) {
+        $errors[] = 'Recipient email is required.';
+    }
+    return $errors;
+}
+```
+
+### Advanced: Model-Backed Tools with AiResource
+
+For Eloquent model operations (search, create, update), use `AiResource` — a zero-code builder that generates `find_<name>`, `create_<name>`, and `show_<name>` tools without writing tool classes:
+
+```php
+// In a service provider or bootstrap file:
+
+use LaravelAIEngine\Services\Agent\Tools\AiResource;
+use App\Models\Customer;
+
+AiResource::for(Customer::class)
+    ->search(['name', 'email'])              // Lookup columns
+    ->writable(['name', 'email', 'company']) // Create/update fields
+    ->identity(['email'])                     // Find-or-create key
+    ->required(['name', 'email'])             // Mandatory fields
+    ->detail()                                 // Register a show_customer tool
+    ->with(['invoices'])                      // Include related records
+    ->register();
+```
+
+Or declare it once in `config/ai-agent.php` under `resources`:
+
+```php
+'resources' => [
+    'customer' => [
+        'model' => \App\Models\Customer::class,
+        'search' => ['name', 'email'],
+        'writable' => ['name', 'email', 'company'],
+        'identity' => ['email'],
+        'required' => ['name', 'email'],
+        'with' => ['invoices'],
+    ],
+],
+```
+
+#### AiResource Options
+
+- **`search(array $columns)`** — Columns the `find_<name>` tool searches by (defaults to `['name']`).
+- **`returns(array $columns)`** — Columns returned in results (all columns if empty).
+- **`writable(array $fields)`** — Fields the `create_<name>` tool can set; omit to make the resource read-only.
+- **`identity(array $fields)`** — Keys used for find-or-create logic (e.g., email for upserts).
+- **`required(array $fields)`** — Fields that must be provided to create.
+- **`defaults(array|Closure $values)`** — Server-set columns that cannot be overridden by the agent.
+- **`scopedBy(Closure $fn)`** — Tenant/workspace isolation: `fn($context, $params) => ['workspace_id' => $context->metadata['workspace_id']]`.
+- **`lookupOnly()`** — Register only the `find_<name>` tool (no create).
+- **`detail()`** — Generate a `show_<name>` tool for detailed record + relations.
+- **`with(array $relations)`** — Relations to eager-load in detail view; implies `->detail()`.
+- **`confirmationMessage(string $msg)`** — Custom confirmation prompt for writes.
+
+### Built-In Tools
+
+The registry auto-registers several tools controlled by config flags in `ai-engine.php` and `ai-agent.php`:
+
+| Tool | Config Flag | Purpose |
+|------|---|---|
+| `data_query` | `ai-engine.data_query.enabled` (default: true) | Answer count, list, and filter questions over registered Eloquent models with exact database results. |
+| `aggregate_data` | `ai-engine.data_query.aggregate_enabled` (default: true) | Compute sum, average, min, max, and group-by aggregations for analytics questions. |
+| `analyze_file` | `ai-engine.file_analysis.enabled` (default: false) | Extract text from uploads and suggest creation actions based on keyword patterns. Requires `keyword_suggestions` config. |
+| `search_knowledge` | `ai-agent.ai_native.knowledge_tool_enabled` (default: true) | Query the vector/document RAG store for grounded knowledge-base answers. |
+| `find_tools` | Tool disclosure = `'progressive'` | Meta-tool that loads full schemas on demand instead of injecting all tools upfront; reduces initial context. |
+| `search_learned_context` | Always registered | Search learned examples, design rules, and workflow guidance. |
+| `run_skill` | Always registered | Execute a named skill within the agent runtime. |
+| `run_sub_agent` | `ai-agent.goal_agent.register_sub_agent_tool` (default: true) | Delegate work to a named sub-agent. |
+
+### Accessing the ToolRegistry
+
+Inject the registry to register tools dynamically or query available tools:
+
+```php
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
+
+$registry = app(ToolRegistry::class);
+
+// Register a tool
+$registry->register('my_tool', new MyTool());
+
+// Retrieve a tool
+$tool = $registry->get('data_query');
+
+// Check if a tool is registered
+if ($registry->has('send_email')) {
+    // ...
+}
+
+// Get all tools
+$allTools = $registry->all();
+
+// Export tool definitions for the planner
+$definitions = $registry->getToolDefinitions();
+```
+
+### Tool Metadata
+
+Tools expose metadata about their capabilities and return schema:
+
+```php
+public function getCapabilities(): array
+{
+    return ['read', 'write'];
+}
+
+public function getToolKind(): ?string
+{
+    return 'action'; // or 'query', 'integration', etc.
+}
+
+public function getEntityType(): ?string
+{
+    return 'customer'; // or 'invoice', 'document', etc.
+}
+
+public function getRelations(): array
+{
+    // Describe relations this tool can resolve:
+    return [
+        ['name' => 'customer', 'type' => 'belongsTo', 'model' => Customer::class],
+    ];
+}
+
+public function getResultSchema(): array
+{
+    return [
+        'id' => ['type' => 'integer'],
+        'name' => ['type' => 'string'],
+        'total' => ['type' => 'number'],
+    ];
+}
+```
+
+### Preview and Confirmation
+
+Optionally implement `previewConfirmation()` to show a summary before the tool executes:
+
+```php
+public function previewConfirmation(array $parameters, UnifiedActionContext $context): ?ActionResult
+{
+    // Return a preview; if null, the confirmation uses default formatting
+    return ActionResult::success('Preview', [
+        'recipient' => $parameters['to'],
+        'subject' => $parameters['subject'],
+        'body_preview' => substr($parameters['body'], 0, 100) . '...',
+    ]);
+}
+```
+
+### ActionResult Details
+
+Tools return `ActionResult` to signal success or failure:
+
+```php
+// Success with data
+return ActionResult::success('Operation completed.', ['id' => 123]);
+
+// Success with metadata (e.g., for tracing)
+return ActionResult::success(
+    'Email sent.',
+    ['message_id' => 'abc123'],
+    ['provider' => 'sendgrid', 'latency_ms' => 45]
+);
+
+// Failure
+return ActionResult::failure(
+    'Could not send email.',
+    null,
+    ['validation_errors' => $errors]
+);
+```
+
+---
+
+This cookbook section is grounded in the actual source code at `/Volumes/M.2/Work/laravel-ai-demo/packages/laravel-ai-engine/src/Services/Agent/Tools/` and configuration in `config/ai-agent.php` and `config/ai-engine.php`.
+
+---
+
+## Creating Skills
+
+Skills are high-level business capabilities that group tools, triggers, required data, actions, and confirmation policies. A skill encapsulates a complete workflow (e.g., "create invoice", "send email", "approve request") and orchestrates the tools needed to accomplish it under the AiNative runtime. Skills are matched to user intents deterministically (by trigger keywords) or semantically (by AI understanding), then executed through the `run_skill` tool.
+
+### The AgentSkill Base Class
+
+All skills inherit from `LaravelAIEngine\Services\Agent\Skills\AgentSkill` and declare their capability as properties. The skill definition is built from the `configure()` method, which receives a `SkillBuilder`:
+
+```php
+<?php
+
+namespace App\AI\Skills;
+
+use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
+use LaravelAIEngine\Services\Agent\Skills\SkillBuilder;
+use App\AI\Tools\CreateInvoiceTool;
+use App\AI\Tools\SearchCustomerTool;
+
+class CreateInvoiceSkill extends AgentSkill
+{
+    public string $id = 'create_invoice';
+    public string $name = 'Create Invoice';
+    public string $description = 'Create a new invoice for a customer with line items.';
+    
+    public array $triggers = [
+        'create invoice',
+        'new invoice',
+        'make invoice',
+        'invoice customer',
+    ];
+    
+    public array $requiredData = [
+        'customer',
+        'line items',
+    ];
+    
+    public array $actions = [
+        'create',
+        'finalize',
+    ];
+    
+    public array $capabilities = [
+        'invoicing',
+        'billing',
+    ];
+    
+    public bool $requiresConfirmation = true;
+    public bool $enabled = true;
+
+    public function configure(SkillBuilder $skill): void
+    {
+        $skill
+            ->use(SearchCustomerTool::class)
+            ->use(CreateInvoiceTool::class)
+            ->final(CreateInvoiceTool::class)
+                ->confirmTerms(['create', 'submit', 'save'])
+            ->prompt('You are creating an invoice. First find the customer, then ask for line items if not provided, then create the invoice.');
+    }
+}
+```
+
+#### Key Properties
+
+- **`$id`** (string) — Unique skill identifier, defaults to snake_case of class name minus "Skill" suffix if left empty.
+- **`$name`** (string) — Human-readable name; defaults to title-cased `$id` if empty.
+- **`$description`** (string) — One or two sentences describing what the skill does; defaults to "Handle {name} requests using declared tools."
+- **`$triggers`** (array of strings) — Keywords that deterministically match this skill (exact match = 100 score, word boundary = 75 score).
+- **`$requiredData`** (array of strings) — Human-readable list of data the skill needs (e.g., "customer", "dates").
+- **`$actions`** (array of strings) — CRUD/domain verbs the skill performs (e.g., "create", "update", "delete", "send").
+- **`$capabilities`** (array of strings) — Business domains the skill covers; defaults to `[$id]` if empty. Used for semantic routing and documentation.
+- **`$requiresConfirmation`** (bool) — Whether the skill's final tool requires user approval before execution (default: `true`).
+- **`$enabled`** (bool) — Whether this skill is available to the agent (default: `true`).
+
+### The SkillBuilder & Tool Registration
+
+Inside `configure()`, use `SkillBuilder` to declare and chain tools:
+
+```php
+public function configure(SkillBuilder $skill): void
+{
+    $skill
+        ->use(SearchCustomerTool::class)          // Register a lookup tool
+        ->use(ValidateLineItemsTool::class)       // Register a validator
+        ->final(CreateInvoiceTool::class)         // Designate final (action) tool
+            ->confirmTerms(['create', 'submit'])  // Confirmation keywords
+        ->prompt('Create the invoice after confirming all details.');
+}
+```
+
+#### SkillBuilder Methods
+
+- **`use(tool)`** — Register a tool class or string name; returns `SkillToolUseBuilder` for chaining.
+- **`final(tool)`** — Register a tool as the skill's final (write/action) tool; this tool's confirmation policy is enforced.
+  - `->confirmTerms([...])` — Array of keywords that indicate user approval (e.g., 'confirm', 'yes', 'do it').
+- **`prompt(string)` / `->instructions(string)`** — Add a skill-specific prompt to guide the agent's decision-making during execution.
+- **`target()`** — Returns `SkillTargetBuilder` for declaring the JSON schema of the skill's expected input data.
+- **`relation(name)`** — Declare a relation field and its lookup/create tools (see below).
+
+### Target JSON & Relations
+
+Use `SkillTargetBuilder` to declare the shape of data the skill expects:
+
+```php
+public function configure(SkillBuilder $skill): void
+{
+    $skill->target()
+        ->type('object')
+        ->prop('customer_id', 'integer', required: true)
+        ->prop('line_items', 'array', required: true)
+            ->items()
+                ->type('object')
+                ->prop('product_id', 'integer', required: true)
+                ->prop('quantity', 'integer', required: true);
+    
+    $skill
+        ->use(SearchCustomerTool::class)
+        ->use(SearchProductTool::class)
+        ->use(CreateInvoiceTool::class)
+        ->final(CreateInvoiceTool::class);
+}
+```
+
+### Relations: Lookup & Create Tools
+
+Relations connect target fields to lookup or create tools. The `SkillBuilder::relation()` method pairs a field with its lookup and/or create tool:
+
+```php
+public function configure(SkillBuilder $skill): void
+{
+    $skill
+        ->use(SearchCustomerTool::class)
+        ->use(CreateCustomerTool::class)
+        ->use(CreateInvoiceTool::class)
+        ->final(CreateInvoiceTool::class)
+        ->relation('customer')              // Relation name
+            ->field('customer_id')          // Target field to populate
+            ->lookup(SearchCustomerTool::class)
+            ->create(CreateCustomerTool::class)
+            ->lookupFields(['email', 'customer_name'])
+            ->createRequired(['name', 'email'])
+            ->safeCreate(true);             // Allow auto-creation if lookup fails
+}
+```
+
+#### SkillRelationBuilder Methods
+
+- **`field(name)`** — Target field name (e.g., `customer_id`).
+- **`lookup(tool)`** — Tool to find/search for the entity.
+- **`create(tool)`** — Tool to create the entity if not found.
+- **`lookupFields([])`** — Fields to search on when doing a lookup (e.g., `['email']`).
+- **`createRequired([])`** — Required fields when creating a new entity.
+- **`safeCreate(bool)`** — If `true`, the agent may auto-create if lookup fails; if `false`, always ask the user.
+
+### Metadata & Prompting
+
+Use metadata to attach domain-specific behavior:
+
+```php
+public function metadata(): array
+{
+    return [
+        'prompt' => 'You are creating an invoice...',
+        'examples' => [
+            'User: Create an invoice for Acme Corp...',
+            'Agent: Found Acme Corp (ID: 123). Asking for line items...',
+        ],
+    ];
+}
+```
+
+Override `targetJson()` to provide a JSON schema example:
+
+```php
+public function targetJson(): array
+{
+    return [
+        'customer_id' => 42,
+        'line_items' => [
+            [
+                'product_id' => 1,
+                'quantity' => 2,
+                'unit_price' => 50.00,
+            ]
+        ],
+        'notes' => 'Net 30',
+    ];
+}
+```
+
+### Skill Discovery & Registration
+
+#### Manual Registration
+
+Register skills in your app's service provider or in `config/ai-agent.php`:
+
+```php
+// config/ai-agent.php
+'skill_providers' => [
+    App\AI\Skills\CreateInvoiceSkill::class,
+    App\AI\Skills\SendEmailSkill::class,
+],
+```
+
+#### Auto-Discovery
+
+Run the discovery command to scan your app:
+
+```bash
+php artisan ai:skills:discover
+```
+
+This command looks for classes extending `AgentSkill` in your app and caches them.
+
+### Skill Matching & Execution
+
+#### Skill Registry
+
+The `AgentSkillRegistry` retrieves all registered skills and filters by enable/disable state:
+
+```php
+$registry = app(AgentSkillRegistry::class);
+$allSkills = $registry->skills();
+$enabledSkills = $registry->skills(includeDisabled: false);
+$onlyInvoicing = $registry->skills(only: ['create_invoice', 'send_invoice']);
+```
+
+#### Skill Matcher
+
+The `AgentSkillMatcher` scores skills against user messages using deterministic trigger matching or semantic AI intent matching:
+
+```php
+$matcher = app(AgentSkillMatcher::class);
+
+// Deterministic (trigger-based) matching
+$match = $matcher->match('create invoice for Acme');
+// Returns: ['skill' => AgentSkillDefinition, 'score' => 100, 'trigger' => 'create invoice', 'reason' => '...']
+
+// Semantic matching (AI intent, enabled by config)
+$match = $matcher->matchIntent('I want to bill the customer', $context);
+```
+
+Matching scores (deterministic only):
+- **100** — Exact trigger match
+- **90** — Trigger as first words
+- **75** — Trigger found as word boundary
+- **0** — No match
+
+Semantic matching uses AI to understand user intent when triggers don't match. Configure intent matching in `config/ai-agent.php`:
+
+```php
+'skills' => [
+    'intent_matching' => [
+        'enabled' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENABLED', true),
+        'engine' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENGINE', 'openai'),
+        'model' => 'gpt-4o-mini',
+        'min_confidence' => 72,  // Confidence threshold (0–100)
+    ],
+    'continuation_terms' => [
+        'do it', 'create it', 'proceed', 'finalize',
+    ],
+    'intent_aliases' => [
+        'billing' => ['invoice', 'bill', 'charge'],
+    ],
+],
+```
+
+### The run_skill Tool
+
+The `run_skill` tool is registered automatically and orchestrates skill execution under the AiNative runtime:
+
+```php
+$tool = RunSkillTool::class; // LaravelAIEngine\Services\Agent\Tools\RunSkillTool
+
+// In agent plans, the model invokes:
+[
+    'name' => 'run_skill',
+    'arguments' => [
+        'skill_id' => 'create_invoice',
+        'message' => 'Create invoice for Acme Corp.',
+        'reset' => false,
+        'fresh_start' => false,
+    ]
+]
+```
+
+#### run_skill Parameters
+
+- **`skill_id`** (string, required) — The skill ID to execute.
+- **`message`** (string, optional) — User message for the skill; defaults to the current turn's message.
+- **`reset`** (boolean, optional) — Clear skill state and start fresh.
+- **`fresh_start`** (boolean, optional) — Begin skill execution with a clean context.
+
+When invoked, `run_skill` delegates to `AiNativeRuntime`, which:
+1. Scopes the agent to the skill's declared tools only.
+2. Runs a sub-loop of tool calls under the skill's prompt/constraints.
+3. Returns the result (success, failure, or needs input) to the orchestrating agent.
+
+### Skill Configuration Defaults
+
+All skill behavior is opt-in; defaults preserve backward compatibility:
+
+```php
+// config/ai-agent.php
+'skills' => [
+    'enabled' => env('AI_AGENT_SKILLS_ENABLED', true),
+    'expose_as_capabilities' => env('AI_AGENT_SKILLS_EXPOSE_AS_CAPABILITIES', true),
+    'prefer_deterministic_matches' => env('AI_AGENT_SKILLS_PREFER_DETERMINISTIC_MATCHES', true),
+    'intent_matching' => [
+        'enabled' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENABLED', true),
+        'engine' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENGINE', 'openai'),
+        'model' => env('AI_AGENT_SKILL_INTENT_MATCHING_MODEL', 'gpt-4o-mini'),
+        'max_tokens' => env('AI_AGENT_SKILL_INTENT_MATCHING_MAX_TOKENS', 450),
+        'temperature' => env('AI_AGENT_SKILL_INTENT_MATCHING_TEMPERATURE', 0.05),
+        'min_confidence' => env('AI_AGENT_SKILL_INTENT_MATCHING_MIN_CONFIDENCE', 72),
+    ],
+    'continuation_terms' => [
+        'do it', 'create it', 'make it', 'submit it', 'finalize', 'proceed',
+    ],
+],
+```
+
+### Complete Example: Multi-Step Skill
+
+```php
+<?php
+
+namespace App\AI\Skills;
+
+use LaravelAIEngine\Services\Agent\Skills\AgentSkill;
+use LaravelAIEngine\Services\Agent\Skills\SkillBuilder;
+use App\AI\Tools\SearchCustomerTool;
+use App\AI\Tools\CalculateTotalTool;
+use App\AI\Tools\CreateInvoiceTool;
+
+class CreateInvoiceSkill extends AgentSkill
+{
+    public string $id = 'create_invoice';
+    public string $name = 'Create Invoice';
+    public string $description = 'Create and send an invoice to a customer with line items, discounts, and payment terms.';
+    
+    public array $triggers = [
+        'create invoice',
+        'new invoice',
+        'make an invoice',
+        'invoice the customer',
+    ];
+    
+    public array $requiredData = [
+        'customer',
+        'line items or products',
+    ];
+    
+    public array $actions = [
+        'create',
+        'finalize',
+    ];
+    
+    public array $capabilities = [
+        'invoicing',
+        'billing',
+        'financial',
+    ];
+    
+    public bool $requiresConfirmation = true;
+
+    public function configure(SkillBuilder $skill): void
+    {
+        $skill
+            ->target()
+                ->type('object')
+                ->prop('customer_id', 'integer', required: true)
+                ->prop('line_items', 'array', required: true)
+                    ->items()
+                        ->type('object')
+                        ->prop('product_id', 'integer', required: true)
+                        ->prop('quantity', 'integer', required: true)
+                ->prop('discount_percent', 'number', required: false)
+                ->prop('notes', 'string', required: false);
+        
+        $skill
+            ->use(SearchCustomerTool::class)
+            ->use(SearchProductTool::class)
+            ->use(CalculateTotalTool::class)
+            ->final(CreateInvoiceTool::class)
+                ->confirmTerms(['create', 'confirm', 'submit']);
+        
+        $skill
+            ->relation('customer')
+                ->field('customer_id')
+                ->lookup(SearchCustomerTool::class)
+                ->lookupFields(['email', 'name', 'phone']);
+        
+        $skill
+            ->prompt(implode("\n", [
+                'You are creating an invoice.',
+                'First, find the customer by email or name.',
+                'Then, ask for line items or search for products if needed.',
+                'Calculate the total and ask for confirmation before creating.',
+                'If the user provides a discount, apply it.',
+            ]));
+    }
+
+    public function targetJson(): array
+    {
+        return [
+            'customer_id' => 42,
+            'line_items' => [
+                ['product_id' => 1, 'quantity' => 2],
+            ],
+            'discount_percent' => 10,
+            'notes' => 'Net 30',
+        ];
+    }
+}
+```
+
+This skill:
+- Declares customer and line items as required data.
+- Uses three tools: two lookups and one final action.
+- Declares a relation: customer_id is found/matched via the SearchCustomerTool.
+- Requires confirmation before the CreateInvoiceTool runs.
+- Provides a domain-specific prompt to guide the agent's reasoning.
+
+---
+
+## Using Any Model & Engine
+
+The Laravel AI Engine provides a unified interface for working with multiple AI providers and their models. You can switch between engines (OpenAI, Anthropic, Gemini, etc.) and models either globally in configuration or per-request, with built-in automatic failover to backup engines when errors occur.
+
+### Configuration Setup
+
+Configure available engines and credentials in `config/ai-engine-defaults.php` or `config/ai-engine.php` (published):
+
+```php
+// config/ai-engine.php
+return [
+    // Global defaults for all requests
+    'default' => env('AI_ENGINE_DEFAULT', 'openai'),
+    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'),
+    
+    // Orchestration model used by the router for routing decisions
+    'orchestration_model' => env('AI_ORCHESTRATION_MODEL', 'gpt-4o-mini'),
+    
+    'engines' => [
+        'openai' => [
+            'api_key' => env('OPENAI_API_KEY'),
+            'models' => [
+                'gpt-5-mini' => ['enabled' => true],
+                'gpt-4o-mini' => ['enabled' => true],
+                'gpt-4o' => ['enabled' => true],
+            ],
+        ],
+        'anthropic' => [
+            'api_key' => env('ANTHROPIC_API_KEY'),
+            'models' => [
+                'claude-4-sonnet' => ['enabled' => true],
+                'claude-3-5-sonnet-20241022' => ['enabled' => true],
+                'claude-3-5-haiku-20241022' => ['enabled' => true],
+            ],
+        ],
+        'gemini' => [
+            'api_key' => env('GEMINI_API_KEY'),
+            'models' => [
+                'gemini-2.5-flash' => ['enabled' => true],
+                'gemini-2.5-pro' => ['enabled' => true],
+            ],
+        ],
+        'openrouter' => [
+            'api_key' => env('OPENROUTER_API_KEY'),
+            'default_model' => env('OPENROUTER_DEFAULT_MODEL', 'meta-llama/llama-3.1-8b-instruct:free'),
+            'models' => [
+                'openai/gpt-4o-mini' => ['enabled' => true],
+                'anthropic/claude-3.5-sonnet' => ['enabled' => true],
+                'meta-llama/llama-3.1-8b-instruct:free' => ['enabled' => true],
+            ],
+        ],
+        'fal_ai' => [
+            'api_key' => env('FAL_AI_API_KEY'),
+            'models' => [
+                'fal-flux-schnell' => ['enabled' => true],
+                'fal-flux-pro' => ['enabled' => true],
+            ],
+        ],
+        'stable_diffusion' => [
+            'api_key' => env('STABILITY_API_KEY'),
+            'models' => [
+                'sd3-medium' => ['enabled' => true],
+            ],
+        ],
+        // Other engines: bedrock, xai, deepseek, eleven_labs, ollama, 
+        // cloudflare_workers_ai, huggingface, replicate, comfyui, etc.
+    ],
+];
+```
+
+All available engines are pre-configured in `ai-engine-defaults.php`. You only need to set API keys in your `.env` for the engines you plan to use.
+
+### Per-Request Engine & Model Selection
+
+Create an `AIRequest` specifying the engine and model:
+
+```php
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+
+$service = app(AIEngineService::class);
+
+// Use OpenAI's GPT-4o
+$request = new AIRequest(
+    prompt: 'Explain machine learning',
+    engine: EngineEnum::OpenAI,
+    model: EntityEnum::from('gpt-4o'),
+);
+$response = $service->generate($request);
+echo $response->getContent(); // Success!
+
+// Use Anthropic's Claude
+$request = new AIRequest(
+    prompt: 'Explain machine learning',
+    engine: EngineEnum::Anthropic,
+    model: EntityEnum::from('claude-3-5-sonnet-20241022'),
+);
+$response = $service->generate($request);
+
+// Use OpenRouter with a free Llama model
+$request = new AIRequest(
+    prompt: 'Hello!',
+    engine: EngineEnum::OpenRouter,
+    model: EntityEnum::from('meta-llama/llama-3.1-8b-instruct:free'),
+);
+$response = $service->generate($request);
+
+// Use Gemini with custom parameters
+$request = new AIRequest(
+    prompt: 'Write a poem',
+    engine: EngineEnum::Gemini,
+    model: EntityEnum::from('gemini-2.5-flash'),
+    temperature: 0.9,
+    maxTokens: 200,
+);
+$response = $service->generate($request);
+```
+
+You can also pass engines and models as strings (they are auto-resolved):
+
+```php
+$request = new AIRequest(
+    prompt: 'Hello',
+    engine: 'anthropic',       // String resolved to EngineEnum
+    model: 'claude-4-sonnet',  // String resolved to EntityEnum
+);
+```
+
+If you don't specify an engine or model, the package uses config defaults:
+
+```php
+// Falls back to ai-engine.default ('openai') and ai-engine.default_model ('gpt-4o')
+$request = new AIRequest(prompt: 'Hello');
+$response = $service->generate($request);
+```
+
+### Automatic Failover to Backup Engines
+
+The `generate()` method includes built-in failover: if the primary engine fails, it automatically tries configured fallback engines in order, skipping engines with missing credentials:
+
+```php
+// config/ai-engine-defaults.php (excerpt)
+'error_handling' => [
+    'fallback_engines' => [
+        'openai' => ['openrouter', 'anthropic', 'gemini'],
+        'anthropic' => ['openrouter', 'openai', 'gemini'],
+        'gemini' => ['openrouter', 'openai', 'anthropic'],
+        'stable_diffusion' => ['cloudflare_workers_ai', 'huggingface', 'replicate', 'comfyui'],
+    ],
+],
+```
+
+When you call `$service->generate($request)` with OpenAI:
+1. Tries OpenAI first
+2. If it fails, tries OpenRouter (if `OPENROUTER_API_KEY` is set)
+3. Then Anthropic, then Gemini
+4. Stops at the first successful response
+5. Returns error only if all engines are exhausted
+
+Fallback engines without configured API keys are automatically skipped. To disable failover and get direct errors, use `generateDirect()`:
+
+```php
+// No failover—immediately fails if openai has an error
+$response = $service->generateDirect($request);
+```
+
+### Inspect Engine Health
+
+Use the `ai:doctor` command to verify which engines are configured and have valid credentials:
+
+```bash
+php artisan ai:doctor
+```
+
+Output example:
+
+```
+Engines:
+  openai           ✓ Configured
+  anthropic        ✓ Configured
+  gemini           ✓ Configured
+  openrouter       ✗ Missing API key
+  fal_ai           ✓ Configured
+  stable_diffusion ✗ Missing API key
+  
+Warnings:
+  stable_diffusion has keyless fallbacks: please set STABILITY_API_KEY
+
+Default Engine: openai
+Orchestration Model: gpt-4o-mini
+```
+
+The report also lists all configured tools, skills, RAG collections, and detects when keyless engines appear in failover chains (they will silently be skipped at runtime, so the chain stays meaningful).
+
+### Cost & Model Metadata
+
+Each model can optionally declare a `credit_index` for cost tracking:
+
+```php
+// config/ai-engine.php
+'engines' => [
+    'openai' => [
+        'models' => [
+            'gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.5],
+            'gpt-4o' => ['enabled' => true, 'credit_index' => 2.0],
+        ],
+    ],
+],
+```
+
+If credits are enabled (`AI_ENGINE_CREDITS_ENABLED=true`), the package automatically deducts credits based on the model's `credit_index`. See the Credits section of the docs for details.
+
+### Additional Engine Features
+
+- **Orchestration model**: Set `ai-engine.orchestration_model` to a fast, cost-effective model (default: `gpt-4o-mini`) used by the agent router for routing decisions.
+- **Debug mode**: Set `AI_ENGINE_DEBUG=true` to log full prompts, responses, failover attempts, and timing.
+- **Request resolution metadata**: The `AIRequest` object includes a `_request_resolution` metadata key tracking whether engine/model were explicitly chosen or auto-selected from config.
+- **User context**: When a user is authenticated, the package automatically injects their ID into requests (controlled via `AI_ENGINE_INJECT_USER_CONTEXT=true`).
+
+---
+
+## Relating Records
+
+When an agent creates or updates a record with foreign keys, it often needs to find or create related records first — a customer, project, or account must exist before an invoice references it. The `ResolvesAgentRelations` trait and `RelationResolver` let you declare those dependencies and resolve them deterministically, using a source-of-truth identity (e.g., email) to find existing records or create missing ones in a single operation.
+
+### Using ResolvesAgentRelations in Write Tools
+
+Write tools (those that create/update records) can declare and resolve relations before persisting. The `ResolvesAgentRelations` trait provides a `relations()` method to specify what to resolve and a `resolveRelations()` call to execute:
+
+```php
+<?php
+
+use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use LaravelAIEngine\Services\Agent\Tools\Concerns\ResolvesAgentRelations;
+use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\UnifiedActionContext;
+
+class CreateInvoiceTool extends AgentTool
+{
+    use ResolvesAgentRelations;
+
+    public function getName(): string
+    {
+        return 'create_invoice';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Create a new invoice for a customer.';
+    }
+
+    public function getParameters(): array
+    {
+        return [
+            'invoice_number' => ['type' => 'string', 'required' => true, 'description' => 'Invoice number.'],
+            'customer_email' => ['type' => 'string', 'required' => true, 'description' => 'Customer email address.'],
+            'customer_name' => ['type' => 'string', 'required' => true, 'description' => 'Customer name.'],
+            'total' => ['type' => 'number', 'required' => true, 'description' => 'Invoice total.'],
+        ];
+    }
+
+    /**
+     * Declare relations: find or create a customer by email before saving the invoice.
+     */
+    protected function relations(): array
+    {
+        return [
+            [
+                'field'    => 'customer_id',            // Foreign key column to populate
+                'model'    => \App\Models\Customer::class,
+                'identity' => ['email'],                 // Find by email (source of truth)
+                'map'      => [
+                    'email' => 'customer_email',         // email column ← customer_email param
+                    'name' => 'customer_name',           // name column ← customer_name param
+                ],
+                'create'   => ['email', 'name'],         // Required to create a new customer
+            ],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+    {
+        // Resolve relations first: find or create the customer by email.
+        // If the customer exists, $parameters['customer_id'] is set to their ID.
+        // If missing, a new customer is created with the provided name and email.
+        $parameters = $this->resolveRelations($parameters, $context);
+
+        // Now customer_id is guaranteed to be set (or creation failed).
+        if (empty($parameters['customer_id'])) {
+            return ActionResult::needsUserInput(
+                'Unable to resolve or create a customer. Please provide a customer name and email.'
+            );
+        }
+
+        $invoice = \App\Models\Invoice::create([
+            'number'      => $parameters['invoice_number'],
+            'customer_id' => $parameters['customer_id'],
+            'total'       => $parameters['total'],
+        ]);
+
+        return ActionResult::success('Invoice created.', ['invoice_id' => $invoice->id]);
+    }
+}
+```
+
+### Relation Specification Keys
+
+Each relation in the `relations()` array uses these keys:
+
+- **`field`** (required) — The foreign-key column to populate on the payload (e.g., `customer_id`).
+- **`model`** (required) — The Eloquent model class to find or create (e.g., `\App\Models\Customer::class`).
+- **`identity`** (required) — Array of column names used to uniquely identify a record (e.g., `['email']`). These are the "source of truth" — if the payload already has a foreign key whose identity no longer matches (e.g., the name changed), the ID is dropped and re-resolved.
+- **`map`** (optional) — Maps identity/create columns to payload keys. Without a map, column names and parameter names must match exactly. Example: `['email' => 'customer_email', 'name' => 'customer_name']` tells the resolver to look for `customer_email` and `customer_name` in the payload.
+- **`create`** (optional) — Array of columns required to create a new record. If any are missing from the payload, creation is skipped and the relation remains unresolved (allowing the tool to re-prompt for the missing value).
+- **`defaults`** (optional) — Create-only columns added to new records but NOT used to match existing ones. Useful for generated passwords, source flags, or creation timestamps: `['defaults' => ['source' => 'ai']]`.
+- **`normalize`** (optional) — Array of columns to lowercase before matching or creating (default: the identity columns). Use when matching should be case-insensitive: `['normalize' => ['email']]`.
+- **`scope`** (optional via `relationScope()`) — Additional where conditions for lookup and create (e.g., `tenant_id`).
+
+### Constraining Relations to a Tenant
+
+Override the `relationScope()` method to add tenant/owner filters that apply to both lookup and creation:
+
+```php
+protected function relationScope(UnifiedActionContext $context, array $relation): array
+{
+    // All customer lookups and creations are scoped to the current workspace.
+    return [
+        'workspace_id' => $context->workspaceId(),
+    ];
+}
+```
+
+Now when the resolver finds a customer by email, it only searches within the workspace. If the customer doesn't exist, the new record is created with `workspace_id` set automatically.
+
+### Resolving Multiple Relations
+
+A single tool can declare and resolve multiple relations — each is handled in order:
+
+```php
+protected function relations(): array
+{
+    return [
+        [
+            'field'  => 'customer_id',
+            'model'  => \App\Models\Customer::class,
+            'identity' => ['email'],
+            'map'    => ['email' => 'customer_email', 'name' => 'customer_name'],
+            'create' => ['email', 'name'],
+        ],
+        [
+            'field'  => 'project_id',
+            'model'  => \App\Models\Project::class,
+            'identity' => ['code'],
+            'map'    => ['code' => 'project_code', 'name' => 'project_name'],
+            'create' => ['code', 'name'],
+        ],
+    ];
+}
+```
+
+### Relation Resolution via AiResource (Config-Driven)
+
+The `AiResource` class generates write tools automatically, but for relations you must use the `ResolvesAgentRelations` trait directly. However, you can create a custom upsert tool that uses both patterns:
+
+```php
+use LaravelAIEngine\Services\Agent\Tools\ModelBackedUpsertTool;
+use LaravelAIEngine\Services\Agent\Tools\Concerns\ResolvesAgentRelations;
+
+class InvoiceUpsertTool extends ModelBackedUpsertTool
+{
+    use ResolvesAgentRelations;
+
+    protected array $identity = ['number'];
+    protected array $write = ['number', 'customer_id', 'total'];
+    protected array $required = ['number', 'customer_id', 'total'];
+
+    protected function relations(): array
+    {
+        return [
+            [
+                'field'  => 'customer_id',
+                'model'  => \App\Models\Customer::class,
+                'identity' => ['email'],
+                'map'    => ['email' => 'customer_email', 'name' => 'customer_name'],
+                'create' => ['email', 'name'],
+            ],
+        ];
+    }
+
+    public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+    {
+        // Resolve relations before calling parent.
+        $parameters = $this->resolveRelations($parameters, $context);
+        return parent::execute($parameters, $context);
+    }
+}
+```
+
+### Showing Related Records with GenericModelDetailTool
+
+The `GenericModelDetailTool` (created by `AiResource->with()->detail()`) eager-loads and returns related records:
+
+```php
+AiResource::for(Invoice::class)
+    ->name('invoice')
+    ->search(['number'])
+    ->writable(['customer_id', 'total'])
+    ->identity(['number'])
+    ->required(['customer_id', 'total'])
+    // Include line items in the detail tool (show_invoice)
+    ->with([
+        'items' => ['id', 'product_id', 'quantity', 'unit_price'],  // Show these columns
+    ])
+    ->detail()  // Enable the show_invoice tool
+    ->register();
+```
+
+Now calling `show_invoice` returns the full invoice plus its related items:
+
+```json
+{
+  "found": true,
+  "record": {
+    "id": 1,
+    "number": "INV-001",
+    "customer_id": 10,
+    "total": 150.00
+  },
+  "relations": {
+    "items": [
+      { "id": 1, "product_id": 5, "quantity": 2, "unit_price": 75.00 },
+      { "id": 2, "product_id": 8, "quantity": 1, "unit_price": 0.00 }
+    ]
+  }
+}
+```
+
+The `with()` method accepts either a simple relation name (`['items']`) to return all columns, or `relation => [columns]` to select specific columns.
+
+### Email as the Source of Truth
+
+A common pattern is using email as the unique identity for customers or users:
+
+```php
+[
+    'field'    => 'customer_id',
+    'model'    => \App\Models\Customer::class,
+    'identity' => ['email'],           // Email is the source of truth
+    'map'      => ['email' => 'customer_email', 'name' => 'customer_name'],
+    'create'   => ['email', 'name'],
+    'normalize' => ['email'],          // Case-insensitive matching
+    'defaults' => ['status' => 'active'],  // Auto-activate new customers
+]
+```
+
+If the payload arrives with `customer_id: 10` but that customer's email no longer matches the provided `customer_email`, the resolver drops the ID and re-resolves by email. This ensures the identity parameter always takes precedence — if the user says "email john@example.com" and that maps to a different customer, the resolver respects the email over any pre-set ID.
+
+### Configuration Keys and Defaults
+
+All relation resolution is done in PHP at runtime; there is no separate config file. The `ResolvesAgentRelations` trait uses `app(RelationResolver::class)` internally, which is a singleton managed by the service container.
+
+Key classes and namespaces:
+- `LaravelAIEngine\Services\Agent\Tools\Concerns\ResolvesAgentRelations` — trait for tools
+- `LaravelAIEngine\Services\Agent\Tools\RelationResolver` — core resolution logic (invoked by `resolveRelations()`)
+- `LaravelAIEngine\Services\Agent\Tools\GenericModelDetailTool` — detail tool with relation eager-loading
+- `LaravelAIEngine\Services\Agent\Tools\AiResource` — fluent API for `with()` and `detail()`
+
+There are no opt-in config flags; relation resolution is always available when you use the trait.
+
+---
+
+## Embeddings & RAG
+
+Embeddings transform text into vector representations for semantic search, and RAG (Retrieval-Augmented Generation) augments AI responses with retrieved context from your application data. The Laravel AI Engine provides a batteries-included system for both, using the `Vectorizable` trait and a pluggable vector driver architecture.
+
+### Quick Start: Make a Model Searchable
+
+The simplest path is to add the `Vectorizable` trait to any Eloquent model:
+
+```php
+<?php
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use LaravelAIEngine\Traits\Vectorizable;
+
+class Document extends Model
+{
+    use Vectorizable;
+    
+    protected $fillable = ['title', 'content', 'user_id'];
+}
+```
+
+The trait automatically:
+- Extracts and embeds text from your model's fields via `getVectorContent()` (uses `$fillable` by default, or override with a `protected array $vectorizable` property)
+- Stores embeddings in your configured vector database (Qdrant, Pinecone, etc.)
+- Provides `vectorSearch()` for semantic queries and `intelligentChat()` for RAG conversations
+
+### EmbeddingService: Core Embeddings API
+
+The `EmbeddingService` handles text-to-vector conversion with automatic provider fallback and caching.
+
+**Namespace:** `LaravelAIEngine\Services\Vector\EmbeddingService`
+
+```php
+use LaravelAIEngine\Services\Vector\EmbeddingService;
+
+$embeddingService = app(EmbeddingService::class);
+
+// Single embedding
+$embedding = $embeddingService->embed("Hello world");
+// Returns: float[] (default 3072 dimensions for text-embedding-3-large)
+
+// Batch embedding (more efficient)
+$embeddings = $embeddingService->embedBatch([
+    "Document one",
+    "Document two",
+    "Document three"
+]);
+
+// Cosine similarity (for comparing embeddings)
+$similarity = $embeddingService->cosineSimilarity($embedding1, $embedding2);
+// Returns: float (0.0 to 1.0, where 1.0 = identical direction)
+
+// Get model info
+$model = $embeddingService->getModel(); // e.g., "text-embedding-3-large"
+$dims = $embeddingService->getDimensions(); // e.g., 3072
+```
+
+**Key config keys** (in `config/ai-engine.php` or `ai-engine-defaults.php`):
+- `ai-engine.vector.embedding_model` (default: `text-embedding-3-large`)
+- `ai-engine.vector.embedding_dimensions` (default: 3072; capped to model max)
+- `ai-engine.vector.cache_embeddings` (default: `true`)
+- `ai-engine.vector.cache_ttl` (default: 86400 seconds / 24 hours)
+- `ai-engine.vector.testing.use_fake_embeddings` (default: `false`)
+
+**Testing mode:** Set `AI_ENGINE_USE_FAKE_EMBEDDINGS=true` to use deterministic local embeddings without API calls. Useful for tests and offline development.
+
+### VectorDriverManager: Pluggable Vector Stores
+
+Swap between vector database backends (Qdrant, Pinecone, etc.) at runtime.
+
+**Namespace:** `LaravelAIEngine\Services\Vector\VectorDriverManager`
+
+```php
+use LaravelAIEngine\Services\Vector\VectorDriverManager;
+
+$driverManager = app(VectorDriverManager::class);
+
+// Get the default driver (configured in config/ai-engine.php)
+$driver = $driverManager->driver();
+
+// Or request a specific driver by name
+$qdrant = $driverManager->driver('qdrant');
+$pinecone = $driverManager->driver('pinecone');
+
+// Register a custom driver
+$driverManager->extend('my_custom_db', fn() => new MyCustomDriver());
+
+// Change default
+$driverManager->setDefaultDriver('pinecone');
+```
+
+**Supported drivers:**
+- `qdrant` – Qdrant vector database (default)
+- `pinecone` – Pinecone serverless
+
+**Config structure** (in `ai-engine.vector.drivers`):
+
+```php
+'vector' => [
+    'default_driver' => env('VECTOR_DB_DRIVER', 'qdrant'),
+    'drivers' => [
+        'qdrant' => [
+            'host' => env('QDRANT_HOST', 'http://localhost:6333'),
+            'api_key' => env('QDRANT_API_KEY'),
+            'timeout' => env('QDRANT_TIMEOUT', 30),
+        ],
+        'pinecone' => [
+            'api_key' => env('PINECONE_API_KEY'),
+            'environment' => env('PINECONE_ENVIRONMENT', 'us-west1-gcp'),
+            'timeout' => env('PINECONE_TIMEOUT', 30),
+        ],
+    ],
+    'collection_prefix' => env('VECTOR_COLLECTION_PREFIX', 'vec_'),
+    // ... more options
+],
+```
+
+### Vectorizable Trait: Content & Metadata
+
+The `Vectorizable` trait (included in your model) provides methods to control what gets embedded.
+
+**Namespace:** `LaravelAIEngine\Traits\Vectorizable`
+
+#### Controlling What Gets Indexed
+
+```php
+class Article extends Model
+{
+    use Vectorizable;
+    
+    // Option 1: Auto-detect from $fillable (simplest, recommended)
+    protected $fillable = ['title', 'body', 'summary', 'user_id', 'status'];
+    
+    // Option 2: Explicit fields to vectorize
+    protected array $vectorizable = ['title', 'body', 'summary'];
+    
+    // Option 3: Override to customize
+    public function getVectorContent(): string
+    {
+        return "{$this->title}\n\n{$this->body}";
+    }
+}
+```
+
+#### Custom Metadata for Filtering
+
+Override `getVectorMetadata()` to add fields for filtering search results:
+
+```php
+class Article extends Model
+{
+    use Vectorizable;
+    
+    public function getVectorMetadata(): array
+    {
+        $metadata = parent::getVectorMetadata(); // Gets user_id, tenant_id, etc. automatically
+        
+        return array_merge($metadata, [
+            'status' => $this->status, // 'draft', 'published', 'archived'
+            'category_id' => $this->category_id,
+            'author_id' => $this->user_id, // Alias for clarity
+            'is_featured' => $this->is_featured ? 1 : 0,
+        ]);
+    }
+}
+```
+
+#### Indexing Control
+
+```php
+class Draft extends Model
+{
+    use Vectorizable;
+    
+    // Don't index drafts or soft-deleted records
+    public function shouldBeIndexed(): bool
+    {
+        return !$this->trashed() && $this->status !== 'draft';
+    }
+}
+```
+
+#### Qdrant-Specific Indexing
+
+For fast metadata filtering in Qdrant, declare which fields to index:
+
+```php
+public function getQdrantIndexes(): array
+{
+    return [
+        'user_id' => 'integer',
+        'status' => 'keyword',
+        'is_public' => 'bool',
+    ];
+}
+```
+
+### Vector Search
+
+Search your models by semantic meaning, not just keywords.
+
+```php
+use App\Models\Document;
+
+// Simple vector search
+$results = Document::vectorSearch(
+    query: "How to install Laravel?",
+    limit: 10,
+    threshold: 0.5 // Cosine similarity; 0.3=loose, 0.5=balanced, 0.7+=strict
+);
+
+// With filters (metadata filtering)
+$results = Document::vectorSearch(
+    query: "machine learning",
+    limit: 5,
+    filters: [
+        'status' => 'published',
+        'user_id' => auth()->id(),
+    ]
+);
+
+// Each result is a hydrated model instance
+foreach ($results as $doc) {
+    echo $doc->title; // Full Eloquent model
+}
+
+// Find similar items
+$similar = $document->similarTo(limit: 5);
+```
+
+**Config keys:**
+- `ai-engine.vector.search.default_limit` (default: 20)
+- `ai-engine.vector.search.default_threshold` (default: 0.3)
+
+### RAG: Intelligent Context-Aware Chat
+
+RAG lets the AI automatically retrieve relevant context before answering, grounding responses in your app's data.
+
+#### Intelligent Chat (AI Decides When to Search)
+
+```php
+use App\Models\Document;
+
+$response = Document::intelligentChat(
+    query: "What are the latest company policies?",
+    sessionId: auth()->id(),
+    options: [
+        'search_all' => true, // Search all RAG collections (default: false)
+        'restrict_to_model' => false, // false = broader context
+    ]
+);
+
+echo $response->getContent(); // AI's answer with retrieved context
+echo json_encode($response->getMetadata()['sources'] ?? []); // Source citations
+```
+
+#### Vector Chat (Always Searches)
+
+Simpler method that always retrieves context for the current model:
+
+```php
+use App\Models\EmailMessage;
+
+$result = EmailMessage::vectorChat(
+    query: "What did John say about the project deadline?",
+    userId: auth()->id(),
+    options: [
+        'engine' => 'openai',
+        'model' => 'gpt-4o',
+    ]
+);
+
+echo $result['response']; // Answer
+echo count($result['sources']); // Number of retrieved items
+```
+
+#### Streaming RAG Chat
+
+Stream responses token-by-token while using RAG context:
+
+```php
+$result = Document::vectorChatStream(
+    query: "Summarize recent updates",
+    callback: function(string $chunk, bool $isFirst, bool $isDone) {
+        if ($isFirst) echo "Thinking...\n";
+        if (!$isDone) echo $chunk;
+        if ($isDone) echo "\n✓ Done\n";
+    },
+    userId: auth()->id(),
+    options: [
+        'max_tokens' => 2000,
+    ]
+);
+
+echo "Retrieved {$result['context_count']} items";
+```
+
+#### Instance Methods
+
+Ask questions about a specific model instance:
+
+```php
+$doc = Document::find(1);
+
+// Ask about this document
+$answer = $doc->ask("What is the main point?");
+
+// Get a summary
+$summary = $doc->summarize(maxWords: 100);
+
+// Generate tags
+$tags = $doc->generateTags(maxTags: 5); // Returns array
+```
+
+### RAG Configuration
+
+**Namespace:** config key `ai-engine.rag`
+
+Key settings:
+
+```php
+'rag' => [
+    'enabled' => env('AI_ENGINE_RAG_ENABLED', true),
+    
+    // Auto-discover models with Vectorizable trait
+    'auto_discover' => env('AI_ENGINE_RAG_AUTO_DISCOVER', true),
+    'discovery_paths' => [
+        app_path('Models'),
+        // Add custom paths: base_path('modules/*/Models'),
+    ],
+    'discovery_cache_ttl' => env('AI_ENGINE_RAG_DISCOVERY_CACHE', 3600), // 1 hour
+    
+    // Query & retrieval
+    'max_context_items' => env('AI_ENGINE_RAG_MAX_CONTEXT', 5), // Results per query
+    'min_relevance_score' => env('AI_ENGINE_RAG_MIN_SCORE', 0.3), // 0.3=loose, 0.5+=strict
+    
+    // Models used for RAG
+    'analysis_model' => env('AI_ENGINE_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'), // Fast; for query parsing
+    'response_model' => env('AI_ENGINE_RAG_RESPONSE_MODEL', 'gpt-5-mini'), // For final answer
+    
+    // Context & sources
+    'include_sources' => env('AI_ENGINE_RAG_INCLUDE_SOURCES', true),
+    'empty_context_message' => "I couldn't find relevant context for that request.",
+    
+    // Multi-tenancy security
+    'user_scope_fields' => ['user_id', 'created_by', 'owner_id'],
+    'tenant_scope_fields' => ['tenant_id', 'organization_id', 'company_id'],
+    'workspace_scope_fields' => ['workspace_id'],
+    'require_structured_scope' => env('AI_ENGINE_RAG_REQUIRE_STRUCTURED_SCOPE', true),
+    
+    // Hybrid RAG (vector + graph)
+    'hybrid' => [
+        'enabled' => env('AI_ENGINE_HYBRID_RAG_ENABLED', false),
+        'strategy' => 'vector_then_graph', // or 'graph_first'
+        'vector_weight' => 0.6, // Relevance weighting
+        'graph_weight' => 0.4,
+    ],
+],
+```
+
+### Chunking Large Content
+
+When content is too large for a single embedding, it's automatically split into chunks:
+
+```php
+'vectorization' => [
+    'strategy' => env('AI_ENGINE_VECTORIZATION_STRATEGY', 'split'), // 'split' or 'truncate'
+    'chunk_size' => env('AI_ENGINE_CHUNK_SIZE', null), // Auto-calculated
+    'chunk_overlap' => env('AI_ENGINE_CHUNK_OVERLAP', 200), // Chars of overlap
+    'max_content_length' => env('AI_ENGINE_MAX_CONTENT_LENGTH', null), // null = auto
+],
+```
+
+- **`split`** (recommended): Large documents are split into overlapping chunks, each embedded separately. Better for RAG.
+- **`truncate`**: Truncates to max size. Faster but loses information.
+
+### Relationships in Vector Content
+
+Include related data in embeddings by setting `vectorRelationships`:
+
+```php
+class EmailMessage extends Model
+{
+    use Vectorizable;
+    
+    protected array $vectorRelationships = ['sender', 'recipients']; // Or 'attachments'
+    protected int $maxRelationshipDepth = 1; // Max nesting level
+}
+```
+
+The trait will load and include these relationships' `getVectorContent()` in the embedding.
+
+### Manual Indexing
+
+```php
+use LaravelAIEngine\Services\Vector\VectorSearchService;
+
+$index = app(VectorSearchService::class);
+
+// Index a single model (optionally scoped to a user)
+$index->index($document);
+$index->index($document, $userId);
+
+// Re-index = index again (upsert by the model's vector id)
+$index->index($document);
+
+// Remove a model from the index
+$index->deleteFromIndex($document);
+
+// Index a batch — returns the number indexed
+$index->indexBatch(Document::all());
+```
+
+Or via artisan:
+
+```bash
+php artisan ai:vector-index # Index all models with Vectorizable
+php artisan ai:vector-index --model=App\\Models\\Document # Single model class
+php artisan ai:vector-index --recreate # Recreate collections
+```
+
+### Vector Database Setup
+
+**Qdrant (default, local/cloud):**
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+# Then set QDRANT_HOST=http://localhost:6333
+```
+
+**Pinecone (serverless):**
+```php
+// .env
+VECTOR_DB_DRIVER=pinecone
+PINECONE_API_KEY=...
+PINECONE_ENVIRONMENT=us-west1-gcp
+```
+
+### Vectorization Strategies for Models
+
+**By default**, a model uses `$fillable` fields. Customize with:
+
+```php
+class Report extends Model
+{
+    use Vectorizable;
+    
+    // Option 1: Explicit vectorizable fields
+    protected array $vectorizable = ['title', 'executive_summary', 'conclusion'];
+    
+    // Option 2: Full override
+    public function getVectorContent(): string
+    {
+        return "{$this->title}\n{$this->body}\nAuthor: {$this->author->name}";
+    }
+}
+```
+
+### Performance Tuning
+
+```php
+'vector' => [
+    'batch_size' => env('VECTOR_BATCH_SIZE', 100), // Embeddings per API call
+    'max_hydrate_results' => env('VECTOR_MAX_HYDRATE_RESULTS', 50), // Max results to fetch
+    'queue' => [
+        'enabled' => env('VECTOR_QUEUE_ENABLED', true), // Queue indexing
+        'connection' => 'redis',
+        'queue_name' => 'vector-indexing',
+    ],
+],
+```
+
+- Batch embeddings to reduce API calls
+- Use queues for async indexing
+- Set reasonable search thresholds to limit results
+
+### Common Patterns
+
+**Search with user-scoping:**
+```php
+$results = Document::vectorSearch(
+    "How to deploy?",
+    filters: ['user_id' => auth()->id()],
+    userId: auth()->id()
+);
+```
+
+**RAG with custom collections:**
+```php
+// Search multiple model types at once
+$response = Document::intelligentChat(
+    "Find all recent changes",
+    options: [
+        'collections' => [
+            App\Models\Document::class,
+            App\Models\Note::class,
+        ],
+        'user_id' => auth()->id(),
+    ]
+);
+```
+
+**Semantic recommendations:**
+```php
+$post = Post::find(1);
+$similarPosts = $post->similarTo(limit: 3);
+// Returns posts with similar content
+```
+
+---
+
+## Generating & Understanding Images
+
+The Laravel AI Engine supports image generation via multiple specialized providers (Stable Diffusion, fal_ai, OpenAI's DALL-E, Clipdrop) and image understanding through GPT-4o vision capabilities.
+
+### Generating Images
+
+Image generation is performed via `AIRequest` with the appropriate engine and model. The response includes stored URLs pointing to the generated images.
+
+**Example: DALL-E 3 Image Generation**
+
+```php
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+
+$request = new AIRequest(
+    prompt: 'A serene mountain landscape at sunset',
+    engine: EngineEnum::OpenAI,
+    model: EntityEnum::DALL_E_3,
+    parameters: [
+        'image_count' => 1,
+        'size' => '1024x1024',
+        'quality' => 'standard', // 'standard' or 'hd'
+    ]
+);
+
+$response = app(LaravelAIEngine\Services\AIEngine::class)->generate($request);
+
+if ($response->isSuccessful()) {
+    $imageUrls = $response->getFiles(); // Array of stored image URLs
+    dd($imageUrls);
+}
+```
+
+**Example: Stable Diffusion (via Stability AI)**
+
+```php
+$request = new AIRequest(
+    prompt: 'A futuristic cityscape with neon lights',
+    engine: EngineEnum::StableDiffusion,
+    model: EntityEnum::SD3_LARGE, // or SD3_MEDIUM, SDXL_1024
+    parameters: [
+        'image_count' => 1,
+        'width' => 1024,
+        'height' => 1024,
+        'steps' => 30,
+        'cfg_scale' => 7.0,
+        'negative_prompt' => 'blurry, low quality', // Optional
+        'seed' => 12345, // Optional: for reproducible results
+    ]
+);
+
+$response = app(LaravelAIEngine\Services\AIEngine::class)->generate($request);
+$imageUrls = $response->getFiles();
+```
+
+**Example: FAL AI (FLUX, Stable Diffusion 3, or Video)**
+
+```php
+$request = new AIRequest(
+    prompt: 'A golden retriever playing in a sunny garden',
+    engine: EngineEnum::FalAI,
+    model: EntityEnum::FAL_FLUX_PRO, // FAL_FLUX_DEV, FAL_FLUX_SCHNELL, FAL_SDXL, FAL_SD3_MEDIUM
+    parameters: [
+        'image_count' => 1,
+        'steps' => 50,
+        'guidance_scale' => 7.5,
+        'negative_prompt' => 'distorted, unrealistic',
+        'seed' => 42,
+    ]
+);
+
+$response = app(LaravelAIEngine\Services\AIEngine::class)->generate($request);
+$imageUrls = $response->getFiles();
+```
+
+**Configuration**: Ensure the driver's API key is set in your `.env`:
+- OpenAI: `OPENAI_API_KEY`
+- Stable Diffusion: Configure via `config('ai-engine.engines.stable-diffusion.api_key')` (Stability AI API)
+- FAL AI: `FAL_AI_API_KEY`
+
+### Image Editing & Operations
+
+Use `ImageOperationService` for editing existing images or apply operations via Clipdrop (background removal, upscaling, cleanup, etc.).
+
+**Example: Clipdrop Image Operations**
+
+```php
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+
+// Background removal
+$request = new AIRequest(
+    prompt: '', // Not used for image operations
+    engine: EngineEnum::Clipdrop,
+    model: EntityEnum::CLIPDROP_IMAGE_EDIT,
+    parameters: [
+        'operation' => 'background_removal',
+        'image' => '/path/to/image.png', // Local path, data: URI, or base64
+    ]
+);
+
+$response = app(LaravelAIEngine\Services\AIEngine::class)->generate($request);
+$editedImageUrl = $response->getFiles()[0] ?? null;
+```
+
+Supported Clipdrop operations: `background_removal`, `cleanup`, `upscale`, `sketch_to_image`, `reimagine`, `remove_text`. Pass the operation name in `parameters['operation']` and provide the image via `parameters['image']`. For `cleanup` and `upscale`, add `parameters['mask']` (cleanup) or `parameters['target_width']` / `parameters['target_height']` (upscale).
+
+### Understanding Images: Vision Analysis
+
+Extract text and analyze images using GPT-4o vision capabilities through the `FileAnalysisService`.
+
+**Example: Extract Text from an Image**
+
+```php
+use LaravelAIEngine\Services\FileAnalysisService;
+
+$service = app(FileAnalysisService::class);
+
+// OCR/transcribe image into text
+$imagePath = '/path/to/document.png';
+$extractedText = $service->extractImageText($imagePath);
+dd($extractedText);
+```
+
+**Example: Analyze an Uploaded Image File**
+
+```php
+use LaravelAIEngine\Services\FileAnalysisService;
+
+$service = app(FileAnalysisService::class);
+
+$uploadedImage = request()->file('image'); // Illuminate\Http\UploadedFile
+
+$analysis = $service->analyzeImage(
+    file: $uploadedImage,
+    message: 'Extract all text and structured data from this invoice.',
+    sessionId: 'user-session-123',
+    engine: 'openai', // Vision uses OpenAI by default
+    userId: auth()->id()
+);
+
+// Returns array with keys:
+// - 'content': AI-extracted analysis
+// - 'extracted_data': Parsed JSON/key-value pairs
+// - 'file_content': Image filename and analysis
+// - 'suggestions': Detected actions based on content keywords
+```
+
+**Configuration**: Image understanding requires OpenAI's API key in `OPENAI_API_KEY`. The vision model and token limits can be customized:
+
+```php
+// In config/ai-engine.php
+'file_analysis' => [
+    'enabled' => true,
+    'vision_model' => env('AI_ENGINE_FILE_ANALYSIS_VISION_MODEL', 'gpt-4o'),
+    'vision_max_tokens' => env('AI_ENGINE_FILE_ANALYSIS_VISION_MAX_TOKENS', 2000),
+    // Pattern-based action suggestions (e.g., detect invoices and suggest creation)
+    'keyword_suggestions' => [
+        [
+            'pattern' => '/\\binvoice\\b/i',
+            'action_id' => 'create_invoice',
+            'action_label' => 'Create an invoice from this file',
+            'confidence' => 80,
+            'detected_fields' => ['invoice_number', 'date', 'amount'],
+        ],
+    ],
+],
+```
+
+**Example: Suggest Actions Based on File Content**
+
+```php
+$service = app(FileAnalysisService::class);
+
+$suggestions = $service->suggestActions($extractedText, 'invoice.pdf');
+// Returns array of suggested actions with confidence scores
+
+// Example output:
+// [
+//     [
+//         'action_id' => 'create_invoice',
+//         'action_label' => 'Create an invoice from this file',
+//         'confidence' => 80,
+//         'reason' => 'File matched configured keywords.',
+//         'detected_fields' => ['invoice_number', 'date', 'amount'],
+//     ],
+// ]
+```
+
+---
+
+## Generating Video
+
+The Laravel AI Engine provides a comprehensive video generation system powered by FAL AI, supporting text-to-video, image-to-video, and reference-based video generation workflows with both synchronous and asynchronous processing modes.
+
+### Synchronous Video Generation
+
+For straightforward video generation, use the `GenerateVideoService` with a direct synchronous request:
+
+```php
+use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
+
+$ai = app(AIEngineService::class);
+
+// Text-to-video generation
+$response = $ai->generateDirect(new AIRequest(
+    prompt: 'A serene landscape with mountains and a flowing river at sunset',
+    engine: EngineEnum::FalAI,
+    model: EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO,
+    parameters: [
+        'duration' => '5',
+        'aspect_ratio' => '16:9',
+        'seed' => 42,
+    ],
+    userId: auth()->id(),
+));
+
+if ($response->isSuccessful()) {
+    $videoUrl = $response->getFiles()[0] ?? null;
+    // Use the video URL...
+}
+```
+
+### Asynchronous Video Generation (Recommended for Long-Running Tasks)
+
+For production use, leverage asynchronous processing with job tracking and webhooks:
+
+```php
+use LaravelAIEngine\Services\Media\GenerateVideoService;
+
+$videoService = app(GenerateVideoService::class);
+
+// Submit an async video job
+$submission = $videoService->generate([
+    'async' => true,
+    'prompt' => 'A dancer performing under neon lights in an urban environment',
+    'engine' => 'fal_ai',
+    'model' => 'bytedance/seedance-2.0/text-to-video',
+    'duration' => '6',
+    'aspect_ratio' => '9:16',
+    'use_webhook' => true, // Enable webhook notifications
+]);
+
+// Response contains job_id for tracking
+$jobId = $submission['job_id'];
+```
+
+### Checking Job Status
+
+Poll or wait for async job completion:
+
+```php
+$videoService = app(GenerateVideoService::class);
+
+// Get current status (optionally refresh from provider)
+$status = $videoService->status($jobId, refresh: true);
+
+if ($status['status'] === 'completed') {
+    // Job finished successfully
+    $videoUrl = $status['data']['metadata']['response']['files'][0] ?? null;
+} else if ($status['status'] === 'failed') {
+    // Handle failure
+    $error = $status['data']['metadata']['provider']['error'] ?? 'Unknown error';
+}
+```
+
+### Image-to-Video Generation
+
+Generate video from a starting or reference image:
+
+```php
+use LaravelAIEngine\Enums\EntityEnum;
+
+$videoService = app(GenerateVideoService::class);
+
+$submission = $videoService->generate([
+    'async' => true,
+    'model' => EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
+    'start_image_url' => 'https://example.com/image.jpg',
+    'prompt' => 'The image transforms into a stormy landscape',
+    'duration' => '4',
+]);
+```
+
+### Reference-Based Video Generation
+
+Create videos using reference images or existing videos for consistency:
+
+```php
+$submission = $videoService->generate([
+    'async' => true,
+    'model' => 'fal-ai/kling-video/o3/standard/reference-to-video',
+    'reference_image_urls' => [
+        'https://example.com/ref1.jpg',
+        'https://example.com/ref2.jpg',
+    ],
+    'prompt' => 'A person walking through a forest',
+    'duration' => '5',
+]);
+
+// Or with reference video
+$submission = $videoService->generate([
+    'async' => true,
+    'model' => 'bytedance/seedance-2.0/reference-to-video',
+    'reference_video_urls' => ['https://example.com/animation.mp4'],
+    'prompt' => 'Extend the animation in a different direction',
+]);
+```
+
+### Processing Video Files (Extract & Analyze)
+
+Analyze existing videos by extracting transcriptions and visual content:
+
+```php
+use LaravelAIEngine\Services\Media\VideoService;
+
+$videoService = app(VideoService::class);
+
+// Process a local or uploaded video
+$analysis = $videoService->processVideo(
+    videoPath: '/path/to/video.mp4',
+    userId: auth()->id(),
+    options: [
+        'include_audio' => true,      // Extract and transcribe audio
+        'include_frames' => true,      // Analyze key frames
+        'frame_count' => 5,            // Number of frames to analyze
+    ]
+);
+
+// Returns combined text of transcriptions and frame descriptions
+echo $analysis; // "Audio Transcription: ...\n\nVisual Content: Frame 1: ..., Frame 2: ..."
+```
+
+### Available Video Models
+
+| Model | Use Case | Cost (Credits) |
+|-------|----------|---|
+| `FAL_SEEDANCE_2_TEXT_TO_VIDEO` | Text to video | 7.5 |
+| `FAL_SEEDANCE_2_IMAGE_TO_VIDEO` | Image to video animation | 7.5 |
+| `FAL_SEEDANCE_2_REFERENCE_TO_VIDEO` | Reference-guided generation | 7.5 |
+| `FAL_KLING_O3_IMAGE_TO_VIDEO` | High-quality image to video | 8.0 |
+| `FAL_KLING_O3_REFERENCE_TO_VIDEO` | Reference-based Kling generation | 8.0 |
+| `FAL_STABLE_VIDEO` | Stable Diffusion video | Configurable |
+
+### Configuration
+
+Enable/configure video generation in `config/ai-engine.php`:
+
+```php
+'engines' => [
+    'fal_ai' => [
+        'api_key' => env('FAL_AI_API_KEY'),
+        'async' => [
+            'webhook_url' => env('FAL_WEBHOOK_URL'), // Optional custom webhook endpoint
+        ],
+    ],
+],
+
+'api' => [
+    'generate' => [
+        'enabled' => true,
+        'prefix' => 'api/v1/ai/generate',  // Default API prefix
+    ],
+],
+
+'credits' => [
+    'enabled' => false, // Set to true to enable credit-based billing
+],
+```
+
+### Webhook Integration
+
+Set up webhook handling for async video completion notifications:
+
+```php
+// Webhook endpoint is automatically: POST /api/v1/ai/generate/video/fal/webhook
+// (configurable via ai-engine.api.generate.prefix)
+
+// The webhook handler validates the token and updates job status automatically
+// Configure webhook URL in config or via FAL_WEBHOOK_URL environment variable
+```
+
+### HTTP API Endpoints
+
+- **POST** `/api/v1/ai/generate/video` – Submit synchronous or async video generation
+- **GET** `/api/v1/ai/generate/video/jobs/{jobId}` – Check job status
+- **POST** `/api/v1/ai/generate/video/fal/webhook` – Webhook endpoint for async callbacks
+
+### Validation Rules
+
+Video requests validate the following parameters:
+
+```php
+'prompt' => 'nullable|string|max:4000',
+'engine' => 'nullable|string|max:100',
+'model' => 'nullable|string|max:200',
+'duration' => 'nullable',
+'aspect_ratio' => 'nullable|string|max:20',
+'resolution' => 'nullable|string|max:20',
+'seed' => 'nullable|integer',
+'start_image_url' => 'nullable|url|max:2048',
+'end_image_url' => 'nullable|url|max:2048',
+'reference_image_urls' => 'nullable|array|max:8',
+'reference_video_urls' => 'nullable|array|max:3',
+'reference_audio_urls' => 'nullable|array|max:3',
+'character_sources' => 'nullable|array|max:4',
+'generate_audio' => 'nullable|boolean',
+'multi_prompt' => 'nullable|array|max:8',
+'async' => 'nullable|boolean',
+'use_webhook' => 'nullable|boolean',
+'parameters' => 'nullable|array',
+```
+
+### Credit Estimation
+
+Video generation costs are tracked through the credit system. To check estimated credits before generation:
+
+```php
+use LaravelAIEngine\Services\CreditRequestEstimator;
+
+$estimator = app(CreditRequestEstimator::class);
+
+$credits = $estimator->estimate($request);
+// Returns estimated credit cost for the requested model
+```
+
+---
+
+## Characters, Personas & Sub-agents
+
+Laravel AI Engine supports delegating work to specialized sub-agents through a goal-oriented architecture. Each sub-agent can have a distinct personality or role (name, description, capabilities) and handle tasks either through tool execution, conversational reasoning, or custom callables.
+
+### Registering and Configuring Sub-agents
+
+Sub-agents are registered in `config/ai-agent.php` under the `sub_agents` array. Each sub-agent definition includes a handler (how it executes) and optional tools/capabilities:
+
+```php
+// config/ai-agent.php
+'sub_agents' => [
+    'researcher' => [
+        'name' => 'Research Specialist',
+        'description' => 'Gathers information, analyzes sources, and summarizes findings.',
+        'capabilities' => ['research', 'analysis', 'summarization'],
+        'keywords' => ['find', 'analyze', 'research'],
+        'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
+    ],
+    'writer' => [
+        'name' => 'Content Writer',
+        'description' => 'Drafts clear, compelling written content.',
+        'capabilities' => ['writing', 'content', 'editing'],
+        'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
+    ],
+    'validator' => [
+        'name' => 'Quality Validator',
+        'description' => 'Reviews and validates work for accuracy and completeness.',
+        'capabilities' => ['validation', 'review', 'quality'],
+        'tools' => ['validate_field', 'suggest_value'],
+        'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler::class,
+    ],
+],
+```
+
+### Sub-agent Handler Types
+
+The `handler` field determines how a sub-agent executes. Three built-in handlers are available:
+
+**ConversationalSubAgentHandler** — The sub-agent conducts multi-turn reasoning via the LLM:
+```php
+'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
+```
+
+**ToolCallingSubAgentHandler** — The sub-agent runs a sequence of registered tools (deterministic):
+```php
+'tools' => ['search_knowledge', 'find_customer'],
+'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler::class,
+```
+
+**CallableSubAgentHandler** — Use a custom callable (closure or invokable class):
+```php
+'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults, array $options) {
+    return SubAgentResult::success(
+        $task->id,
+        $task->agentId,
+        'Custom logic executed.'
+    );
+},
+```
+
+### Running Sub-agents via Goal Agent
+
+The `run_sub_agent` tool (enabled by default via `goal_agent.register_sub_agent_tool`) allows the agent to delegate targets to sub-agents at runtime:
+
+```php
+$response = app(\LaravelAIEngine\Services\Agent\GoalAgentService::class)->execute(
+    target: 'Research the impact of AI on healthcare and draft a summary.',
+    context: $unifiedActionContext,
+    options: [
+        'max_sub_agents' => 2,
+        'stop_on_failure' => true,
+    ]
+);
+
+// Response contains plan and per-sub-agent results
+$plan = $response->data['plan']; // Tasks matched to sub-agents
+$results = $response->data['results']; // SubAgentResult for each task
+```
+
+Internally, the planner matches the target against registered sub-agents' `capabilities` and `keywords`, then executes matched tasks in order.
+
+### Inline Sub-agent Requests
+
+Pass sub-agents directly in the request's `options` array without relying on registered definitions:
+
+```php
+$response = app(\LaravelAIEngine\Services\Agent\GoalAgentService::class)->execute(
+    target: 'Prepare a presentation outline.',
+    context: $context,
+    options: [
+        'sub_agents' => [
+            [
+                'agent_id' => 'structure_lead',
+                'name' => 'Structure Specialist',
+                'objective' => 'Design the outline structure.',
+                'input' => ['style' => 'business'],
+            ],
+            [
+                'agent_id' => 'content_lead',
+                'name' => 'Content Specialist',
+                'objective' => 'Fill in talking points.',
+                'input' => ['source' => 'research_docs'],
+                'depends_on' => ['structure_lead'],
+            ],
+        ],
+    ]
+);
+```
+
+Each inline sub-agent can reference previous results via `depends_on`.
+
+### Customizing Sub-agent Prompts and Personas
+
+For conversational sub-agents, the prompt is built from the sub-agent's name, description, objective, and any input. To inject a custom system prompt or persona, use the sub-agent's `metadata` field or task input:
+
+```php
+'sub_agents' => [
+    'brand_voice' => [
+        'name' => 'Brand Voice Specialist',
+        'description' => 'Ensures all content matches our brand tone and values.',
+        'capabilities' => ['branding', 'voice', 'tone'],
+        'handler' => ConversationalSubAgentHandler::class,
+        // metadata is passed into each task and available to the handler
+        'metadata' => [
+            'system_prompt' => 'You are a brand strategist. Speak in a professional yet approachable tone. Emphasize values of innovation and trust.',
+            'tone_guide' => 'Friendly, clear, authoritative',
+        ],
+    ],
+],
+```
+
+When a task is created for this sub-agent, its metadata flows through the `SubAgentTask` DTO and can be accessed by the handler to inject custom instructions or context.
+
+### Task Dependencies
+
+Sub-agents can depend on results from previous sub-agents:
+
+```php
+'sub_agents' => [
+    [
+        'agent_id' => 'data_gatherer',
+        'name' => 'Data Gatherer',
+        'objective' => 'Collect all relevant information.',
+    ],
+    [
+        'agent_id' => 'analyst',
+        'name' => 'Analyst',
+        'objective' => 'Analyze the collected data.',
+        'depends_on' => ['data_gatherer'],
+    ],
+    [
+        'agent_id' => 'presenter',
+        'name' => 'Presenter',
+        'objective' => 'Create a summary for stakeholders.',
+        'depends_on' => ['analyst'],
+    ],
+],
+```
+
+The executor validates all dependencies before running and injects previous results into the input of dependent tasks.
+
+### Configuration Options
+
+Key settings for sub-agent execution (in `config/ai-agent.php`):
+
+```php
+'goal_agent' => [
+    'enabled' => env('AI_AGENT_GOAL_ENABLED', true),
+    'max_sub_agents' => env('AI_AGENT_GOAL_MAX_SUB_AGENTS', 5),    // Max agents matched per target
+    'stop_on_failure' => env('AI_AGENT_GOAL_STOP_ON_FAILURE', true), // Stop on critical failure
+    'register_sub_agent_tool' => env('AI_AGENT_REGISTER_SUB_AGENT_TOOL', true), // Enable run_sub_agent tool
+],
+
+'sub_agent_conversations' => [
+    'default_rounds' => env('AI_AGENT_SUB_AGENT_CONVERSATION_ROUNDS', 3),
+    'max_rounds' => env('AI_AGENT_SUB_AGENT_CONVERSATION_MAX_ROUNDS', 8),
+],
+```
+
+### System Prompts and LLM Parameters
+
+When using conversational handlers with system prompts or custom parameters, pass them through the request `options`:
+
+```php
+$response = app(\LaravelAIEngine\Services\Agent\GoalAgentService::class)->execute(
+    target: 'Draft a technical proposal.',
+    context: $context,
+    options: [
+        'engine' => 'openai',                  // Force specific engine
+        'model' => 'gpt-4o',                   // Force specific model
+        'system_prompt' => 'You are a technical architect...',
+        'max_tokens' => 2000,
+        'temperature' => 0.5,
+    ]
+);
+```
+
+The agent's `AIRequest` DTO merges these options into the conversational handler's prompts.
+
+### Accessing Sub-agent Results
+
+Each sub-agent execution returns a `SubAgentResult` with status, message, data, and metadata:
+
+```php
+$response = app(\LaravelAIEngine\Services\Agent\GoalAgentService::class)->execute($target, $context);
+
+if ($response->success) {
+    foreach ($response->data['results'] as $result) {
+        $agentId = $result['agent_id'];
+        $message = $result['message'];
+        $data = $result['data'];
+        $metadata = $result['metadata'];
+    }
+}
+```
+
+---
+
+## File Intake (upload → extract → suggest → pre-fill)
+
+The file intake workflow—upload a document, extract its text, detect what entity to create from it, and optionally pre-fill the creation form—is handled by the `analyze_file` agent tool, backed by `FileAnalysisService` and `StructuredFileExtractor`. This is generic and configuration-driven: suggest creating an invoice, a customer, a product, or any entity your app defines, all driven by simple regex patterns in config.
+
+### Enable File Analysis
+
+File analysis is **opt-in**. In `config/ai-engine.php`, set:
+
+```php
+'file_analysis' => [
+    'enabled' => env('AI_ENGINE_FILE_ANALYSIS', false),
+    'base_path' => env('AI_ENGINE_FILE_ANALYSIS_PATH', storage_path('app/uploads')),
+    'allowed_extensions' => ['pdf', 'doc', 'docx', 'txt', 'csv', 'xlsx', 'jpg', 'jpeg', 'png'],
+    'max_bytes' => 10 * 1024 * 1024,  // 10 MB
+    'validate_actions' => true,  // Only suggest actions that exist as registered tools
+    'prefill' => env('AI_ENGINE_FILE_ANALYSIS_PREFILL', false),  // Extract fields for pre-fill
+    'vision_model' => 'gpt-4o',  // For OCR on images
+],
+```
+
+Or set via environment:
+
+```bash
+AI_ENGINE_FILE_ANALYSIS=true
+AI_ENGINE_FILE_ANALYSIS_PATH=/storage/uploads
+AI_ENGINE_FILE_ANALYSIS_PREFILL=false
+```
+
+### Configure Keyword Suggestions
+
+Define what documents suggest which create actions. For example, suggest `create_invoice` when an uploaded file mentions "invoice":
+
+```php
+'file_analysis' => [
+    // ...
+    'keyword_suggestions' => [
+        [
+            'pattern' => '/\binvoice\b/i',
+            'action_id' => 'create_invoice',
+            'action_label' => 'Create an invoice from this file',
+            'confidence' => 80,
+            'detected_fields' => ['invoice_number', 'total', 'due_date'],
+        ],
+        [
+            'pattern' => '/\bcustomer|contact|account\b/i',
+            'action_id' => 'create_customer',
+            'action_label' => 'Create a customer from this file',
+            'confidence' => 70,
+            'detected_fields' => ['name', 'email', 'phone'],
+        ],
+        [
+            'pattern' => '/\bproduct|item|sku\b/i',
+            'action_id' => 'create_product',
+            'action_label' => 'Add a product from this file',
+            'confidence' => 75,
+            'detected_fields' => ['name', 'sku', 'price', 'category'],
+        ],
+    ],
+],
+```
+
+Each pattern is checked against the extracted file content. If it matches and the `action_id` is a registered agent tool (when `validate_actions => true`), the suggestion is included in the response.
+
+### Basic Usage: Extract & Suggest
+
+Use the `analyze_file` tool in an agent prompt or call the service directly:
+
+```php
+use LaravelAIEngine\Services\FileAnalysisService;
+
+$service = app(FileAnalysisService::class);
+
+// Extract text + suggest actions from a stored file path.
+// (The analyze_file agent tool uses this internally.)
+$result = $service->extractAndSuggestFromPath(
+    path: 'path/to/file.pdf',
+    extension: 'pdf',
+    name: 'invoice.pdf'
+);
+
+// Returns:
+// [
+//     'content' => 'INVOICE #123...',
+//     'suggestions' => [
+//         [
+//             'action_id' => 'create_invoice',
+//             'action_label' => 'Create an invoice from this file',
+//             'confidence' => 80,
+//             'reason' => 'File matched configured keywords.',
+//             'detected_fields' => ['invoice_number', 'total'],
+//         ],
+//     ],
+// ]
+```
+
+### Image & Vision Model Support
+
+For images (JPG, PNG, WebP), the service uses GPT-4o's vision to transcribe text:
+
+```php
+// Extract text from a scanned/photographed invoice:
+$text = $service->extractImageText('/path/to/scan.jpg');
+// Uses config('ai-engine.file_analysis.vision_model', 'gpt-4o')
+```
+
+The vision model is configurable:
+
+```php
+'file_analysis' => [
+    'vision_model' => 'gpt-4o',  // default
+    'vision_max_tokens' => 2000,
+],
+```
+
+### Pre-fill Form Fields (Phase 2)
+
+When `prefill => true`, the agent extracts each suggested create action's fields from the file content, so the creation form can be pre-filled. This runs one model call per suggested action (at model `gpt-4o-mini` by default, per `orchestration_model`):
+
+```php
+'file_analysis' => [
+    'prefill' => true,  // Enable extraction
+    'max_content_chars' => 12000,  // Truncate file for extraction
+    'extraction_max_tokens' => 1500,
+],
+```
+
+When enabled, suggestions include a `prefill` key:
+
+```php
+// Result with prefill enabled:
+[
+    'suggestions' => [
+        [
+            'action_id' => 'create_invoice',
+            'action_label' => 'Create an invoice from this file',
+            'confidence' => 80,
+            'prefill' => [
+                'invoice_number' => 'INV-2024-001',
+                'customer_name' => 'Acme Corp',
+                'total' => '1200.00',
+                'due_date' => '2024-12-31',
+            ],
+        ],
+    ],
+]
+```
+
+The extracted fields are determined automatically from the create action's parameter list; no extra config needed.
+
+### Security & Sandboxing
+
+File analysis is sandboxed:
+
+- **Base Path**: Only files under `ai-engine.file_analysis.base_path` (default: `storage('app/uploads')`) are readable.
+- **Extension Allowlist**: Only extensions in `allowed_extensions` are accepted (default: `pdf`, `doc`, `docx`, `txt`, `csv`, `xlsx`, `jpg`, `jpeg`, `png`, `webp`, `gif`).
+- **Size Cap**: Files larger than `max_bytes` (default: 10 MB) are rejected.
+- **Path Traversal**: `../../etc/hosts` and absolute paths outside the sandbox are rejected.
+- **Action Validation**: When `validate_actions => true`, only suggestions matching registered agent tools are returned, preventing undefined actions.
+
+### Direct Service Usage
+
+All extraction methods on `FileAnalysisService`:
+
+```php
+$service = app(FileAnalysisService::class);
+
+// Extract text from a path (no suggestions):
+$text = $service->extractTextFromPath('/path/to/file.pdf', 'pdf');
+
+// Extract text + suggestions (preferred):
+$result = $service->extractAndSuggestFromPath('/path/to/file.pdf', 'pdf', 'invoice.pdf');
+// ['content' => '...', 'suggestions' => [...]]
+
+// OCR an image:
+$text = $service->extractImageText('/path/to/scan.jpg');
+
+// Suggest actions for any content string:
+$suggestions = $service->suggestActions('this is an invoice...', 'invoice.pdf');
+```
+
+### Using StructuredFileExtractor (Internal)
+
+The `StructuredFileExtractor` is called by `analyze_file` when `prefill => true`. It extracts specific fields:
+
+```php
+use LaravelAIEngine\Services\StructuredFileExtractor;
+
+$extractor = app(StructuredFileExtractor::class);
+
+$fields = $extractor->extract(
+    content: 'INVOICE #123\nTotal: $500\nDue: 2024-12-31',
+    fields: ['invoice_number', 'total', 'due_date'],
+    options: [
+        'engine' => 'openai',
+        'model' => 'gpt-4o-mini',
+    ]
+);
+
+// Returns: ['invoice_number' => 'INV-123', 'total' => '$500', 'due_date' => '2024-12-31']
+// Only keys present in the document are returned; missing fields are omitted.
+```
+
+### DocumentService: Low-Level Extraction
+
+`DocumentService` handles the file-type-specific extraction (via `Smalot\PdfParser`, `ZipArchive` for DOCX, etc.):
+
+```php
+use LaravelAIEngine\Services\Media\DocumentService;
+
+$docService = app(DocumentService::class);
+
+// Extract from any supported type (pdf, docx, txt, csv, xlsx, pptx, rtf, odt):
+$text = $docService->extractText('/path/to/file.pdf', 'pdf');
+
+// Check MIME type and metadata:
+$meta = $docService->getMetadata('/path/to/file.pdf');
+// ['file_size' => 12345, 'mime_type' => 'application/pdf', 'extension' => 'pdf', 'modified_at' => '2024-...']
+```
+
+### Namespace & Classes
+
+All core classes reside in the `LaravelAIEngine\` namespace:
+
+- `LaravelAIEngine\Services\FileAnalysisService` — text extraction + suggestion logic.
+- `LaravelAIEngine\Services\StructuredFileExtractor` — field-level LLM extraction for pre-fill.
+- `LaravelAIEngine\Services\Media\DocumentService` — file-type-specific text extraction.
+- `LaravelAIEngine\Services\Agent\Tools\AnalyzeFileTool` — agent tool wrapper (automatically registered).
+
+### Example Workflow
+
+1. **User uploads a file** → it's stored in `storage/app/uploads/inv-123.pdf`.
+2. **Agent calls `analyze_file`** with `path: 'inv-123.pdf'`.
+3. **Service extracts text** from the PDF and detects "invoice" keyword.
+4. **Suggests `create_invoice`** (if registered and `validate_actions => true`).
+5. **If `prefill => true`**: Extracts invoice fields (number, customer, total, due date) and includes them in the suggestion.
+6. **Agent uses the suggestion** to call `create_invoice` with pre-filled data or ask the user to confirm.
+
+---
+
+## Scaling Tool Context
+
+As your tool registry grows (through AiResource, custom tools, or MCP integrations), every tool's full JSON schema is injected into the planner's prompt, inflating context and costs. The Laravel AI Engine provides configurable **tool selection strategies** and **progressive disclosure** to keep the prompt efficient while ensuring the right tools are available.
+
+### Tool Selection Strategies
+
+Configure which tools the planner sees each turn under `ai-agent.ai_native.tool_selection.strategy`:
+
+**All (default)** — No filtering; expose every registered tool:
+```php
+// config/ai-agent.php
+'ai_native' => [
+    'tool_selection' => [
+        'strategy' => 'all',
+        'always' => ['search_knowledge', 'data_query'],
+    ],
+],
+```
+
+**Skill-scoped** — When a skill is active, expose only that skill's declared tools plus a core set:
+```php
+'tool_selection' => [
+    'strategy' => 'skill_scoped',
+    'always' => ['search_knowledge', 'data_query'],
+],
+```
+This is the lowest-risk reduction—the active skill is re-matched every turn, so topic changes restore the full set.
+
+**Keyword** — Lexical top-K selection: score tools by keyword overlap with the turn message and expose the best N:
+```php
+'tool_selection' => [
+    'strategy' => 'keyword',
+    'limit' => 12,  // Expose top 12 matching tools per turn
+    'always' => ['search_knowledge', 'data_query'],
+],
+```
+Cheap and deterministic (no embeddings). Falls back to all tools if no lexical signal is detected.
+
+**Semantic** — Embedding-based top-K selection: embed the message and each tool's name+description, rank by cosine similarity:
+```php
+'tool_selection' => [
+    'strategy' => 'semantic',
+    'limit' => 12,
+    'always' => ['search_knowledge', 'data_query'],
+],
+```
+Most expensive (one embedding call per turn), but most accurate for large, unrelated tool registries. Tool embeddings are cached (by name and description), so only the message is embedded each turn. Fails open: if embedding is unavailable, all tools are exposed.
+
+### Progressive Disclosure
+
+When you have many tools, progressive disclosure keeps the base prompt small by listing tools by name + one-line summary only. The planner calls the `find_tools` meta-tool to load a tool's full parameter schema on demand, just-in-time:
+
+```php
+'tool_selection' => [
+    'disclosure' => 'progressive',  // 'full' (default) or 'progressive'
+],
+```
+
+With `disclosure => 'progressive'`:
+- The prompt lists each tool as `{ "name": "create_invoice", "description": "Create a new invoice" }` instead of the full schema.
+- The `find_tools` tool is always available and takes a natural-language query (e.g., "how do I create an invoice?") or a tool name.
+- The planner calls `find_tools` to retrieve the full parameter schema for tools it needs.
+- Tool embeddings for `find_tools` matches are cached.
+
+Example: a planner seeing 50 tools listed by summary alone, then calling `find_tools("find invoices by customer")` to load just the schemas for `find_invoice` and `search_invoices` before using them.
+
+### Combining Strategies and Disclosure
+
+You can layer both together for maximum efficiency:
+
+```php
+'ai_native' => [
+    'tool_selection' => [
+        'strategy' => 'semantic',      // Rank by embedding similarity
+        'limit' => 8,                  // Expose top 8 per turn
+        'disclosure' => 'progressive', // List by name + summary only
+        'always' => ['search_knowledge', 'data_query', 'find_tools'],
+    ],
+],
+```
+
+This combination:
+1. **Selects** the top 8 semantically-relevant tools per turn (semantic + limit).
+2. **Discloses** each as name + summary in the prompt (progressive).
+3. **Exposes** `find_tools` unconditionally so the planner can load additional schemas on demand (always).
+
+### Configuration Reference
+
+All options in `config/ai-agent.php`:
+```php
+'tool_selection' => [
+    /**
+     * 'all' (default) — expose every tool
+     * 'skill_scoped' — when a skill is active, expose its tools + always core
+     * 'keyword' — lexical top-K by message overlap
+     * 'semantic' — embedding-based top-K (cached tool embeddings, one message embedding/turn)
+     */
+    'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
+    
+    /**
+     * Tools always exposed, regardless of strategy.
+     * Default: ['search_knowledge', 'data_query']
+     */
+    'always' => ['search_knowledge', 'data_query'],
+    
+    /**
+     * For keyword and semantic strategies: max tools to expose per turn (default 12)
+     */
+    'limit' => (int) env('AI_AGENT_TOOL_SELECTION_LIMIT', 12),
+    
+    /**
+     * 'full' (default) — inject each selected tool's complete JSON schema
+     * 'progressive' — list tools by name + summary; planner calls find_tools to load full schemas on demand
+     */
+    'disclosure' => env('AI_AGENT_TOOL_DISCLOSURE', 'full'),
+],
+```
+
+### Behind the Scenes
+
+The selection logic lives in `\LaravelAIEngine\Services\Agent\Tools\Selectors\`:
+- **ToolSelectorContract** — Interface that all selectors implement.
+- **AllToolSelector** — Default; returns unfiltered tools.
+- **SkillScopedToolSelector** — Reads the active skill's `tools`, `final_tool`, and relation lookup/create tools from the skill registry, plus the `always` core.
+- **KeywordToolSelector** — Tokenizes the message, scores tools by name/description overlap (3 points for exact token match in name, 2 for substring, 1 for description), sorts by score, returns top N plus always core.
+- **SemanticToolSelector** — Embeds the message and each tool's `name + description`, caches tool embeddings per (name, description) pair, ranks by cosine similarity, returns top N plus always core.
+
+The `\LaravelAIEngine\Services\Agent\Tools\FindToolsTool` implements the `find_tools` meta-tool, which searches all registered tools by keyword (same scoring as KeywordToolSelector) and returns the full schemas of matches.
+
+Progressive disclosure is applied in `\LaravelAIEngine\Services\Agent\AiNative\AiNativePromptBuilder::toolDocuments()`: when enabled, each tool (except `find_tools`) is reduced to `{ "name": "...", "description": "..." }` before being injected into the prompt.
+
+---
+
+## Structured Data & Analytics
+
+The Laravel AI Engine provides two powerful tools for exact data queries and analytics: `data_query` (for counts, lists, and filtering) and `aggregate_data` (for sums, averages, rankings, and per-group breakdowns). These tools run in SQL rather than estimating from samples, ensuring accuracy for analytics questions.
+
+### Overview
+
+**`data_query` tool** answers "how many", "list", and "filter" questions by returning exact counts and paginated record lists from your Eloquent models. It auto-detects status, date ranges ("this month", "last 7 days"), and applies exact field filters via the `filters` parameter.
+
+**`aggregate_data` tool** computes SQL aggregations (sum/avg/min/max), returns top/bottom ranked records, and groups by dimensions—answering "total revenue", "which customer spent the most", "average order value" with real numbers, not estimates.
+
+Both tools are **fail-closed by default**: queries fail if no access scope (user_id, workspace_id, or tenant_id) applies, unless the model is marked `public => true`. This prevents accidental data leaks in multi-tenant scenarios.
+
+### Configuration
+
+Enable and configure data querying in `config/ai-engine.php`:
+
+```php
+'data_query' => [
+    'enabled' => env('AI_ENGINE_DATA_QUERY_ENABLED', true),
+    // Explicit model registry: controls keywords, filters, and aggregation columns
+    'models' => [
+        'invoice' => [
+            'class' => App\Models\Invoice::class,
+            'aliases' => ['invoice', 'invoices'],
+            'list' => ['id', 'invoice_number', 'total', 'status', 'due_date'],
+            'status_column' => 'status',
+            'statuses' => ['paid', 'overdue', 'draft'],
+            'date_column' => 'created_at',
+            'filterable' => ['status', 'customer_id'],
+            'aggregatable' => ['total', 'tax', 'discount'],
+            'groupable' => ['customer_id', 'status'],
+            'metric_aliases' => ['revenue' => 'total', 'taxes' => 'tax'],
+            'public' => false,  // Fail-closed: require user/workspace/tenant scope
+        ],
+    ],
+    // When 'models' is empty, auto-discover queryable models from your RAG setup
+    'use_discovery' => env('AI_ENGINE_DATA_QUERY_DISCOVERY', true),
+    // Scope columns checked in order; applied if present on the table
+    'scope_columns' => ['user_id', 'workspace_id', 'tenant_id'],
+    // When true (default), queries fail if no access scope can be applied
+    'require_scope' => env('AI_ENGINE_DATA_QUERY_REQUIRE_SCOPE', true),
+    // Maximum rows returned per list/top/bottom query
+    'max_limit' => env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', 50),
+],
+```
+
+### Using `data_query` for Counts and Lists
+
+The agent automatically routes structured queries to `data_query` when it detects counting or listing questions.
+
+```php
+// In your agent chat, the user might ask:
+// "how many invoices do we have?"
+// "list active customers"
+// "show me draft invoices for Apollo Labs"
+
+// The agent calls the tool like this:
+$tool = new \LaravelAIEngine\Services\Agent\Tools\DataQueryTool();
+
+$result = $tool->execute([
+    'query' => 'how many invoices do we have',
+], $context);
+
+// Result: ActionResult with operation='count', count=127
+// Respects the user's scope (user_id, workspace_id, etc.)
+```
+
+**Filters**: Pass exact field values in the `filters` object to narrow results. Only columns listed in `filterable` or `groupable` are applied.
+
+```php
+$result = $tool->execute([
+    'query' => 'list invoices',
+    'filters' => ['customer_id' => 'cust_123', 'status' => 'overdue'],
+    'limit' => 20,
+], $context);
+
+// Returns: ['operation' => 'list', 'rows' => [...], 'count' => 5]
+```
+
+**Automatic Status & Date Filters**: The tool infers status filters from configured values and date ranges from phrases like "today", "this week", "last 30 days":
+
+```php
+// User: "how many paid invoices were created this month?"
+// The tool detects:
+//   - status = 'paid' (from config statuses)
+//   - created_at BETWEEN [month start] AND [month end]
+$result->data['status'];  // 'paid'
+$result->data['date'];    // 'this month'
+$result->data['count'];   // Exact count for that subset
+```
+
+**Fail-Closed Scoping**: By default, queries without an applicable scope are refused to prevent data leaks:
+
+```php
+// If the model has user_id but no user is authenticated:
+$context = new UnifiedActionContext('dq', userId: null);
+$result = $tool->execute(['query' => 'how many invoices'], $context);
+// Result: failure - "Access blocked: no scope could be applied"
+
+// Allow intentionally-unscoped models (e.g., public product catalog):
+'product' => [
+    'class' => App\Models\Product::class,
+    'public' => true,  // Bypass require_scope check
+    // ...
+],
+```
+
+### Using `aggregate_data` for Analytics
+
+The agent routes analytics questions (totals, averages, rankings) to `aggregate_data` for exact calculations.
+
+```php
+$tool = new \LaravelAIEngine\Services\Agent\Tools\AggregateQueryTool();
+
+// Example 1: Total revenue across all invoices
+$result = $tool->execute([
+    'query' => 'what is total revenue for all invoices',
+], $context);
+// Result: operation='sum', metric='total', value=125000.50
+
+// Example 2: Average invoice value
+$result = $tool->execute([
+    'query' => 'average invoice amount',
+], $context);
+// Result: operation='avg', metric='total', value=1234.56
+
+// Example 3: The 5 most expensive invoices
+$result = $tool->execute([
+    'query' => 'list the top invoices by amount',
+    'limit' => 5,
+], $context);
+// Result: operation='top', rows=[...full rows...], metric='total', direction='desc'
+
+// Example 4: Per-customer breakdown
+$result = $tool->execute([
+    'query' => 'how much has each customer spent',
+    'operation' => 'sum',
+    'metric' => 'total',
+    'group_by' => 'customer_id',
+], $context);
+// Result: groups=[
+//   ['key' => 'apollo_labs', 'value' => 50000, 'count' => 5],
+//   ['key' => 'mozilla', 'value' => 45000, 'count' => 3],
+// ]
+```
+
+**Operations Supported**:
+- **Scalar**: `sum`, `avg`, `min`, `max`, `count` → returns a single number
+- **Ranked**: `top`, `bottom` → returns actual records ranked by a metric
+- **Count Distinct**: `count` with `group_by` → distinct dimension values
+
+**Metric Aliases**: Use friendly names in natural language; they resolve to database columns:
+
+```php
+'metric_aliases' => [
+    'revenue' => 'total',
+    'taxes' => 'tax',
+    'profit' => 'net_amount',
+],
+
+// User: "what is our total revenue for paid invoices this month?"
+// Tool resolves: metric='total' (from alias 'revenue')
+```
+
+**Filters & Status**: Just like `data_query`, filters on allowlisted columns and auto-detects status and date ranges:
+
+```php
+// User: "which paid customer has spent the most this quarter?"
+$result = $tool->execute([
+    'query' => 'which paid customer has spent the most this quarter',
+], $context);
+
+// Applies:
+//   status = 'paid'
+//   created_at in current quarter
+//   operation = 'sum' (from "spent")
+//   metric = 'total' (from 'revenue' alias or first aggregatable column)
+//   group_by = 'customer_id' (inferred from "which customer")
+```
+
+**Structured-Only Calls**: The planner can call with structured parameters alone (no `query`):
+
+```php
+$result = $tool->execute([
+    'entity' => 'invoice',
+    'operation' => 'sum',
+    'metric' => 'total',
+    'filters' => ['status' => 'paid'],
+    'group_by' => 'status',
+], $context);
+```
+
+### Configuration Reference
+
+| Key | Type | Default | Purpose |
+|-----|------|---------|---------|
+| `data_query.enabled` | bool | `true` | Enable the `data_query` and `aggregate_data` tools |
+| `data_query.models` | array | `[]` | Model registry (keywords, columns, aggregation config) |
+| `data_query.use_discovery` | bool | `true` | Auto-discover models from RAG setup if `models` is empty |
+| `data_query.scope_columns` | array | `['user_id', 'workspace_id', 'tenant_id']` | Columns checked for access scoping |
+| `data_query.require_scope` | bool | `true` | Fail-closed: refuse queries with no applicable scope |
+| `data_query.max_limit` | int | `50` | Cap on rows returned per query |
+
+### Model Configuration Schema
+
+Each entry in `ai-engine.data_query.models` accepts:
+
+```php
+'invoice' => [
+    'class' => App\Models\Invoice::class,              // Eloquent model class (required)
+    'aliases' => ['invoice', 'invoices', 'inv'],       // Keywords to match in queries
+    'label' => 'invoices',                             // Display name (auto from class if omitted)
+    'public' => false,                                 // true: allow unscoped access
+    'list' => ['id', 'number', 'total', 'status'],     // Columns shown in list/top queries
+    'status_column' => 'status',                       // Column for status filtering
+    'statuses' => ['paid', 'draft', 'overdue'],        // Known status values (auto-detected if empty)
+    'date_column' => 'created_at',                     // Column for "today"/"this month" filters
+    'filterable' => ['status', 'customer_id'],         // Columns allowed in filters param
+    'aggregatable' => ['total', 'tax', 'discount'],    // Numeric columns for sum/avg/min/max
+    'groupable' => ['customer_id', 'status', 'month'], // Dimension columns for group_by
+    'metric_aliases' => [
+        'revenue' => 'total',
+        'taxes' => 'tax',
+    ],
+],
+```
+
+### Security & Best Practices
+
+1. **Scope is fail-closed**: Unscoped queries are refused unless `public: true`. Explicitly trust multi-tenant models.
+2. **Allowlists, not wildcards**: Only columns in `filterable`, `groupable`, or `aggregatable` can be queried or grouped—no arbitrary SELECT.
+3. **Use exact filters for subset queries**: To answer "how much has customer X spent", pass `filters: {customer_id: 'x'}` so the total is for that subset, not the whole table.
+4. **Date and status detection**: Built-in inference of "this month", "paid status" from natural language—no special setup needed if you name columns and values conventionally.
+
+---
