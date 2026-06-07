@@ -52,8 +52,8 @@ class DataQueryTool extends AgentTool
         return [
             'query' => [
                 'type' => 'string',
-                'description' => 'The natural-language data question.',
-                'required' => true,
+                'description' => 'The natural-language data question (e.g. "how many invoices", "list customers"). Optional if you pass structured filters.',
+                'required' => false,
             ],
             'filters' => [
                 'type' => 'object',
@@ -440,8 +440,15 @@ class DataQueryTool extends AgentTool
         return array_values(array_unique($classes));
     }
 
+    /**
+     * `query` is optional: the planner may call with structured params only (filters, or for
+     * aggregate_data entity/operation/group_by). execute() degrades gracefully to a clear
+     * needsUserInput when neither a question nor usable structured params are present, instead
+     * of leaking a raw "Missing required parameter: query" as the chat answer. Defer to the
+     * base, which derives required params from getParameters().
+     */
     protected function getRequiredParameters(): array
     {
-        return ['query'];
+        return parent::getRequiredParameters();
     }
 }
