@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\FileAnalysisService;
+use LaravelAIEngine\Services\StructuredFileExtractor;
 
 /**
  * Generic, entity-agnostic file intake: extract the text of a previously-stored upload and
@@ -24,7 +25,8 @@ class AnalyzeFileTool extends AgentTool
 {
     public function __construct(
         protected ?FileAnalysisService $files = null,
-        protected ?ToolRegistry $registry = null
+        protected ?ToolRegistry $registry = null,
+        protected ?StructuredFileExtractor $extractor = null
     ) {
     }
 
@@ -54,6 +56,11 @@ class AnalyzeFileTool extends AgentTool
                 'description' => 'Original filename, for context (optional).',
                 'required' => false,
             ],
+            'prefill' => [
+                'type' => 'boolean',
+                'description' => 'When true, also extract the fields of each suggested create action so the create can be pre-filled.',
+                'required' => false,
+            ],
         ];
     }
 
@@ -77,13 +84,18 @@ class AnalyzeFileTool extends AgentTool
         $name = (string) ($parameters['original_name'] ?? basename($resolved));
 
         try {
-            $result = $this->fileService()->extractAndSuggestFromPath($resolved, $extension, $name);
+            $content = $this->isImage($extension)
+                ? $this->fileService()->extractImageText($resolved)
+                : $this->fileService()->extractTextFromPath($resolved, $extension);
         } catch (\Throwable $e) {
             return ActionResult::failure('The file could not be read.', ['analyzed' => false]);
         }
 
-        $content = (string) ($result['content'] ?? '');
-        $suggestions = $this->withRegisteredActionsOnly((array) ($result['suggestions'] ?? []));
+        $suggestions = $this->withRegisteredActionsOnly($this->fileService()->suggestActions($content, $name));
+
+        if ($this->prefillEnabled($parameters) && $content !== '') {
+            $suggestions = $this->attachPrefill($suggestions, $content);
+        }
 
         $message = $suggestions === []
             ? sprintf('Read %s (%d characters). No specific action was detected.', $name, mb_strlen($content))
@@ -142,7 +154,52 @@ class AnalyzeFileTool extends AgentTool
             return array_map('strtolower', $configured);
         }
 
-        return ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'csv'];
+        return ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
+    }
+
+    private function isImage(string $extension): bool
+    {
+        return in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $parameters
+     */
+    private function prefillEnabled(array $parameters): bool
+    {
+        if (array_key_exists('prefill', $parameters)) {
+            return (bool) $parameters['prefill'];
+        }
+
+        return (bool) config('ai-engine.file_analysis.prefill', false);
+    }
+
+    /**
+     * For each suggested create action, extract its parameter fields from the content so the
+     * create can be pre-filled. Generic: the field list is the create tool's own parameters.
+     *
+     * @param array<int, array<string, mixed>> $suggestions
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachPrefill(array $suggestions, string $content): array
+    {
+        $registry = $this->registry ?? app(ToolRegistry::class);
+        $extractor = $this->extractor ?? app(StructuredFileExtractor::class);
+
+        foreach ($suggestions as $i => $suggestion) {
+            $action = (string) ($suggestion['action_id'] ?? '');
+            $tool = $action !== '' && $registry->has($action) ? $registry->get($action) : null;
+            if (!$tool instanceof AgentTool) {
+                continue;
+            }
+
+            $prefill = $extractor->extract($content, array_keys($tool->getParameters()));
+            if ($prefill !== []) {
+                $suggestions[$i]['prefill'] = $prefill;
+            }
+        }
+
+        return $suggestions;
     }
 
     /**

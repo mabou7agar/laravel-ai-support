@@ -187,9 +187,21 @@ Your app stores the upload (e.g. to `storage/app/uploads`), then the agent calls
 
 Security: the path is **sandboxed** to `base_path` (traversal / absolute paths outside it are
 rejected — no arbitrary file reads), with an extension allowlist and a size cap. Suggestions
-are filtered to create actions that are actually registered (`validate_actions`). Images and
-LLM-driven field *pre-fill* (extracting the customer/line items to pre-populate the create
-payload) build on `FileAnalysisService::analyzeFile()` (vision) and are the next layer.
+are filtered to create actions that are actually registered (`validate_actions`).
+
+### Field pre-fill + images (Phase 2)
+
+With `'prefill' => true` (or `prefill: true` on the call), each suggested create action also
+gets a **pre-filled payload**: `StructuredFileExtractor` asks the model to extract exactly the
+fields that create action declares (its tool parameters) — so it's generic, a new resource
+gets upload-to-prefill with no extra code. The suggestion comes back as
+`{action_id: 'create_invoice', prefill: {customer_name, customer_email, items: [...]}}`, ready
+to drop into the create confirm step.
+
+**Images / scans** (jpg/png/…) are OCR'd to text by a vision model
+(`FileAnalysisService::extractImageText()`, `vision_model` config) and then run through the
+same suggest + pre-fill path — so a photographed invoice works like a PDF one. (The
+extraction and vision calls hit a live model; in tests they're mocked.)
 
 ## Aggregates & analytics
 

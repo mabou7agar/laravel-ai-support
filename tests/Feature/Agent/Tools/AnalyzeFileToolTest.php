@@ -155,11 +155,57 @@ class AnalyzeFileToolTest extends TestCase
         $r = $this->analyze('does-not-exist.txt');
         $this->assertFalse($r->success);
     }
+
+    public function test_prefill_extracts_create_tool_fields_into_the_suggestion(): void
+    {
+        config()->set('ai-engine.file_analysis.prefill', true);
+        $this->write('inv.txt', "INVOICE\nBill to: Acme Corp <ap@acme.test>\nWidget x2");
+
+        // Mock the extractor's model call to return the create_invoice fields.
+        $ai = \Mockery::mock(\LaravelAIEngine\Services\AIEngineService::class);
+        $ai->shouldReceive('generateDirect')->andReturn(\LaravelAIEngine\DTOs\AIResponse::success(
+            json_encode(['customer_name' => 'Acme Corp', 'customer_email' => 'ap@acme.test']),
+            'openai',
+            'gpt-4o-mini'
+        ));
+        $extractor = new \LaravelAIEngine\Services\StructuredFileExtractor($ai);
+
+        $registry = new ToolRegistry();
+        $registry->register('create_invoice', new FakeCreateActionTool('create_invoice', [
+            'customer_name' => ['type' => 'string', 'required' => true],
+            'customer_email' => ['type' => 'string', 'required' => false],
+            'confirmed' => ['type' => 'boolean', 'required' => true],
+        ]));
+        $fileService = new FileAnalysisService(
+            Mockery::mock(ChatService::class),
+            Mockery::mock(ConversationTranscriptService::class),
+            app(DocumentService::class)
+        );
+
+        $tool = new AnalyzeFileTool($fileService, $registry, $extractor);
+        $r = $tool->execute(['path' => 'inv.txt'], new UnifiedActionContext('afa'));
+
+        $this->assertTrue($r->success);
+        $invoice = collect($r->data['suggestions'])->firstWhere('action_id', 'create_invoice');
+        $this->assertNotNull($invoice);
+        $this->assertSame('Acme Corp', $invoice['prefill']['customer_name'] ?? null);
+        $this->assertSame('ap@acme.test', $invoice['prefill']['customer_email'] ?? null);
+    }
+
+    public function test_prefill_off_by_default_adds_no_prefill(): void
+    {
+        $this->write('inv.txt', 'this is an invoice for Acme');
+        $r = $this->analyze('inv.txt', ['create_invoice']);
+
+        $invoice = collect($r->data['suggestions'])->firstWhere('action_id', 'create_invoice');
+        $this->assertNotNull($invoice);
+        $this->assertArrayNotHasKey('prefill', $invoice);
+    }
 }
 
 class FakeCreateActionTool extends AgentTool
 {
-    public function __construct(private string $name)
+    public function __construct(private string $name, private array $params = [])
     {
     }
 
@@ -175,7 +221,7 @@ class FakeCreateActionTool extends AgentTool
 
     public function getParameters(): array
     {
-        return [];
+        return $this->params;
     }
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
