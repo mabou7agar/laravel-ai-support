@@ -119,6 +119,18 @@ class AggregateQueryRelationTest extends TestCase
         $this->assertSame(2, $r->data['value']);
     }
 
+    public function test_count_with_group_by_is_a_distinct_dimension_count(): void
+    {
+        // Two distinct products (A, B) across three sales rows.
+        $r = (new AggregateQueryTool())->execute(
+            ['entity' => 'sale', 'group_by' => 'product_name', 'operation' => 'count'],
+            new UnifiedActionContext('aq', null)
+        );
+
+        $this->assertSame('count_distinct', $r->data['operation']);
+        $this->assertSame(2, $r->data['value'], 'count + group_by = number of distinct dimension values.');
+    }
+
     public function test_units_sold_is_a_sum_not_a_row_count(): void
     {
         $r = $this->ask('how many units sold per product');

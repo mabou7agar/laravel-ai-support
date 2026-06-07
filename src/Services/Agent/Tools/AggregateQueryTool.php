@@ -47,7 +47,10 @@ class AggregateQueryTool extends DataQueryTool
             . 'status (e.g. "how much has Apollo Labs spent", "revenue for product X"), pass '
             . 'that value in `filters` (e.g. {"customer_name": "Apollo Labs"}) so you get that '
             . 'subset, NOT the whole-table total. Relative time ("this month", "today") is '
-            . 'applied automatically from the question.';
+            . 'applied automatically from the question. Also use this with `group_by` to list '
+            . 'the distinct values of a dimension or count them — "list invoice products" / '
+            . '"how many different products" → group_by the product column (operation=count '
+            . 'returns the distinct count).';
     }
 
     public function getParameters(): array
@@ -141,7 +144,7 @@ class AggregateQueryTool extends DataQueryTool
         $metric = $this->resolveMetric($parameters, $query, $config, $aggregatable, $table);
         $groupBy = $this->resolveGroupBy($parameters, $query, $config, $table);
         $direction = $this->resolveDirection($parameters, $query);
-        $limit = $this->resolveLimit($parameters, $operation, $groupBy);
+        $limit = $this->resolveLimit($parameters, $query, $operation, $groupBy);
 
         if ($operation !== 'count' && $metric === null) {
             if ($aggregatable === []) {
@@ -156,6 +159,12 @@ class AggregateQueryTool extends DataQueryTool
         }
 
         if ($groupBy !== null) {
+            // "how many invoice products" / "how many different customers" — count of DISTINCT
+            // dimension values, not COUNT(*) per group.
+            if ($operation === 'count') {
+                return $this->distinctCount($builder, $label, $groupBy, $appliedStatus);
+            }
+
             return $this->grouped($builder, $label, $operation, $metric, $groupBy, $direction, $limit, $appliedStatus);
         }
 
@@ -377,6 +386,25 @@ class AggregateQueryTool extends DataQueryTool
         ], ['tool' => $this->getName()]);
     }
 
+    private function distinctCount(Builder $builder, string $label, string $groupBy, ?string $status): ActionResult
+    {
+        $value = (int) (clone $builder)->distinct()->count($groupBy);
+        $dimension = str_replace('_', ' ', $groupBy);
+        $scope = $status !== null ? "{$status} {$label}" : $label;
+
+        return ActionResult::success(
+            sprintf('There are %s distinct %s across %s.', $this->num($value), $dimension, $scope),
+            [
+                'operation' => 'count_distinct',
+                'entity' => $label,
+                'group_by' => $groupBy,
+                'status' => $status,
+                'value' => $value,
+            ],
+            ['tool' => $this->getName()]
+        );
+    }
+
     private function grouped(Builder $builder, string $label, string $operation, ?string $metric, string $groupBy, string $direction, int $limit, ?string $status): ActionResult
     {
         $agg = in_array($operation, self::RECORD_OPS, true) ? 'sum' : $operation;
@@ -584,7 +612,7 @@ class AggregateQueryTool extends DataQueryTool
     /**
      * @param array<string, mixed> $parameters
      */
-    private function resolveLimit(array $parameters, string $operation, ?string $groupBy): int
+    private function resolveLimit(array $parameters, string $query, string $operation, ?string $groupBy): int
     {
         $maxLimit = (int) config('ai-engine.data_query.max_limit', 50);
         if (isset($parameters['limit']) && is_numeric($parameters['limit'])) {
@@ -594,6 +622,11 @@ class AggregateQueryTool extends DataQueryTool
         // Scalar whole-table aggregate ignores limit; ranked/grouped default to a small top-N.
         if ($groupBy === null && in_array($operation, self::SCALAR_OPS, true)) {
             return 1;
+        }
+
+        // "list all / every / each" wants the full breakdown, not just the top few.
+        if (preg_match('/\b(all|every|each|list|full|complete|entire)\b/', $query) === 1) {
+            return $maxLimit;
         }
 
         return 5;
