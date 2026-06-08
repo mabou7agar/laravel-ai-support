@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'responses' => [
+        'already_completed' => 'That action has already been completed.',
+        'context_noted' => 'I noted that context. Tell me what you want to do with it next.',
+        'more_information_required' => 'More information is required.',
+        'need_more_information' => 'I need more information to continue.',
+        'runtime_failed' => 'AI runtime failed.',
+        'confirmation_label' => 'Confirmation',
+        'change_label' => 'Change',
+    ],
+
     'common' => [
         'yes_label' => 'Yes',
         'no_label' => 'No',

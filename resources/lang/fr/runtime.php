@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'responses' => [
+        'already_completed' => 'Cette action a déjà été effectuée.',
+        'context_noted' => "J'ai noté ce contexte. Dites-moi ce que vous souhaitez faire ensuite.",
+        'more_information_required' => 'Des informations supplémentaires sont requises.',
+        'need_more_information' => "J'ai besoin de plus d'informations pour continuer.",
+        'runtime_failed' => "L'exécution de l'IA a échoué.",
+        'confirmation_label' => 'Confirmation',
+        'change_label' => 'Modifier',
+    ],
+
     'common' => [
         'yes_label' => 'Oui',
         'no_label' => 'Non',
