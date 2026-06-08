@@ -81,6 +81,26 @@ class AiNativeSubAgentHandlerTest extends TestCase
         $this->assertSame(['echo_tool'], $result->metadata['scoped_tools'] ?? null);
     }
 
+    public function test_salvages_a_tool_result_when_the_planner_does_not_converge(): void
+    {
+        SubAgentEchoTool::$calls = [];
+        // The plan calls the tool but never emits a `final`. With a 1-step budget the runtime
+        // executes the tool, then exhausts and would normally dead-end on the generic
+        // "I need more information to continue." (needsUserInput, no requiredInputs). The handler
+        // must instead surface the successful tool result — the convergence safety net.
+        $ai = $this->aiReturning(
+            ['action' => 'tool_call', 'tool' => 'echo_tool', 'arguments' => ['text' => 'hi']],
+        );
+
+        $result = $this->handler($this->tools(), $this->registry(), $ai)
+            ->handle($this->task(), new UnifiedActionContext('sa'), [], ['max_steps' => 1]);
+
+        $this->assertTrue($result->success, (string) ($result->error ?? $result->message));
+        $this->assertSame('Echoed: hi', $result->message, 'the computed tool result is surfaced, not a dead-end ask.');
+        $this->assertContains('echo_tool', SubAgentEchoTool::$calls);
+        $this->assertSame('tool_result_fallback', $result->metadata['converged_via'] ?? null);
+    }
+
     public function test_tools_outside_the_declared_set_are_not_callable(): void
     {
         SubAgentEchoTool::$calls = [];

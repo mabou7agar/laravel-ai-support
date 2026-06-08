@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent\SubAgents;
 
 use LaravelAIEngine\Contracts\SubAgentHandler;
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\SubAgentResult;
 use LaravelAIEngine\DTOs\SubAgentTask;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
@@ -78,6 +79,27 @@ class AiNativeSubAgentHandler implements SubAgentHandler
 
         $metadata = array_merge($response->metadata ?? [], ['sub_agent' => $task->agentId, 'scoped_tools' => $scopedTools]);
 
+        // Convergence safety net. The planner occasionally exhausts its step budget without
+        // emitting a final answer even though a tool already produced the result — it loops on
+        // "I have already calculated that" instead of finalizing. The runtime then returns a
+        // generic "I need more information to continue." (needsUserInput with no specific
+        // requiredInputs). For a domain agent that dead-ends a question whose answer is already
+        // in hand, so we salvage the last successful tool result rather than asking the user for
+        // nothing. A *genuine* ask (confirmation / a missing field) carries requiredInputs and is
+        // left untouched.
+        if ($response->needsUserInput && empty($response->requiredInputs)) {
+            $salvaged = $this->lastSuccessfulToolResult($response);
+            if ($salvaged !== null) {
+                return SubAgentResult::success(
+                    $task->id,
+                    $task->agentId,
+                    $salvaged['message'],
+                    $salvaged['data'],
+                    array_merge($metadata, ['converged_via' => 'tool_result_fallback'])
+                );
+            }
+        }
+
         if ($response->needsUserInput) {
             return SubAgentResult::needsUserInput($task->id, $task->agentId, $response->message, $response->data, $metadata);
         }
@@ -85,6 +107,40 @@ class AiNativeSubAgentHandler implements SubAgentHandler
         return $response->success
             ? SubAgentResult::success($task->id, $task->agentId, $response->message, $response->data, $metadata)
             : SubAgentResult::failure($task->id, $task->agentId, $response->message, $response->data, $metadata);
+    }
+
+    /**
+     * The most recent successfully-executed tool result from the run, as a usable answer.
+     * Returns null when no tool succeeded (nothing to salvage).
+     *
+     * @return array{message: string, data: array<string, mixed>|null}|null
+     */
+    private function lastSuccessfulToolResult(AgentResponse $response): ?array
+    {
+        $results = $response->metadata['ai_native']['tool_results'] ?? null;
+        if (!is_array($results)) {
+            return null;
+        }
+
+        for ($i = count($results) - 1; $i >= 0; $i--) {
+            $result = $results[$i]['result'] ?? null;
+            if (!is_array($result) || ($result['success'] ?? false) !== true) {
+                continue;
+            }
+
+            $message = trim((string) ($result['message'] ?? ''));
+            $data = is_array($result['data'] ?? null) ? $result['data'] : null;
+
+            if ($message === '' && $data !== null) {
+                $message = 'Result: ' . json_encode($data, JSON_UNESCAPED_UNICODE);
+            }
+
+            if ($message !== '') {
+                return ['message' => $message, 'data' => $data];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -116,17 +172,16 @@ class AiNativeSubAgentHandler implements SubAgentHandler
         return array_values(array_intersect($requested, $declared));
     }
 
+    /**
+     * Lead with the objective as the primary instruction — the closest shape to a normal user
+     * turn, which the planner finalizes most reliably. The persona is kept terse and trailing:
+     * a long capability list ("…and create invoices") tends to make the planner believe there is
+     * unfinished work and loop instead of answering. A persona is context, not the task.
+     */
     private function buildPrompt(SubAgentTask $task, array $previousResults): string
     {
         $definition = $this->registry?->get($task->agentId) ?? [];
-        $lines = [];
-
-        $persona = trim((string) ($definition['description'] ?? $definition['name'] ?? ''));
-        if ($persona !== '') {
-            $lines[] = "You are the {$task->agentId} agent. {$persona}";
-        }
-
-        $lines[] = 'Task: ' . $task->objective;
+        $lines = [$task->objective];
 
         if ($task->input !== []) {
             $lines[] = 'Input: ' . json_encode($task->input, JSON_UNESCAPED_UNICODE);
@@ -137,6 +192,10 @@ class AiNativeSubAgentHandler implements SubAgentHandler
                 JSON_UNESCAPED_UNICODE
             );
         }
+
+        $persona = trim((string) ($definition['description'] ?? $definition['name'] ?? ''));
+        $note = $persona !== '' ? "You are the {$task->agentId} agent — {$persona} " : '';
+        $lines[] = "\n({$note}Use your tools to answer, then give the final answer directly.)";
 
         return implode("\n", $lines);
     }

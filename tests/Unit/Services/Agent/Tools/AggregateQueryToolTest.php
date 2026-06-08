@@ -202,6 +202,23 @@ class AggregateQueryToolTest extends TestCase
         $this->assertTrue($r->success);
         $this->assertSame('amount', $r->data['metric'], 'a non-allowlisted metric must not be used.');
     }
+
+    public function test_public_model_is_not_user_scoped(): void
+    {
+        // Every order belongs to user "9". Aggregating with a caller context for user "7" (who
+        // owns none) must STILL see all rows — `public => true` means unscoped. Before this fix
+        // applyScope() added `where('user_id', '7')` regardless of `public`, silently zeroing the
+        // result (the exact bug that made a domain agent answer "0" for "how much has X spent").
+        AqOrder::query()->update(['user_id' => '9']);
+
+        $r = $this->tool()->execute(
+            ['query' => 'total revenue for orders'],
+            new UnifiedActionContext('aq', '7')
+        );
+
+        $this->assertTrue($r->success);
+        $this->assertEqualsWithDelta(700.0, $r->data['value'], 0.001, 'a public model must not be user-scoped.');
+    }
 }
 
 class AqOrder extends Model
