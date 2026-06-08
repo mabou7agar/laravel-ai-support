@@ -261,6 +261,28 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringNotContainsString('same language as the latest user message', $prompt);
     }
 
+    public function test_build_parts_splits_into_stable_system_and_dynamic_body(): void
+    {
+        $tools = new ToolRegistry();
+        $tools->register('find_customer', $this->tool('find_customer'));
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $builder = new AiNativePromptBuilder($tools, $skills);
+        $ctx = new UnifiedActionContext('prompt-parts');
+
+        $full = $builder->build('Look up Acme', $ctx, [], []);
+        $parts = $builder->buildParts('Look up Acme', $ctx, [], []);
+
+        // Re-joining the two parts reproduces build() byte-for-byte (model sees same content).
+        $this->assertSame($full, $parts['system'] . "\n\n" . $parts['body']);
+        // Stable prefix holds the runtime rules; dynamic body holds the per-turn data + message.
+        $this->assertStringContainsString('AI_NATIVE_AGENT_RUNTIME', $parts['system']);
+        $this->assertStringNotContainsString('Available skills JSON:', $parts['system']);
+        $this->assertStringStartsWith('Available skills JSON:', $parts['body']);
+        $this->assertStringContainsString('Look up Acme', $parts['body']);
+    }
+
     private function tool(string $name): AgentTool
     {
         return new class($name) extends AgentTool {

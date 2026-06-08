@@ -123,7 +123,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
             $payload = $this->buildChatPayload($request, $messages);
 
             if ($request->getSystemPrompt()) {
-                $payload['system'] = $request->getSystemPrompt();
+                $payload['system'] = $this->systemPayload($request);
             }
 
             $this->applyStreamingToolPayload($payload, $request);
@@ -206,7 +206,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
             ];
 
             if ($request->getSystemPrompt()) {
-                $payload['system'] = $request->getSystemPrompt();
+                $payload['system'] = $this->systemPayload($request);
             }
 
             $response = $this->httpClient->post('/v1/messages', [
@@ -329,6 +329,29 @@ class AnthropicEngineDriver extends BaseEngineDriver
         if (!empty($split['mcp_servers'])) {
             $payload['mcp_servers'] = $split['mcp_servers'];
         }
+    }
+
+    /**
+     * Anthropic `system` field. When prompt caching is enabled (default) and a system prompt is
+     * present, send it as a content block marked `cache_control: ephemeral` so Anthropic caches
+     * this stable prefix across the steps of a turn (and across turns within the cache TTL).
+     * Blocks below Anthropic's minimum cacheable size are simply not cached — no error — so this
+     * is safe to leave on. Falls back to a plain string when caching is disabled.
+     *
+     * @return string|array<int, array<string, mixed>>
+     */
+    private function systemPayload(AIRequest $request): string|array
+    {
+        $system = (string) $request->getSystemPrompt();
+        if ($system === '' || !(bool) config('ai-engine.engines.anthropic.prompt_caching', true)) {
+            return $system;
+        }
+
+        return [[
+            'type' => 'text',
+            'text' => $system,
+            'cache_control' => ['type' => 'ephemeral'],
+        ]];
     }
 
     private function buildRequestHeaders(AIRequest $request): array

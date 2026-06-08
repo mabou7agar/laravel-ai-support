@@ -768,6 +768,9 @@ return [
             'api_key' => env('ANTHROPIC_API_KEY'),
             'base_url' => env('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
             'timeout' => env('ANTHROPIC_TIMEOUT', 30),
+            // Send the system prompt as a cache_control: ephemeral block so Anthropic caches the
+            // stable instruction prefix (OpenAI auto-caches its prefix; Anthropic needs this).
+            'prompt_caching' => env('AI_ENGINE_ANTHROPIC_PROMPT_CACHING', true),
             'models' => [
                 'claude-4-sonnet' => ['enabled' => true, 'credit_index' => 4.0],
                 'claude-3-5-sonnet-20241022' => ['enabled' => true, 'credit_index' => 2.0],
