@@ -94,7 +94,7 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
     {
         $modelClass = $this->modelClass();
         if (!$this->tableExists($modelClass)) {
-            return ActionResult::failure('The requested records are not available.', [
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.records_unavailable', 'The requested records are not available.'), [
                 'success' => false,
                 'message' => 'The requested records are not available.',
             ]);

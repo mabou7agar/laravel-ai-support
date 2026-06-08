@@ -117,7 +117,7 @@ abstract class ModelBackedLookupTool extends AgentTool
     {
         $modelClass = $this->modelClass();
         if (!$this->tableExists($modelClass)) {
-            return ActionResult::failure('The requested records are not available.', [
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.records_unavailable', 'The requested records are not available.'), [
                 'found' => false,
                 'message' => 'The requested records are not available.',
             ]);
@@ -125,7 +125,7 @@ abstract class ModelBackedLookupTool extends AgentTool
 
         $queryText = $this->queryText($parameters, ['query', 'name', 'email', 'title']);
         if ($queryText === '') {
-            return ActionResult::failure('Search query is required.', [
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.search_query_required', 'Search query is required.'), [
                 'found' => false,
                 'message' => 'Search query is required.',
                 'required_fields' => ['query'],
@@ -145,7 +145,7 @@ abstract class ModelBackedLookupTool extends AgentTool
         ));
 
         if ($searchable === []) {
-            return ActionResult::failure('No searchable columns are available for this record type.', [
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.no_searchable_columns', 'No searchable columns are available for this record type.'), [
                 'found' => false,
                 'message' => 'No searchable columns are available for this record type.',
             ]);
@@ -169,7 +169,7 @@ abstract class ModelBackedLookupTool extends AgentTool
                 unset($payload['required_fields']);
             }
 
-            return ActionResult::failure('Record was not found.', $payload);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.record_not_found', 'Record was not found.'), $payload);
         }
 
         return ActionResult::success(

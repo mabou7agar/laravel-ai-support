@@ -75,7 +75,7 @@ class DataQueryTool extends AgentTool
         $limit = max(1, min($maxLimit, (int) ($parameters['limit'] ?? 10)));
 
         if ($query === '') {
-            return ActionResult::needsUserInput('What would you like to look up?');
+            return ActionResult::needsUserInput($this->localize('ai-engine::runtime.tools.what_to_look_up', 'What would you like to look up?'));
         }
 
         $entities = $this->entities();
@@ -86,8 +86,8 @@ class DataQueryTool extends AgentTool
 
             return ActionResult::needsUserInput(
                 $known === ''
-                    ? 'No queryable data models are configured.'
-                    : "I can look up: {$known}. Which one, and do you want a count or a list?"
+                    ? $this->localize('ai-engine::runtime.tools.no_data_models', 'No queryable data models are configured.')
+                    : $this->localize('ai-engine::runtime.tools.which_entity_lookup', 'I can look up: :entities. Which one, and do you want a count or a list?', [':entities' => $known])
             );
         }
 

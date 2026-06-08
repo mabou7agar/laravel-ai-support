@@ -68,7 +68,7 @@ class AnalyzeFileTool extends AgentTool
     {
         $resolved = $this->resolvePath((string) ($parameters['path'] ?? ''));
         if ($resolved === null) {
-            return ActionResult::failure('That file path is not allowed or does not exist.', ['analyzed' => false]);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.file_not_allowed', 'That file path is not allowed or does not exist.'), ['analyzed' => false]);
         }
 
         $extension = strtolower((string) pathinfo($resolved, PATHINFO_EXTENSION));
@@ -78,7 +78,7 @@ class AnalyzeFileTool extends AgentTool
 
         $maxBytes = (int) config('ai-engine.file_analysis.max_bytes', 10 * 1024 * 1024);
         if (($size = @filesize($resolved)) === false || $size > $maxBytes) {
-            return ActionResult::failure('That file is too large to analyze.', ['analyzed' => false]);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.file_too_large', 'That file is too large to analyze.'), ['analyzed' => false]);
         }
 
         $name = (string) ($parameters['original_name'] ?? basename($resolved));
@@ -88,7 +88,7 @@ class AnalyzeFileTool extends AgentTool
                 ? $this->fileService()->extractImageText($resolved)
                 : $this->fileService()->extractTextFromPath($resolved, $extension);
         } catch (\Throwable $e) {
-            return ActionResult::failure('The file could not be read.', ['analyzed' => false]);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.file_unreadable', 'The file could not be read.'), ['analyzed' => false]);
         }
 
         $suggestions = $this->withRegisteredActionsOnly($this->fileService()->suggestActions($content, $name));
