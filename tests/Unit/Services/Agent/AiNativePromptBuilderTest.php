@@ -237,6 +237,30 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringNotContainsString('you MUST call the search_knowledge tool', $unforced);
     }
 
+    public function test_prompt_instructs_reply_in_user_language_by_default(): void
+    {
+        config()->set('ai-agent.ai_native.respond_in_user_language', true);
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $prompt = (new AiNativePromptBuilder(new ToolRegistry(), $skills))
+            ->build('Combien Apollo Labs a-t-il dépensé ?', new UnifiedActionContext('prompt-lang'), [], []);
+
+        $this->assertStringContainsString('same language as the latest user message', $prompt);
+    }
+
+    public function test_reply_language_instruction_can_be_disabled(): void
+    {
+        config()->set('ai-agent.ai_native.respond_in_user_language', false);
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $prompt = (new AiNativePromptBuilder(new ToolRegistry(), $skills))
+            ->build('Combien ?', new UnifiedActionContext('prompt-lang-off'), [], []);
+
+        $this->assertStringNotContainsString('same language as the latest user message', $prompt);
+    }
+
     private function tool(string $name): AgentTool
     {
         return new class($name) extends AgentTool {

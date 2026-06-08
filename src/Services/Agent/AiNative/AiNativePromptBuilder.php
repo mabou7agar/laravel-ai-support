@@ -12,6 +12,7 @@ use LaravelAIEngine\Services\Agent\Tools\Selectors\SemanticToolSelector;
 use LaravelAIEngine\Services\Agent\Tools\Selectors\SkillScopedToolSelector;
 use LaravelAIEngine\Services\Agent\Tools\Selectors\ToolSelectorContract;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 class AiNativePromptBuilder
 {
@@ -116,6 +117,26 @@ class AiNativePromptBuilder
             }
         }
 
+        if ($this->respondInUserLanguage($options)) {
+            // Most agent output is free text the model writes (the "message" field, questions,
+            // summaries), so without an explicit instruction the reply language is left to chance.
+            // Mirror the user's message language — this covers languages we ship no static
+            // translations for — and fall back to the resolved app/request locale when ambiguous.
+            $anchor = array_search('Return JSON only. No markdown.', $lines, true);
+            $instruction = sprintf(
+                'Write every user-facing string (the "message" field, "reasoning", questions, '
+                . 'and summaries) in the same language as the latest user message. If the message '
+                . 'language is ambiguous (e.g. only numbers or an ID), use %s. Do not translate tool '
+                . 'names, JSON keys, IDs, emails, or code.',
+                $this->responseLanguageName($context, $options)
+            );
+            if ($anchor === false) {
+                $lines[] = $instruction;
+            } else {
+                array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
         // A concrete worked example carries far more weight than prose for a
         // low-temperature planner: it mirrors the "Allowed JSON shapes" examples
         // (which omit these fields) so the model actually emits them every turn.
@@ -166,8 +187,33 @@ class AiNativePromptBuilder
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @param array<string, mixed> $options
      */
+    private function respondInUserLanguage(array $options = []): bool
+    {
+        if (array_key_exists('respond_in_user_language', $options) && $options['respond_in_user_language'] !== null) {
+            return (bool) $options['respond_in_user_language'];
+        }
+
+        return (bool) config('ai-agent.ai_native.respond_in_user_language', true);
+    }
+
+    /**
+     * Human-readable name of the locale to fall back to when the user's message language is
+     * ambiguous. Honors an explicit options/context locale, else the resolved app/request locale.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function responseLanguageName(UnifiedActionContext $context, array $options = []): string
+    {
+        $locale = $options['locale']
+            ?? $options['language']
+            ?? ($context->metadata['locale'] ?? null)
+            ?? null;
+
+        return app(LocaleResourceService::class)->languageName(is_string($locale) ? $locale : null);
+    }
+
     /**
      * @param array<string, mixed> $state
      * @param array<string, mixed> $options
