@@ -220,6 +220,12 @@ return [
         // event. Default OFF preserves current behavior (no reasoning field
         // requested, metadata unchanged).
         'expose_reasoning' => (bool) env('AI_AGENT_AI_NATIVE_EXPOSE_REASONING', false),
+        // Reply in the user's language. When ON (default), the planner prompt instructs the
+        // model to write all user-facing text (message/reasoning/questions/summaries) in the
+        // same language as the latest user message — covering languages the package ships no
+        // static translations for — falling back to the resolved app/request locale when the
+        // message language is ambiguous. Set false to leave reply language to the model.
+        'respond_in_user_language' => (bool) env('AI_AGENT_AI_NATIVE_RESPOND_IN_USER_LANGUAGE', true),
         // Live plan timeline (TodoWrite analog): when ON, the planner prompt asks
         // the model to optionally include a "steps":["..."] array (the intended
         // remaining steps) in its JSON plan. The latest steps + a current index are
