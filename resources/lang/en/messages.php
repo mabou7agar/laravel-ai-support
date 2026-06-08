@@ -27,5 +27,22 @@ return [
 
     'structured_collection' => [
         'awaiting_confirmation' => "Please confirm the collected data:\n:summary",
+        'fields' => [
+            'name' => 'Name',
+            'full_name' => 'Full name',
+            'first_name' => 'First name',
+            'last_name' => 'Last name',
+            'email' => 'Email',
+            'phone' => 'Phone',
+            'topic' => 'Topic',
+            'subject' => 'Subject',
+            'message' => 'Message',
+            'company' => 'Company',
+            'address' => 'Address',
+            'city' => 'City',
+            'country' => 'Country',
+            'date' => 'Date',
+            'budget' => 'Budget',
+        ],
     ],
 ];

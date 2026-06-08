@@ -27,5 +27,22 @@ return [
 
     'structured_collection' => [
         'awaiting_confirmation' => "يرجى تأكيد البيانات التالية:\n:summary",
+        'fields' => [
+            'name' => 'الاسم',
+            'full_name' => 'الاسم الكامل',
+            'first_name' => 'الاسم الأول',
+            'last_name' => 'اسم العائلة',
+            'email' => 'البريد الإلكتروني',
+            'phone' => 'الهاتف',
+            'topic' => 'الموضوع',
+            'subject' => 'الموضوع',
+            'message' => 'الرسالة',
+            'company' => 'الشركة',
+            'address' => 'العنوان',
+            'city' => 'المدينة',
+            'country' => 'البلد',
+            'date' => 'التاريخ',
+            'budget' => 'الميزانية',
+        ],
     ],
 ];
