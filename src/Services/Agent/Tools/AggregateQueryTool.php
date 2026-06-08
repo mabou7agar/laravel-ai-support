@@ -370,7 +370,10 @@ class AggregateQueryTool extends DataQueryTool
         $metricLabel = str_replace('_', ' ', (string) $metric);
         $message = match ($operation) {
             'count' => sprintf('You have %s %s.', $this->num($value), $scope),
-            'sum' => sprintf('Total %s across all %s: %s.', $metricLabel, $scope, $this->num($value)),
+            // Avoid "Total total ..." when the money column is literally named `total`.
+            'sum' => $metricLabel === 'total'
+                ? sprintf('Total across all %s: %s.', $scope, $this->num($value))
+                : sprintf('Total %s across all %s: %s.', $metricLabel, $scope, $this->num($value)),
             'avg' => sprintf('Average %s per %s: %s.', $metricLabel, Str::singular($scope), $this->num($value)),
             'min' => sprintf('Lowest %s among %s: %s.', $metricLabel, $scope, $this->num($value)),
             'max' => sprintf('Highest %s among %s: %s.', $metricLabel, $scope, $this->num($value)),

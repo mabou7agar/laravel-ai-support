@@ -203,6 +203,24 @@ class AggregateQueryToolTest extends TestCase
         $this->assertSame('amount', $r->data['metric'], 'a non-allowlisted metric must not be used.');
     }
 
+    public function test_sum_message_does_not_duplicate_the_word_total(): void
+    {
+        // When the money column is literally named `total` (common for invoices), the sum
+        // message must read "Total across all ..." not "Total total across all ...".
+        \Illuminate\Support\Facades\Schema::table('aq_orders', function ($t): void {
+            $t->decimal('total', 10, 2)->default(0);
+        });
+        \Illuminate\Support\Facades\DB::table('aq_orders')->update(['total' => 100]);
+        config()->set('ai-engine.data_query.models.order.aggregatable', ['amount', 'total']);
+
+        $r = $this->aggregate(['query' => 'total revenue for orders', 'metric' => 'total', 'operation' => 'sum']);
+
+        $this->assertTrue($r->success);
+        $this->assertSame('total', $r->data['metric']);
+        $this->assertStringNotContainsString('Total total', $r->message);
+        $this->assertStringContainsString('Total across all', $r->message);
+    }
+
     public function test_public_model_is_not_user_scoped(): void
     {
         // Every order belongs to user "9". Aggregating with a caller context for user "7" (who

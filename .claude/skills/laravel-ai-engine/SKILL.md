@@ -98,8 +98,13 @@ source-grounded guide. Everything below references real `LaravelAIEngine\…` cl
   `ToolRegistry` of those tools — the planner can't call anything else). The other handlers
   (`tool`/`ToolCallingSubAgentHandler`, conversational) do NOT NL-plan tool calls. Multi-turn
   confirm flows are still best as a top-level skill, not a delegated sub-agent.
-- Convergence safety net: if the planner runs a tool successfully but then fails to finalize
-  (loops, exhausts steps → "I need more information"), the handler surfaces the last successful
+- Runs skill-free: a domain agent does NOT inherit the global skills (reasons over its declared
+  tools only). Otherwise the matcher could match a global skill from the persona text (an
+  "invoice" agent → invoice-create skill) and that skill's required-final-tool guard would block
+  a read-only answer until its write tool ran — looping to exhaustion. No skills → finalizes
+  normally. (`EmptySkillRegistry`.)
+- Convergence safety net (backstop): if the planner still runs a tool successfully but fails to
+  finalize (exhausts steps → "I need more information"), the handler surfaces the last successful
   tool result as the answer (`metadata.converged_via = 'tool_result_fallback'`). Genuine asks
   (carrying `requiredInputs`) pass through untouched.
 - Data scope: a domain agent runs with the caller's context (often a real `userId`), and
