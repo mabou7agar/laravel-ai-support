@@ -2721,7 +2721,7 @@ This is the lowest-risk reduction—the active skill is re-matched every turn, s
     'always' => ['search_knowledge', 'data_query'],
 ],
 ```
-Cheap and deterministic (no embeddings). Falls back to all tools if no lexical signal is detected.
+Cheap and deterministic (no embeddings). Falls back to the (bounded) full set if no lexical signal is detected — see *Bounded fail-open* below.
 
 **Semantic** — Embedding-based top-K selection: embed the message and each tool's name+description, rank by cosine similarity:
 ```php
@@ -2731,7 +2731,25 @@ Cheap and deterministic (no embeddings). Falls back to all tools if no lexical s
     'always' => ['search_knowledge', 'data_query'],
 ],
 ```
-Most expensive (one embedding call per turn), but most accurate for large, unrelated tool registries. Tool embeddings are cached (by name and description), so only the message is embedded each turn. Fails open: if embedding is unavailable, all tools are exposed.
+Most expensive (one embedding call per turn), but most accurate for large, unrelated tool registries. Tool embeddings are cached (by name and description), so only the message is embedded each turn. Fails open if embedding is unavailable — bounded, per below.
+
+### Bounded fail-open
+
+The `keyword` and `semantic` selectors **fail open** on a no-signal turn — an empty/greeting message, no lexical match, or an embedding error — so the planner is never starved of tools. With a small registry that's harmless, but with a large one (e.g. 1000 `AiResource` tools) dumping every schema would blow the context window right back up, defeating the point of selecting. The fallback is therefore **capped**:
+
+```php
+'tool_selection' => [
+    'strategy'       => 'semantic',
+    'limit'          => 12,   // top-K on a *matched* turn
+    'fallback_limit' => 50,   // hard cap on a *no-signal* turn (core + first 50); null = legacy unbounded
+],
+```
+
+- Registry size `<= fallback_limit` → the full set is exposed (unchanged behavior; small apps see no difference).
+- Registry size `> fallback_limit` → only the always-on core plus the first `fallback_limit` tools, so even a greeting stays bounded.
+- `fallback_limit => null` restores the legacy unbounded fail-open.
+
+Measured at 1000 tools with `strategy: keyword`: a no-signal turn drops from **~237k tokens** (unbounded) to **~14.5k tokens** (`fallback_limit: 50`). For very large registries, also turn on `disclosure: 'progressive'` so even the capped fallback lists by name+summary only.
 
 ### Progressive Disclosure
 

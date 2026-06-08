@@ -12,6 +12,8 @@ namespace LaravelAIEngine\Services\Agent\Tools\Selectors;
  */
 class KeywordToolSelector implements ToolSelectorContract
 {
+    use SelectsBoundedTools;
+
     /** @var array<int, string> */
     private const STOP_WORDS = [
         'the', 'and', 'for', 'with', 'this', 'that', 'you', 'your', 'are', 'was', 'will',
@@ -36,7 +38,7 @@ class KeywordToolSelector implements ToolSelectorContract
 
         $terms = $this->terms($message);
         if ($terms === []) {
-            return $tools;
+            return $this->fallbackTools($tools);
         }
 
         $scored = [];
@@ -48,8 +50,8 @@ class KeywordToolSelector implements ToolSelectorContract
         }
 
         if ($scored === []) {
-            // No lexical signal at all — don't hide everything; expose the full set.
-            return $tools;
+            // No lexical signal at all — don't hide everything; expose the (bounded) full set.
+            return $this->fallbackTools($tools);
         }
 
         arsort($scored);
@@ -97,17 +99,6 @@ class KeywordToolSelector implements ToolSelectorContract
         return array_values(array_unique(array_filter(
             $tokens,
             static fn (string $t): bool => strlen($t) >= 3 && !in_array($t, self::STOP_WORDS, true)
-        )));
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function core(): array
-    {
-        return array_values(array_filter(array_map(
-            static fn (mixed $name): string => trim((string) $name),
-            (array) config('ai-agent.ai_native.tool_selection.always', ['search_knowledge', 'data_query'])
         )));
     }
 }

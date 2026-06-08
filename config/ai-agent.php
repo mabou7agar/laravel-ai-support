@@ -298,6 +298,13 @@ return [
             'strategy' => env('AI_AGENT_TOOL_SELECTION', 'all'),
             'always' => ['search_knowledge', 'data_query'],
             'limit' => (int) env('AI_AGENT_TOOL_SELECTION_LIMIT', 12),
+            // Bounded fail-open. The keyword/semantic selectors fall open (expose the full set)
+            // on a no-signal turn — empty/greeting message, no match, or an embedding error — so
+            // the planner is never starved. With a large registry that would dump every schema
+            // into the prompt, so the fallback is capped: the full set when the registry is
+            // <= fallback_limit (unchanged behavior), otherwise core + the first fallback_limit
+            // tools. Set to null to restore the legacy unbounded fail-open.
+            'fallback_limit' => env('AI_AGENT_TOOL_SELECTION_FALLBACK_LIMIT', 50),
             // 'full' (default) injects each selected tool's full schema; 'progressive'
             // lists tools by name + summary only and registers a find_tools meta-tool the
             // planner calls to load a tool's full parameters on demand.

@@ -19,6 +19,8 @@ use LaravelAIEngine\Services\Vector\EmbeddingService;
  */
 class SemanticToolSelector implements ToolSelectorContract
 {
+    use SelectsBoundedTools;
+
     public function __construct(private readonly EmbeddingService $embeddings)
     {
     }
@@ -27,7 +29,7 @@ class SemanticToolSelector implements ToolSelectorContract
     {
         $message = trim($message);
         if ($message === '') {
-            return $tools;
+            return $this->fallbackTools($tools);
         }
 
         $limit = max(1, (int) config('ai-agent.ai_native.tool_selection.limit', 12));
@@ -44,7 +46,7 @@ class SemanticToolSelector implements ToolSelectorContract
         }
 
         if ($candidates === []) {
-            return $tools;
+            return $this->fallbackTools($tools);
         }
 
         try {
@@ -58,7 +60,9 @@ class SemanticToolSelector implements ToolSelectorContract
                 );
             }
         } catch (\Throwable) {
-            return $tools;
+            // Embedding unavailable/errored — fail open, but bounded so a large registry
+            // doesn't dump every schema into the prompt.
+            return $this->fallbackTools($tools);
         }
 
         arsort($scored);
@@ -82,16 +86,5 @@ class SemanticToolSelector implements ToolSelectorContract
         $key = 'ai-engine:tool-embedding:' . sha1($name . '|' . $tool->getDescription());
 
         return Cache::rememberForever($key, fn (): array => $this->embeddings->embed($text));
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function core(): array
-    {
-        return array_values(array_filter(array_map(
-            static fn (mixed $name): string => trim((string) $name),
-            (array) config('ai-agent.ai_native.tool_selection.always', ['search_knowledge', 'data_query'])
-        )));
     }
 }
