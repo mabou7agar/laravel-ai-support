@@ -19,6 +19,8 @@ use Throwable;
 
 class AiNativeRuntime
 {
+    use TranslatesRuntimeText;
+
     private AiNativePromptBuilder $promptBuilder;
     private AiNativeResponseParser $parser;
     private ToolResultAuthorityService $authority;
@@ -202,7 +204,7 @@ class AiNativeRuntime
                     $preview = $this->confirmationPreview->preview($tool, $arguments, $context);
                     $previewResult = $preview['result'];
                     if ($previewResult instanceof ActionResult && (!$previewResult->success || $previewResult->requiresUserInput())) {
-                        return $this->responses->needsUserInput($context, $state, $previewResult->message ?? $previewResult->error ?? 'More information is required.', (array) ($previewResult->metadata['required_inputs'] ?? []), [
+                        return $this->responses->needsUserInput($context, $state, $previewResult->message ?? $previewResult->error ?? $this->runtimeText('ai-engine::runtime.responses.more_information_required', 'More information is required.'), (array) ($previewResult->metadata['required_inputs'] ?? []), [
                             'tool_name' => $toolName,
                             'tool_result' => $previewResult->toArray(),
                         ]);
@@ -300,7 +302,7 @@ class AiNativeRuntime
             ]);
         }
 
-        return $this->responses->needsUserInput($context, $state, 'I need more information to continue.');
+        return $this->responses->needsUserInput($context, $state, $this->runtimeText('ai-engine::runtime.responses.need_more_information', 'I need more information to continue.'));
     }
 
     /**
@@ -321,12 +323,12 @@ class AiNativeRuntime
         } catch (Throwable $exception) {
             return [
                 'action' => 'ask_user',
-                'message' => $exception->getMessage() !== '' ? $exception->getMessage() : 'AI runtime failed.',
+                'message' => $exception->getMessage() !== '' ? $exception->getMessage() : $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.'),
             ];
         }
 
         if (!$response->isSuccessful()) {
-            return ['action' => 'ask_user', 'message' => $response->getError() ?? 'AI runtime failed.'];
+            return ['action' => 'ask_user', 'message' => $response->getError() ?? $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.')];
         }
 
         return $this->parser->parse($response->getContent());

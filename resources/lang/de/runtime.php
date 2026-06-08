@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'responses' => [
+        'already_completed' => 'Diese Aktion wurde bereits ausgeführt.',
+        'context_noted' => 'Ich habe diesen Kontext notiert. Sagen Sie mir, was Sie als Nächstes damit tun möchten.',
+        'more_information_required' => 'Weitere Informationen sind erforderlich.',
+        'need_more_information' => 'Ich benötige weitere Informationen, um fortzufahren.',
+        'runtime_failed' => 'Die KI-Laufzeit ist fehlgeschlagen.',
+        'confirmation_label' => 'Bestätigung',
+        'change_label' => 'Ändern',
+    ],
+
     'common' => [
         'yes_label' => 'Ja',
         'no_label' => 'Nein',

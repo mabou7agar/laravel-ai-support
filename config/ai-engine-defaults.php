@@ -381,7 +381,9 @@ return [
         'user_locale_keys' => ['locale', 'language'],
         'supported_locales' => array_values(array_filter(array_map(
             static fn ($locale): string => trim((string) $locale),
-            explode(',', (string) env('AI_ENGINE_SUPPORTED_LOCALES', 'en,ar'))
+            // The package ships full translations for en, ar, de, es, fr, pt — all are
+            // resolvable via app/request locale by default. Override via env to restrict.
+            explode(',', (string) env('AI_ENGINE_SUPPORTED_LOCALES', 'en,ar,de,es,fr,pt'))
         ))),
         'rtl_locales' => array_values(array_filter(array_map(
             static fn ($locale): string => trim((string) $locale),

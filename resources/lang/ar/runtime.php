@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'responses' => [
+        'already_completed' => 'تم تنفيذ هذا الإجراء بالفعل.',
+        'context_noted' => 'لقد دوّنت هذا السياق. أخبرني بما تريد فعله به بعد ذلك.',
+        'more_information_required' => 'مطلوب مزيد من المعلومات.',
+        'need_more_information' => 'أحتاج إلى مزيد من المعلومات للمتابعة.',
+        'runtime_failed' => 'فشل تشغيل الذكاء الاصطناعي.',
+        'confirmation_label' => 'التأكيد',
+        'change_label' => 'تغيير',
+    ],
+
     'common' => [
         'yes_label' => 'نعم',
         'no_label' => 'لا',

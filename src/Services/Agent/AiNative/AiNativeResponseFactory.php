@@ -11,6 +11,8 @@ use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class AiNativeResponseFactory
 {
+    use TranslatesRuntimeText;
+
     public function __construct(
         private readonly AiNativeStateStore $stateStore,
         private readonly ToolRegistry $tools,
@@ -35,7 +37,7 @@ class AiNativeResponseFactory
     {
         $this->stateStore->put($context, $state);
 
-        return $this->success($context, $state, 'That action has already been completed.', [
+        return $this->success($context, $state, $this->runtimeText('ai-engine::runtime.responses.already_completed', 'That action has already been completed.'), [
             'already_completed' => true,
         ]);
     }
@@ -47,7 +49,7 @@ class AiNativeResponseFactory
     {
         $this->stateStore->put($context, $state);
 
-        return $this->success($context, $state, 'I noted that context. Tell me what you want to do with it next.', [
+        return $this->success($context, $state, $this->runtimeText('ai-engine::runtime.responses.context_noted', 'I noted that context. Tell me what you want to do with it next.'), [
             'awaiting_action_request' => true,
         ]);
     }
@@ -103,11 +105,11 @@ class AiNativeResponseFactory
         return $this->needsUserInput($context, $state, $message, [[
             'name' => 'confirmation',
             'type' => 'select',
-            'label' => 'Confirmation',
+            'label' => $this->runtimeText('ai-engine::runtime.responses.confirmation_label', 'Confirmation'),
             'required' => true,
             'options' => [
-                ['value' => 'confirm', 'label' => 'Confirm'],
-                ['value' => 'change', 'label' => 'Change'],
+                ['value' => 'confirm', 'label' => $this->runtimeText('ai-engine::runtime.common.confirm_label', 'Confirm')],
+                ['value' => 'change', 'label' => $this->runtimeText('ai-engine::runtime.responses.change_label', 'Change')],
             ],
         ]], [
             'pending_tool' => [
