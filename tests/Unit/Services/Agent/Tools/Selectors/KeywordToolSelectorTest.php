@@ -88,4 +88,35 @@ class KeywordToolSelectorTest extends UnitTestCase
         // A greeting has no meaningful terms -> expose everything rather than starve.
         $this->assertSame($tools, (new KeywordToolSelector())->select($tools, 'Hi there', [], []));
     }
+
+    public function test_bounded_fallback_caps_a_large_registry_on_a_no_signal_turn(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.fallback_limit', 5);
+
+        $map = ['search_knowledge' => 'Search the knowledge base.'];
+        for ($i = 0; $i < 30; $i++) {
+            $map["widget_tool_{$i}"] = "Manage widget {$i}.";
+        }
+        $tools = $this->tools($map);
+
+        // A no-signal turn over 31 tools must NOT dump them all — it is capped to fallback_limit,
+        // and the always-on core is always present.
+        $selected = (new KeywordToolSelector())->select($tools, 'Hi there', [], []);
+
+        $this->assertCount(5, $selected);
+        $this->assertArrayHasKey('search_knowledge', $selected, 'core is always exposed, even when capped.');
+    }
+
+    public function test_fallback_limit_null_restores_unbounded_fail_open(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.fallback_limit', null);
+
+        $map = ['search_knowledge' => 'kb'];
+        for ($i = 0; $i < 30; $i++) {
+            $map["widget_tool_{$i}"] = "Manage widget {$i}.";
+        }
+        $tools = $this->tools($map);
+
+        $this->assertSame($tools, (new KeywordToolSelector())->select($tools, 'Hi there', [], []));
+    }
 }
