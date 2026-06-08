@@ -1,6 +1,25 @@
 <?php
 
 return [
+    'tools' => [
+        'what_to_calculate' => 'O que gostaria de calcular?',
+        'what_to_look_up' => 'O que gostaria de consultar?',
+        'no_data_models' => 'Não há modelos de dados consultáveis configurados.',
+        'which_entity_calculate' => 'Posso analisar: :entities. Qual deles?',
+        'which_entity_lookup' => 'Posso consultar: :entities. Qual deles e pretende uma contagem ou uma lista?',
+        'which_metric' => 'Que valor devo usar? Opções: :options.',
+        'records_unavailable' => 'Os registos solicitados não estão disponíveis.',
+        'search_query_required' => 'É necessário um termo de pesquisa.',
+        'no_searchable_columns' => 'Não há colunas pesquisáveis disponíveis para este tipo de registo.',
+        'record_not_found' => 'O registo não foi encontrado.',
+        'record_type_unavailable' => 'Este tipo de registo não está disponível.',
+        'kb_query_required' => 'É necessária uma consulta não vazia para pesquisar na base de conhecimento.',
+        'kb_no_result' => 'A base de conhecimento não devolveu nenhum resultado utilizável para esta consulta.',
+        'file_not_allowed' => 'Esse caminho de ficheiro não é permitido ou não existe.',
+        'file_too_large' => 'Esse ficheiro é demasiado grande para analisar.',
+        'file_unreadable' => 'Não foi possível ler o ficheiro.',
+    ],
+
     'responses' => [
         'already_completed' => 'Essa ação já foi concluída.',
         'context_noted' => 'Tomei nota desse contexto. Diga-me o que pretende fazer a seguir.',

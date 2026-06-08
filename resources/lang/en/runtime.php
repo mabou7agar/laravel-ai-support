@@ -1,6 +1,25 @@
 <?php
 
 return [
+    'tools' => [
+        'what_to_calculate' => 'What would you like to calculate?',
+        'what_to_look_up' => 'What would you like to look up?',
+        'no_data_models' => 'No queryable data models are configured.',
+        'which_entity_calculate' => 'I can analyze: :entities. Which one?',
+        'which_entity_lookup' => 'I can look up: :entities. Which one, and do you want a count or a list?',
+        'which_metric' => 'Which value should I use? Options: :options.',
+        'records_unavailable' => 'The requested records are not available.',
+        'search_query_required' => 'Search query is required.',
+        'no_searchable_columns' => 'No searchable columns are available for this record type.',
+        'record_not_found' => 'Record was not found.',
+        'record_type_unavailable' => 'This record type is not available.',
+        'kb_query_required' => 'A non-empty "query" is required to search the knowledge base.',
+        'kb_no_result' => 'The knowledge base returned no usable result for this query.',
+        'file_not_allowed' => 'That file path is not allowed or does not exist.',
+        'file_too_large' => 'That file is too large to analyze.',
+        'file_unreadable' => 'The file could not be read.',
+    ],
+
     'responses' => [
         'already_completed' => 'That action has already been completed.',
         'context_noted' => 'I noted that context. Tell me what you want to do with it next.',

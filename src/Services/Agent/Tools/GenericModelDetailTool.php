@@ -81,7 +81,7 @@ class GenericModelDetailTool extends AgentTool
     {
         $modelClass = $this->model;
         if (!class_exists($modelClass) || !is_subclass_of($modelClass, Model::class)) {
-            return ActionResult::failure('This record type is not available.', ['found' => false]);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.record_type_unavailable', 'This record type is not available.'), ['found' => false]);
         }
 
         $query = $modelClass::query();
@@ -115,7 +115,7 @@ class GenericModelDetailTool extends AgentTool
         $record = $query->with($relationNames)->first();
 
         if (!$record instanceof Model) {
-            return ActionResult::failure('Record was not found.', ['found' => false, 'message' => 'No matching record was found.']);
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.record_not_found', 'Record was not found.'), ['found' => false, 'message' => 'No matching record was found.']);
         }
 
         return ActionResult::success('Record loaded.', array_merge(

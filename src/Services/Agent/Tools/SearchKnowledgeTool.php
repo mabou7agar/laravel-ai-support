@@ -41,7 +41,7 @@ class SearchKnowledgeTool extends SimpleAgentTool
     {
         $query = trim((string) ($parameters['query'] ?? ''));
         if ($query === '') {
-            return ActionResult::failure('A non-empty "query" is required to search the knowledge base.');
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.kb_query_required', 'A non-empty "query" is required to search the knowledge base.'));
         }
 
         $options = ['force_rag' => true, 'use_rag' => true];
@@ -65,7 +65,7 @@ class SearchKnowledgeTool extends SimpleAgentTool
 
         $text = trim((string) $response->message);
         if ($text === '') {
-            return ActionResult::failure('The knowledge base returned no usable result for this query.');
+            return ActionResult::failure($this->localize('ai-engine::runtime.tools.kb_no_result', 'The knowledge base returned no usable result for this query.'));
         }
 
         return ActionResult::success($text, [

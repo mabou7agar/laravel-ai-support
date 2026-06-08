@@ -237,6 +237,17 @@ class AggregateQueryToolTest extends TestCase
         $this->assertTrue($r->success);
         $this->assertEqualsWithDelta(700.0, $r->data['value'], 0.001, 'a public model must not be user-scoped.');
     }
+    public function test_prompt_messages_localize_to_active_locale(): void
+    {
+        app()->setLocale('de');
+        $this->assertSame('Was möchten Sie berechnen?', $this->aggregate(['query' => ''])->message);
+
+        app()->setLocale('fr');
+        $this->assertSame('Que souhaitez-vous calculer ?', $this->aggregate(['query' => ''])->message);
+
+        app()->setLocale('en');
+        $this->assertSame('What would you like to calculate?', $this->aggregate(['query' => ''])->message);
+    }
 }
 
 class AqOrder extends Model

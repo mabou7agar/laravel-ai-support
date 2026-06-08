@@ -1,6 +1,25 @@
 <?php
 
 return [
+    'tools' => [
+        'what_to_calculate' => 'Was möchten Sie berechnen?',
+        'what_to_look_up' => 'Was möchten Sie nachschlagen?',
+        'no_data_models' => 'Es sind keine abfragbaren Datenmodelle konfiguriert.',
+        'which_entity_calculate' => 'Ich kann analysieren: :entities. Welches davon?',
+        'which_entity_lookup' => 'Ich kann nachschlagen: :entities. Welches davon, und möchten Sie eine Anzahl oder eine Liste?',
+        'which_metric' => 'Welchen Wert soll ich verwenden? Optionen: :options.',
+        'records_unavailable' => 'Die angeforderten Datensätze sind nicht verfügbar.',
+        'search_query_required' => 'Ein Suchbegriff ist erforderlich.',
+        'no_searchable_columns' => 'Für diesen Datensatztyp sind keine durchsuchbaren Spalten verfügbar.',
+        'record_not_found' => 'Datensatz wurde nicht gefunden.',
+        'record_type_unavailable' => 'Dieser Datensatztyp ist nicht verfügbar.',
+        'kb_query_required' => 'Für die Suche in der Wissensdatenbank ist eine nicht leere Abfrage erforderlich.',
+        'kb_no_result' => 'Die Wissensdatenbank lieferte kein verwertbares Ergebnis für diese Abfrage.',
+        'file_not_allowed' => 'Dieser Dateipfad ist nicht zulässig oder existiert nicht.',
+        'file_too_large' => 'Diese Datei ist zu groß für die Analyse.',
+        'file_unreadable' => 'Die Datei konnte nicht gelesen werden.',
+    ],
+
     'responses' => [
         'already_completed' => 'Diese Aktion wurde bereits ausgeführt.',
         'context_noted' => 'Ich habe diesen Kontext notiert. Sagen Sie mir, was Sie als Nächstes damit tun möchten.',

@@ -6,9 +6,24 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 abstract class AgentTool
 {
+    /**
+     * Resolve a user-facing tool message in the active locale, falling back to the English
+     * default when the key is missing. Use for messages shown to the user directly (asks /
+     * errors), so a tool result does not surface hardcoded English in a non-English chat.
+     *
+     * @param array<string, mixed> $replace
+     */
+    protected function localize(string $key, string $fallback, array $replace = []): string
+    {
+        $translated = app(LocaleResourceService::class)->translation($key, $replace);
+
+        return $translated !== '' ? $translated : $fallback;
+    }
+
     abstract public function getName(): string;
     
     abstract public function getDescription(): string;

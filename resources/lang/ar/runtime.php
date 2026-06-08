@@ -1,6 +1,25 @@
 <?php
 
 return [
+    'tools' => [
+        'what_to_calculate' => 'ما الذي تريد حسابه؟',
+        'what_to_look_up' => 'ما الذي تريد البحث عنه؟',
+        'no_data_models' => 'لا توجد نماذج بيانات قابلة للاستعلام مُهيّأة.',
+        'which_entity_calculate' => 'يمكنني تحليل: :entities. أيها تريد؟',
+        'which_entity_lookup' => 'يمكنني البحث في: :entities. أيها تريد، وهل تريد عددًا أم قائمة؟',
+        'which_metric' => 'أي قيمة ينبغي أن أستخدم؟ الخيارات: :options.',
+        'records_unavailable' => 'السجلات المطلوبة غير متاحة.',
+        'search_query_required' => 'مطلوب نص للبحث.',
+        'no_searchable_columns' => 'لا توجد أعمدة قابلة للبحث لهذا النوع من السجلات.',
+        'record_not_found' => 'لم يتم العثور على السجل.',
+        'record_type_unavailable' => 'هذا النوع من السجلات غير متاح.',
+        'kb_query_required' => 'مطلوب نص بحث غير فارغ للبحث في قاعدة المعرفة.',
+        'kb_no_result' => 'لم تُرجِع قاعدة المعرفة أي نتيجة قابلة للاستخدام لهذا الاستعلام.',
+        'file_not_allowed' => 'مسار الملف غير مسموح به أو غير موجود.',
+        'file_too_large' => 'هذا الملف كبير جدًا للتحليل.',
+        'file_unreadable' => 'تعذّرت قراءة الملف.',
+    ],
+
     'responses' => [
         'already_completed' => 'تم تنفيذ هذا الإجراء بالفعل.',
         'context_noted' => 'لقد دوّنت هذا السياق. أخبرني بما تريد فعله به بعد ذلك.',

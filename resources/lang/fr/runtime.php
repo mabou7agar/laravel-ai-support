@@ -1,6 +1,25 @@
 <?php
 
 return [
+    'tools' => [
+        'what_to_calculate' => 'Que souhaitez-vous calculer ?',
+        'what_to_look_up' => 'Que souhaitez-vous rechercher ?',
+        'no_data_models' => "Aucun modèle de données interrogeable n'est configuré.",
+        'which_entity_calculate' => 'Je peux analyser : :entities. Lequel ?',
+        'which_entity_lookup' => 'Je peux rechercher : :entities. Lequel, et voulez-vous un décompte ou une liste ?',
+        'which_metric' => 'Quelle valeur dois-je utiliser ? Options : :options.',
+        'records_unavailable' => 'Les enregistrements demandés ne sont pas disponibles.',
+        'search_query_required' => 'Un terme de recherche est requis.',
+        'no_searchable_columns' => "Aucune colonne consultable n'est disponible pour ce type d'enregistrement.",
+        'record_not_found' => "L'enregistrement est introuvable.",
+        'record_type_unavailable' => "Ce type d'enregistrement n'est pas disponible.",
+        'kb_query_required' => 'Une requête non vide est requise pour interroger la base de connaissances.',
+        'kb_no_result' => "La base de connaissances n'a renvoyé aucun résultat exploitable pour cette requête.",
+        'file_not_allowed' => "Ce chemin de fichier n'est pas autorisé ou n'existe pas.",
+        'file_too_large' => 'Ce fichier est trop volumineux pour être analysé.',
+        'file_unreadable' => "Le fichier n'a pas pu être lu.",
+    ],
+
     'responses' => [
         'already_completed' => 'Cette action a déjà été effectuée.',
         'context_noted' => "J'ai noté ce contexte. Dites-moi ce que vous souhaitez faire ensuite.",
