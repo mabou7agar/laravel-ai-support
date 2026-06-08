@@ -163,6 +163,33 @@ class AiNativePromptBuilder
     }
 
     /**
+     * Split the same prompt build() produces into a STABLE instruction prefix and the dynamic
+     * body, so engines that support explicit prompt caching (Anthropic) can cache the prefix.
+     * The boundary is the first dynamic block ("Available skills JSON:"); everything before it
+     * (runtime rules, JSON-shape spec, conditional instructions) is identical across the steps
+     * of a turn, while everything from skills onward (tools, conversation, context, message)
+     * changes. `system . "\n\n" . body` is byte-identical to build(), so behavior is unchanged.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @return array{system: string, body: string}
+     */
+    public function buildParts(string $message, UnifiedActionContext $context, array $state, array $options = []): array
+    {
+        $full = $this->build($message, $context, $state, $options);
+        $marker = "\n\nAvailable skills JSON:";
+        $pos = strpos($full, $marker);
+        if ($pos === false) {
+            return ['system' => '', 'body' => $full];
+        }
+
+        return [
+            'system' => substr($full, 0, $pos),
+            'body' => substr($full, $pos + 2), // drop the leading "\n\n" separator
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $options
      */
     private function planTimelineEnabled(array $options = []): bool

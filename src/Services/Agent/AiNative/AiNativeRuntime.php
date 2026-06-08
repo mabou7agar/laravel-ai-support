@@ -311,15 +311,42 @@ class AiNativeRuntime
      */
     private function nextPlan(string $message, UnifiedActionContext $context, array $state, array $options): array
     {
+        $engine = $options['engine'] ?? config('ai-engine.default', 'openai');
+        $model = $options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini'));
+        $maxTokens = (int) ($options['max_tokens'] ?? config('ai-agent.ai_native.max_tokens', 1200));
+        $temperature = (float) ($options['temperature'] ?? config('ai-agent.ai_native.temperature', 0.1));
+        $redactedState = $this->stateStore->redactedState($state);
+
         try {
-            $response = $this->ai->generate(new AIRequest(
-                prompt: $this->promptBuilder->build($message, $context, $this->stateStore->redactedState($state), $options),
-                engine: $options['engine'] ?? config('ai-engine.default', 'openai'),
-                model: $options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini')),
-                maxTokens: (int) ($options['max_tokens'] ?? config('ai-agent.ai_native.max_tokens', 1200)),
-                temperature: (float) ($options['temperature'] ?? config('ai-agent.ai_native.temperature', 0.1)),
-                metadata: ['context' => 'ai_native_runtime']
-            ));
+            if ($this->supportsSystemPromptCaching($engine)) {
+                // Anthropic doesn't auto-cache like OpenAI: split the prompt so the stable
+                // instruction prefix goes in the (cacheable) system block and the per-turn body
+                // stays in the user message. The Anthropic driver marks the system block
+                // cache_control: ephemeral. `system . "\n\n" . body` equals build() byte-for-byte,
+                // so the model sees the same content — only the role boundary changes.
+                $parts = $this->promptBuilder->buildParts($message, $context, $redactedState, $options);
+                $request = (new AIRequest(
+                    prompt: $parts['body'],
+                    engine: $engine,
+                    model: $model,
+                    maxTokens: $maxTokens,
+                    temperature: $temperature,
+                    metadata: ['context' => 'ai_native_runtime']
+                ))->withSystemPrompt($parts['system']);
+            } else {
+                // OpenAI (default) and others already cache the longest common prompt prefix
+                // automatically; keep the single-message prompt unchanged.
+                $request = new AIRequest(
+                    prompt: $this->promptBuilder->build($message, $context, $redactedState, $options),
+                    engine: $engine,
+                    model: $model,
+                    maxTokens: $maxTokens,
+                    temperature: $temperature,
+                    metadata: ['context' => 'ai_native_runtime']
+                );
+            }
+
+            $response = $this->ai->generate($request);
         } catch (Throwable $exception) {
             return [
                 'action' => 'ask_user',
@@ -366,6 +393,16 @@ class AiNativeRuntime
         }
 
         return false;
+    }
+
+    /**
+     * Engines that need an explicit system/cacheable-prefix split. OpenAI-family engines cache
+     * the longest common prompt prefix automatically, so only Anthropic (Claude) benefits from
+     * the split + cache_control breakpoint.
+     */
+    private function supportsSystemPromptCaching(string $engine): bool
+    {
+        return in_array(strtolower(trim($engine)), ['anthropic', 'claude'], true);
     }
 
     private function maxSteps(array $options): int

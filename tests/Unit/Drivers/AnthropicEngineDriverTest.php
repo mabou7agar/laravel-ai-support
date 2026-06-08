@@ -105,4 +105,65 @@ class AnthropicEngineDriverTest extends TestCase
             $history[0]['request']->getHeaderLine('anthropic-beta')
         );
     }
+
+    public function test_system_prompt_is_sent_as_a_cache_control_block_by_default(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'msg_cache',
+                'content' => [['type' => 'text', 'text' => 'ok']],
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+                'model' => 'claude-sonnet-4-5',
+            ])),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $handlerStack->push(Middleware::history($history));
+
+        $driver = new AnthropicEngineDriver([
+            'api_key' => 'test-key',
+            'base_url' => 'https://api.anthropic.com',
+        ], new Client(['handler' => $handlerStack]));
+
+        $response = $driver->generateText(
+            (new AIRequest('Dynamic body', EngineEnum::ANTHROPIC, EntityEnum::CLAUDE_SONNET_4_5))
+                ->withSystemPrompt('Stable runtime instructions.')
+        );
+
+        $this->assertTrue($response->isSuccessful());
+        $payload = json_decode((string) $history[0]['request']->getBody(), true);
+        // System is a content block with an ephemeral cache breakpoint, so Anthropic caches it.
+        $this->assertSame('Stable runtime instructions.', $payload['system'][0]['text']);
+        $this->assertSame('ephemeral', $payload['system'][0]['cache_control']['type']);
+    }
+
+    public function test_system_prompt_caching_can_be_disabled(): void
+    {
+        config()->set('ai-engine.engines.anthropic.prompt_caching', false);
+
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'msg_nocache',
+                'content' => [['type' => 'text', 'text' => 'ok']],
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+                'model' => 'claude-sonnet-4-5',
+            ])),
+        ]);
+        $handlerStack = HandlerStack::create($mock);
+        $handlerStack->push(Middleware::history($history));
+
+        $driver = new AnthropicEngineDriver([
+            'api_key' => 'test-key',
+            'base_url' => 'https://api.anthropic.com',
+        ], new Client(['handler' => $handlerStack]));
+
+        $driver->generateText(
+            (new AIRequest('Dynamic body', EngineEnum::ANTHROPIC, EntityEnum::CLAUDE_SONNET_4_5))
+                ->withSystemPrompt('Stable runtime instructions.')
+        );
+
+        $payload = json_decode((string) $history[0]['request']->getBody(), true);
+        $this->assertSame('Stable runtime instructions.', $payload['system']);
+    }
 }
