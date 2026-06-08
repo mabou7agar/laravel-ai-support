@@ -64,10 +64,16 @@ class AiNativeSubAgentHandler implements SubAgentHandler
             }
         }
 
+        // A domain agent is tool-only: it must NOT inherit the global skills, or the skill
+        // matcher can match one from the persona text (e.g. an "invoice" agent matches the
+        // invoice-create skill) and the required-final-tool guard then refuses to finalize a
+        // read-only answer until that skill's write tool runs — looping until the step budget is
+        // exhausted. An empty skill registry makes the planner finalize normally. (The injected
+        // $this->skills is retained for BC / future per-agent skill scoping.)
         $runtime = new AiNativeRuntime(
             $this->ai ?? app(AIEngineService::class),
             $registry,
-            $this->skills ?? app(AgentSkillRegistry::class),
+            new EmptySkillRegistry(),
             $this->signals ?? app(IntentSignalService::class),
         );
 
