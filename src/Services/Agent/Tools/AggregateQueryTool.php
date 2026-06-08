@@ -126,7 +126,7 @@ class AggregateQueryTool extends DataQueryTool
         $builder = $modelClass::query();
         $table = (new $modelClass)->getTable();
 
-        $scoped = $this->applyScope($builder, $table, $context);
+        $scoped = $this->applyScope($builder, $table, $context, $config);
         if (!$scoped && $this->requiresScope($config)) {
             return ActionResult::failure(
                 "Access to '{$label}' is blocked: no user/workspace/tenant scope could be applied. "

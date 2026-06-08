@@ -98,6 +98,14 @@ source-grounded guide. Everything below references real `LaravelAIEngine\…` cl
   `ToolRegistry` of those tools — the planner can't call anything else). The other handlers
   (`tool`/`ToolCallingSubAgentHandler`, conversational) do NOT NL-plan tool calls. Multi-turn
   confirm flows are still best as a top-level skill, not a delegated sub-agent.
+- Convergence safety net: if the planner runs a tool successfully but then fails to finalize
+  (loops, exhausts steps → "I need more information"), the handler surfaces the last successful
+  tool result as the answer (`metadata.converged_via = 'tool_result_fallback'`). Genuine asks
+  (carrying `requiredInputs`) pass through untouched.
+- Data scope: a domain agent runs with the caller's context (often a real `userId`), and
+  `data_query`/`aggregate_data` scope by user/workspace/tenant from it UNLESS the model is
+  `'public' => true`. A domain agent returning `0` for data that exists is usually scope, not
+  the planner — mark shared/reference models `public` or pass the right scope.
 
 ## File intake (upload → extract → suggest → pre-fill)
 - Enable `ai-engine.file_analysis.enabled`; map document keywords to create actions in

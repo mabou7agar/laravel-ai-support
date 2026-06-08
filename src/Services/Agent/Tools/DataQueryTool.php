@@ -98,7 +98,7 @@ class DataQueryTool extends AgentTool
         $builder = $modelClass::query();
         $table = (new $modelClass)->getTable();
 
-        $scoped = $this->applyScope($builder, $table, $context);
+        $scoped = $this->applyScope($builder, $table, $context, $config);
         if (!$scoped && $this->requiresScope($config)) {
             return ActionResult::failure(
                 "Access to '{$label}' is blocked: no user/workspace/tenant scope could be applied "
@@ -250,8 +250,16 @@ class DataQueryTool extends AgentTool
      * Apply per-request access scope. Returns true when at least one scope
      * predicate (user/workspace/tenant) was actually applied to the query.
      */
-    protected function applyScope(Builder $builder, string $table, UnifiedActionContext $context): bool
+    protected function applyScope(Builder $builder, string $table, UnifiedActionContext $context, array $config = []): bool
     {
+        // A model marked `public` is intentionally readable without user/workspace/tenant
+        // scoping. Applying a scope predicate anyway silently zeroes out rows the caller doesn't
+        // "own" (e.g. an analytics question scoped to the wrong user), which contradicts the
+        // documented meaning of `public => true`. Honor it here, not just in requiresScope().
+        if ($config['public'] ?? false) {
+            return false;
+        }
+
         $values = [
             'user_id' => auth()->id() ?? $context->userId,
             'workspace_id' => $context->metadata['workspace_id'] ?? null,

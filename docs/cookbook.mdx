@@ -2269,6 +2269,10 @@ The `handler` field determines how a sub-agent executes. Three built-in handlers
 ```
 Scoping is enforced by building a `ToolRegistry` of only the declared tools and running a fresh `AiNativeRuntime` around it — the planner cannot see or call a tool the sub-agent didn't declare. (Note: `ToolCallingSubAgentHandler` and `ConversationalSubAgentHandler` do *not* NL-plan tool calls; pick `ai_native` for a conversational domain agent. Multi-turn confirmation flows are still best as a top-level skill.)
 
+**Convergence safety net.** When delegated a single analytical question, the planner occasionally runs the right tool, gets the answer, then fails to emit a final message (it loops on "I already have that") and exhausts its step budget. The handler guards against this dead-end: if the run ends needing input but with *no specific question to ask* and a **successful tool result already in hand**, it surfaces that result as the answer (metadata `converged_via: 'tool_result_fallback'`). A genuine ask — a confirmation or a missing required field — carries `requiredInputs` and is passed through untouched.
+
+**Data scope gotcha.** A domain agent runs with whatever caller context delegated to it (often a real `userId`). Analytics tools (`data_query` / `aggregate_data`) apply user/workspace/tenant scope from that context **unless the model is marked `'public' => true`** in `ai-engine.data_query.models`. If a domain agent reports `0` for data you know exists, the model is being scoped to a user who doesn't own those rows — mark it `public` (for genuinely shared/reference data) or ensure the caller context carries the right scope.
+
 **CallableSubAgentHandler** — Use a custom callable (closure or invokable class):
 ```php
 'handler' => function (SubAgentTask $task, UnifiedActionContext $context, array $previousResults, array $options) {
