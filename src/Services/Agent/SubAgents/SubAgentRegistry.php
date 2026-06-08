@@ -43,6 +43,12 @@ class SubAgentRegistry
         }
 
         $handler = $definition['handler'] ?? null;
+
+        // A true domain agent: run the AiNative planner scoped to the sub-agent's tools.
+        if (in_array($handler, ['ai_native', 'domain', 'ai-native'], true)) {
+            return $this->container->make(AiNativeSubAgentHandler::class);
+        }
+
         if (($handler === null && !empty($definition['tools'])) || in_array($handler, ['tool', 'tools'], true)) {
             return $this->container->make(ToolCallingSubAgentHandler::class);
         }

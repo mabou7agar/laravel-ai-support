@@ -91,6 +91,14 @@ source-grounded guide. Everything below references real `LaravelAIEngine\…` cl
   `run_sub_agent` tool / `SubAgentRegistry`. Give a persona via the sub-agent's description/system
   prompt.
 
+## Domain agents (sub-agent that NL-plans its own tools)
+- For a sub-agent that should reason + act over its own toolset (e.g. an "invoice agent"),
+  set `'handler' => 'ai_native'` (`AiNativeSubAgentHandler`): it runs the full AiNative planner
+  scoped to ONLY the sub-agent's declared `tools` (a fresh `AiNativeRuntime` over a
+  `ToolRegistry` of those tools — the planner can't call anything else). The other handlers
+  (`tool`/`ToolCallingSubAgentHandler`, conversational) do NOT NL-plan tool calls. Multi-turn
+  confirm flows are still best as a top-level skill, not a delegated sub-agent.
+
 ## File intake (upload → extract → suggest → pre-fill)
 - Enable `ai-engine.file_analysis.enabled`; map document keywords to create actions in
   `keyword_suggestions` (pattern → any `create_*`). The `analyze_file` tool extracts a stored

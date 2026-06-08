@@ -2252,11 +2252,22 @@ The `handler` field determines how a sub-agent executes. Three built-in handlers
 'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ConversationalSubAgentHandler::class,
 ```
 
-**ToolCallingSubAgentHandler** — The sub-agent runs a sequence of registered tools (deterministic):
+**ToolCallingSubAgentHandler** — The sub-agent runs a *pre-planned* sequence of registered tools (it does NOT do natural-language tool planning itself):
 ```php
 'tools' => ['search_knowledge', 'find_customer'],
 'handler' => \LaravelAIEngine\Services\Agent\SubAgents\ToolCallingSubAgentHandler::class,
 ```
+
+**AiNativeSubAgentHandler (`handler: 'ai_native'`)** — A true **domain agent**: it runs the full AiNative planner (natural-language → tool call *with parameters*, guards, confirmation) **scoped to only its declared tools**. Use this when a sub-agent should reason and act over its own toolset (e.g. an "invoice agent" that answers "how much has X spent" by planning an `aggregate_data` call itself):
+```php
+'invoice' => [
+    'name' => 'Invoice agent',
+    'description' => 'Handles invoices: look up customers/products, read/analyze, and create invoices.',
+    'handler' => 'ai_native',
+    'tools' => ['find_customer', 'create_customer', 'show_invoice', 'data_query', 'aggregate_data'],
+],
+```
+Scoping is enforced by building a `ToolRegistry` of only the declared tools and running a fresh `AiNativeRuntime` around it — the planner cannot see or call a tool the sub-agent didn't declare. (Note: `ToolCallingSubAgentHandler` and `ConversationalSubAgentHandler` do *not* NL-plan tool calls; pick `ai_native` for a conversational domain agent. Multi-turn confirmation flows are still best as a top-level skill.)
 
 **CallableSubAgentHandler** — Use a custom callable (closure or invokable class):
 ```php
