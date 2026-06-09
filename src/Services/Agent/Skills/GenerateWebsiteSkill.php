@@ -52,7 +52,8 @@ class GenerateWebsiteSkill extends AgentSkill
             ->text('prompt')
             ->text('project_name')
             ->select('stack', ['html', 'react', 'next', 'vue', 'svelte'], 'html')
-            ->text('page');
+            ->text('page')
+            ->text('base_content');
 
         $skill->final(GenerateWebsiteTool::class);
     }

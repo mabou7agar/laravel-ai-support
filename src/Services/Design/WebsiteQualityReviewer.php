@@ -57,13 +57,140 @@ class WebsiteQualityReviewer
 
         if ($request->isHtmlDocument()) {
             $issues = array_merge($issues, $this->htmlChecks($lower));
+            $issues = array_merge($issues, $this->linkChecks($content));
         }
 
         // Asset portability applies to any stack: a generated artifact should not
         // depend on external/relative image URLs the model invented (they 404).
         $issues = array_merge($issues, $this->assetChecks($content));
 
+        // Palette contrast only applies to fresh generation (the resolved design
+        // system is what's being applied); in modify mode the base owns colors.
+        if (!$request->isModification()) {
+            $issues = array_merge($issues, $this->contrastChecks($designSystem));
+        }
+
         return array_values($issues);
+    }
+
+    /**
+     * Flag in-page anchor links whose target id does not exist in the document.
+     *
+     * @return array<int, string>
+     */
+    private function linkChecks(string $content): array
+    {
+        if (!preg_match_all('/<a\b[^>]*?\bhref\s*=\s*("|\')#([^"\']*)\1/is', $content, $hrefs)) {
+            return [];
+        }
+
+        preg_match_all('/\bid\s*=\s*("|\')([^"\']+)\1/is', $content, $idMatches);
+        $ids = array_map('mb_strtolower', $idMatches[2]);
+
+        $broken = [];
+        foreach ($hrefs[2] as $target) {
+            $target = trim($target);
+            if ($target === '') {
+                continue; // href="#" is a common, intentional no-op.
+            }
+            if (!in_array(mb_strtolower($target), $ids, true)) {
+                $broken[] = '#' . $target;
+            }
+        }
+
+        if ($broken === []) {
+            return [];
+        }
+
+        $examples = implode(', ', array_slice(array_values(array_unique($broken)), 0, 3));
+
+        return [sprintf(
+            '%d in-page anchor link(s) point to missing ids (%s) — add the target element id or fix the href.',
+            count(array_unique($broken)),
+            $examples
+        )];
+    }
+
+    /**
+     * WCAG contrast checks on the design system's key color pairs.
+     *
+     * @return array<int, string>
+     */
+    private function contrastChecks(DesignSystem $designSystem): array
+    {
+        $c = $designSystem->colors;
+        $issues = [];
+
+        $pairs = [
+            ['foreground', 'background', 4.5, 'body text'],
+            ['on_primary', 'primary', 3.0, 'primary button text'],
+            ['on_accent', 'accent', 3.0, 'accent button text'],
+        ];
+
+        foreach ($pairs as [$fgKey, $bgKey, $min, $label]) {
+            $ratio = $this->contrastRatio($c[$fgKey] ?? '', $c[$bgKey] ?? '');
+            if ($ratio !== null && $ratio < $min) {
+                $issues[] = sprintf(
+                    'Low contrast for %s: %s on %s is %.2f:1 (needs %.1f:1).',
+                    $label,
+                    $c[$fgKey],
+                    $c[$bgKey],
+                    $ratio,
+                    $min
+                );
+            }
+        }
+
+        return $issues;
+    }
+
+    private function contrastRatio(string $hex1, string $hex2): ?float
+    {
+        $l1 = $this->relativeLuminance($hex1);
+        $l2 = $this->relativeLuminance($hex2);
+        if ($l1 === null || $l2 === null) {
+            return null;
+        }
+
+        [$light, $dark] = $l1 >= $l2 ? [$l1, $l2] : [$l2, $l1];
+
+        return ($light + 0.05) / ($dark + 0.05);
+    }
+
+    private function relativeLuminance(string $hex): ?float
+    {
+        $rgb = $this->parseHex($hex);
+        if ($rgb === null) {
+            return null;
+        }
+
+        $channels = array_map(static function (int $v): float {
+            $s = $v / 255;
+
+            return $s <= 0.03928 ? $s / 12.92 : (($s + 0.055) / 1.055) ** 2.4;
+        }, $rgb);
+
+        return 0.2126 * $channels[0] + 0.7152 * $channels[1] + 0.0722 * $channels[2];
+    }
+
+    /**
+     * @return array{0: int, 1: int, 2: int}|null
+     */
+    private function parseHex(string $hex): ?array
+    {
+        $hex = ltrim(trim($hex), '#');
+        if (preg_match('/^[0-9a-f]{3}$/i', $hex)) {
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+        }
+        if (!preg_match('/^[0-9a-f]{6}$/i', $hex)) {
+            return null;
+        }
+
+        return [
+            (int) hexdec(substr($hex, 0, 2)),
+            (int) hexdec(substr($hex, 2, 2)),
+            (int) hexdec(substr($hex, 4, 2)),
+        ];
     }
 
     /**

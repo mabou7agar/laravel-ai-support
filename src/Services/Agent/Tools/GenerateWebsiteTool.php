@@ -17,9 +17,10 @@ class GenerateWebsiteTool extends SimpleAgentTool
 {
     public string $name = 'generate_website';
 
-    public string $description = 'Generate a complete, accessible, on-brand website or landing page from a description. '
+    public string $description = 'Generate or edit a complete, accessible, on-brand website or landing page. '
         . 'Automatically resolves a grounded design system (layout, style, color tokens, fonts) and outputs production code '
-        . 'for the requested stack (html, react, next, vue, svelte).';
+        . 'for the requested stack (html, react, next, vue, svelte). To EDIT an existing page, pass its current code as '
+        . '"base_content" and describe the change in "prompt" — the rest of the page is preserved.';
 
     /**
      * @var array<string, array<string, mixed>>
@@ -45,6 +46,11 @@ class GenerateWebsiteTool extends SimpleAgentTool
             'type' => 'string',
             'required' => false,
             'description' => 'Optional specific page to build (e.g. landing, pricing, dashboard).',
+        ],
+        'base_content' => [
+            'type' => 'string',
+            'required' => false,
+            'description' => 'Existing page code to EDIT. When provided, "prompt" is the change to apply and the rest of the page is preserved.',
         ],
     ];
 
@@ -80,8 +86,10 @@ class GenerateWebsiteTool extends SimpleAgentTool
         }
 
         $issues = $result->qualityReview['remaining_issues'] ?? [];
+        $verb = ($result->metadata['mode'] ?? 'create') === 'modify' ? 'Updated' : 'Generated';
         $message = sprintf(
-            'Generated a %s %s using the "%s" style (%s). %s',
+            '%s a %s %s using the "%s" style (%s). %s',
+            $verb,
             $result->designSystem->category,
             $result->stack,
             $result->designSystem->style['name'],

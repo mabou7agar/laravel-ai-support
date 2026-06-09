@@ -17,20 +17,67 @@ class WebsiteQualityReviewerTest extends UnitTestCase
         return (new \ReflectionClass(WebsiteQualityReviewer::class))->newInstanceWithoutConstructor();
     }
 
-    private function designSystem(): DesignSystem
+    /**
+     * @param array<string, string> $colorOverrides
+     */
+    private function designSystem(array $colorOverrides = []): DesignSystem
     {
+        $colors = array_merge(
+            ['primary' => '#1E40AF', 'on_primary' => '#FFFFFF', 'secondary' => '', 'accent' => '', 'background' => '', 'foreground' => '', 'muted' => '', 'border' => '', 'destructive' => '', 'ring' => '', 'notes' => ''],
+            $colorOverrides
+        );
+
         return new DesignSystem(
             projectName: 'T',
             category: 'SaaS',
             pattern: ['name' => '', 'sections' => '', 'cta_placement' => '', 'color_strategy' => '', 'conversion' => ''],
             style: ['name' => 'Flat Design', 'type' => '', 'effects' => '', 'keywords' => '', 'best_for' => '', 'performance' => '', 'accessibility' => '', 'light_mode' => '', 'dark_mode' => ''],
-            colors: ['primary' => '#1E40AF', 'on_primary' => '#FFF', 'secondary' => '', 'accent' => '', 'background' => '', 'foreground' => '', 'muted' => '', 'border' => '', 'destructive' => '', 'ring' => '', 'notes' => ''],
+            colors: $colors,
             typography: ['heading' => 'Inter', 'body' => 'Inter', 'mood' => '', 'best_for' => '', 'google_fonts_url' => '', 'css_import' => ''],
             keyEffects: '',
             antiPatterns: '',
             decisionRules: [],
             severity: 'LOW',
         );
+    }
+
+    public function test_flags_broken_anchor_link(): void
+    {
+        $html = $this->htmlShell('<a href="#nope">Jump</a>');
+
+        $issues = $this->reviewer()->review($html, new WebsiteGenerationRequest(prompt: 'x', stack: 'html'), $this->designSystem());
+
+        $this->assertTrue((bool) array_filter($issues, fn (string $i) => str_contains($i, 'anchor link')));
+    }
+
+    public function test_passes_resolved_anchor_link(): void
+    {
+        $html = $this->htmlShell('<section id="pricing"></section><a href="#pricing">Pricing</a><a href="#">Top</a>');
+
+        $issues = $this->reviewer()->review($html, new WebsiteGenerationRequest(prompt: 'x', stack: 'html'), $this->designSystem());
+
+        $this->assertSame([], $issues);
+    }
+
+    public function test_flags_low_contrast_palette_pair(): void
+    {
+        $ds = $this->designSystem(['foreground' => '#999999', 'background' => '#AAAAAA']);
+
+        $issues = $this->reviewer()->review($this->htmlShell(''), new WebsiteGenerationRequest(prompt: 'x', stack: 'html'), $ds);
+
+        $this->assertTrue(
+            (bool) array_filter($issues, fn (string $i) => str_contains($i, 'Low contrast')),
+            'Expected a low-contrast issue. Got: ' . json_encode($issues)
+        );
+    }
+
+    public function test_passes_accessible_contrast(): void
+    {
+        $ds = $this->designSystem(['foreground' => '#0F172A', 'background' => '#FFFFFF', 'on_primary' => '#FFFFFF', 'primary' => '#1E40AF']);
+
+        $issues = $this->reviewer()->review($this->htmlShell(''), new WebsiteGenerationRequest(prompt: 'x', stack: 'html'), $ds);
+
+        $this->assertSame([], array_values(array_filter($issues, fn (string $i) => str_contains($i, 'Low contrast'))));
     }
 
     private function htmlShell(string $bodyExtra): string
