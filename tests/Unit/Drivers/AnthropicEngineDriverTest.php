@@ -137,6 +137,35 @@ class AnthropicEngineDriverTest extends TestCase
         $this->assertSame('ephemeral', $payload['system'][0]['cache_control']['type']);
     }
 
+    public function test_cache_token_usage_is_surfaced(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'msg_usage',
+                'content' => [['type' => 'text', 'text' => 'ok']],
+                'usage' => [
+                    'input_tokens' => 100,
+                    'output_tokens' => 10,
+                    'cache_read_input_tokens' => 80,
+                    'cache_creation_input_tokens' => 20,
+                ],
+                'model' => 'claude-sonnet-4-5',
+            ])),
+        ]);
+        $driver = new AnthropicEngineDriver([
+            'api_key' => 'test-key',
+            'base_url' => 'https://api.anthropic.com',
+        ], new Client(['handler' => HandlerStack::create($mock)]));
+
+        $response = $driver->generateText(
+            new AIRequest('Hello', EngineEnum::ANTHROPIC, EntityEnum::CLAUDE_SONNET_4_5)
+        );
+
+        $usage = $response->getUsage();
+        $this->assertSame(80, $usage['cached_tokens']);
+        $this->assertSame(20, $usage['cache_creation_tokens']);
+    }
+
     public function test_system_prompt_caching_can_be_disabled(): void
     {
         config()->set('ai-engine.engines.anthropic.prompt_caching', false);

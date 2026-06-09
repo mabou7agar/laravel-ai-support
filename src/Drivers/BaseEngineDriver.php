@@ -764,16 +764,22 @@ abstract class BaseEngineDriver implements EngineDriverInterface
                 'prompt_tokens' => $usage['prompt_tokens'] ?? 0,
                 'completion_tokens' => $usage['completion_tokens'] ?? 0,
                 'total_tokens' => $usage['total_tokens'] ?? 0,
+                // Prompt-prefix cache hit (auto on OpenAI-family); 0 when cold/unsupported.
+                'cached_tokens' => $usage['prompt_tokens_details']['cached_tokens'] ?? 0,
             ],
             'anthropic' => [
                 'prompt_tokens' => $usage['input_tokens'] ?? 0,
                 'completion_tokens' => $usage['output_tokens'] ?? 0,
                 'total_tokens' => ($usage['input_tokens'] ?? 0) + ($usage['output_tokens'] ?? 0),
+                // Anthropic reports cache reads vs writes separately; cached_tokens = reads (hits).
+                'cached_tokens' => $usage['cache_read_input_tokens'] ?? 0,
+                'cache_creation_tokens' => $usage['cache_creation_input_tokens'] ?? 0,
             ],
             'gemini' => [
                 'prompt_tokens' => $usage['promptTokenCount'] ?? 0,
                 'completion_tokens' => $usage['candidatesTokenCount'] ?? 0,
                 'total_tokens' => $usage['totalTokenCount'] ?? 0,
+                'cached_tokens' => $usage['cachedContentTokenCount'] ?? 0,
             ],
             default => null,
         };

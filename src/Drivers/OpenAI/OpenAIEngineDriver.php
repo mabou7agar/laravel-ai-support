@@ -179,6 +179,9 @@ class OpenAIEngineDriver extends BaseEngineDriver
                     'prompt_tokens' => $response->usage->promptTokens ?? 0,
                     'completion_tokens' => $response->usage->completionTokens ?? 0,
                     'total_tokens' => $response->usage->totalTokens ?? 0,
+                    // OpenAI automatically caches the longest common prompt prefix; surface how
+                    // many input tokens were served from that cache this call (0 = cold/miss).
+                    'cached_tokens' => $response->usage->promptTokensDetails?->cachedTokens ?? 0,
                 ],
                 finishReason: $response->choices[0]->finishReason ?? null,
                 functionCall: $functionCall
