@@ -47,7 +47,7 @@ class WebsiteBuilderService
         $model = $request->model ?? $this->defaultModel();
 
         $aiRequest = new AIRequest(
-            prompt: $this->composer->compose($request, $designSystem),
+            prompt: $this->composePrompt($request, $designSystem),
             engine: $engine,
             model: $model,
             userId: $request->userId,
@@ -56,6 +56,7 @@ class WebsiteBuilderService
             metadata: array_replace($request->metadata, [
                 'website_generation' => true,
                 'stack' => $request->stack,
+                'mode' => $request->isModification() ? 'modify' : 'create',
                 'design_category' => $designSystem->category,
                 'design_style' => $designSystem->style['name'],
             ]),
@@ -110,6 +111,7 @@ class WebsiteBuilderService
                 'prompt' => $request->prompt,
                 'project_name' => $designSystem->projectName,
                 'page' => $request->page,
+                'mode' => $request->isModification() ? 'modify' : 'create',
                 'persisted' => $request->persist,
                 'website_credit_cost' => $surchargeCharged,
             ],
@@ -148,7 +150,7 @@ class WebsiteBuilderService
             ?? $this->resolver->resolve($this->resolverQuery($request), $request->resolvedProjectName());
 
         $aiRequest = new AIRequest(
-            prompt: $this->composer->compose($request, $designSystem),
+            prompt: $this->composePrompt($request, $designSystem),
             engine: $request->engine ?? $this->defaultEngine(),
             model: $request->model ?? $this->defaultModel(),
             userId: $request->userId,
@@ -236,6 +238,13 @@ class WebsiteBuilderService
     {
         return $request->designSystem
             ?? $this->resolver->resolve($this->resolverQuery($request), $request->resolvedProjectName());
+    }
+
+    private function composePrompt(WebsiteGenerationRequest $request, DesignSystem $designSystem): string
+    {
+        return $request->isModification()
+            ? $this->composer->composeModification($request, $designSystem, (string) $request->baseContent)
+            : $this->composer->compose($request, $designSystem);
     }
 
     private function resolverQuery(WebsiteGenerationRequest $request): string

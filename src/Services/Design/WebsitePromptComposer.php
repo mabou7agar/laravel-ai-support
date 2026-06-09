@@ -103,6 +103,27 @@ class WebsitePromptComposer
     }
 
     /**
+     * Build a prompt that applies the user's requested change to an existing
+     * document while preserving everything else and staying on the design system.
+     */
+    public function composeModification(WebsiteGenerationRequest $request, DesignSystem $designSystem, string $baseContent): string
+    {
+        return implode("\n\n", [
+            'You are editing an existing website. Apply ONLY the requested change and return the COMPLETE updated artifact.',
+            'Rules:',
+            '- Preserve all existing structure, content, and styling except what the change requires.',
+            '- Stay on the design system below: keep the same color tokens, fonts, spacing, and visual style.',
+            '- Keep the output accessible and responsive; do not introduce emoji icons, external/relative images, '
+                . 'placeholder base64 rasters, or design-system anti-patterns.',
+            $this->stackInstructions($request->stack),
+            $this->formatInstruction($request),
+            "Design system (unchanged source of truth):\n" . $designSystem->toMarkdown(),
+            "Requested change:\n" . $request->prompt,
+            "Current document to edit:\n" . $baseContent,
+        ]);
+    }
+
+    /**
      * Build a targeted correction prompt for the quality-review fix pass.
      *
      * @param array<int, string> $issues

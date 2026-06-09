@@ -34,6 +34,7 @@ final class WebsiteGenerationRequest
         public readonly ?DesignSystem $designSystem = null,
         public readonly ?string $userId = null,
         public readonly array $metadata = [],
+        public readonly ?string $baseContent = null,
     ) {}
 
     /**
@@ -56,7 +57,18 @@ final class WebsiteGenerationRequest
             persist: (bool) ($data['persist'] ?? false),
             userId: $userId,
             metadata: is_array($data['metadata'] ?? null) ? $data['metadata'] : [],
+            baseContent: isset($data['base_content']) && trim((string) $data['base_content']) !== ''
+                ? (string) $data['base_content']
+                : null,
         );
+    }
+
+    /**
+     * Whether this request edits an existing document (vs. generating fresh).
+     */
+    public function isModification(): bool
+    {
+        return $this->baseContent !== null && trim($this->baseContent) !== '';
     }
 
     public static function normalizeStack(mixed $stack): string

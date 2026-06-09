@@ -27,6 +27,9 @@ class GenerateWebsiteRequest extends FormRequest
             'quality_review' => 'nullable|boolean',
             'persist' => 'nullable|boolean',
             'metadata' => 'nullable|array',
+            // When present, the builder edits this existing document instead of
+            // generating a fresh one (prompt becomes the change instruction).
+            'base_content' => 'nullable|string|max:400000',
         ];
     }
 }

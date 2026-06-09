@@ -35,14 +35,19 @@ class WebsiteQualityReviewer
             $issues[] = 'Emoji detected in output — replace any emoji used as an icon with SVG icons.';
         }
 
-        $primary = mb_strtolower($designSystem->colors['primary'] ?? '');
-        if ($primary !== '' && !str_contains($lower, $primary)) {
-            $issues[] = "Design system primary color ({$designSystem->colors['primary']}) is not used — apply the provided color tokens.";
-        }
+        // Token/font grounding only applies to fresh generation. When editing an
+        // existing document the base content owns the palette/fonts, so a freshly
+        // resolved design system must not be enforced against it.
+        if (!$request->isModification()) {
+            $primary = mb_strtolower($designSystem->colors['primary'] ?? '');
+            if ($primary !== '' && !str_contains($lower, $primary)) {
+                $issues[] = "Design system primary color ({$designSystem->colors['primary']}) is not used — apply the provided color tokens.";
+            }
 
-        $heading = trim($designSystem->typography['heading'] ?? '');
-        if ($heading !== '' && $heading !== 'Inter' && !str_contains($lower, mb_strtolower($heading))) {
-            $issues[] = "Heading font \"{$heading}\" is not referenced — load and apply the design system fonts.";
+            $heading = trim($designSystem->typography['heading'] ?? '');
+            if ($heading !== '' && $heading !== 'Inter' && !str_contains($lower, mb_strtolower($heading))) {
+                $issues[] = "Heading font \"{$heading}\" is not referenced — load and apply the design system fonts.";
+            }
         }
 
         $hasMotion = str_contains($lower, 'transition') || str_contains($lower, 'animation') || str_contains($lower, '@keyframes');
