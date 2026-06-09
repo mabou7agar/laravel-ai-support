@@ -195,6 +195,13 @@ class AIEngineServiceProvider extends ServiceProvider
                 __DIR__.'/../resources/lang' => lang_path('vendor/ai-engine'),
             ], 'ai-engine-lang');
 
+            // Design-intelligence knowledge base (CSV). Publish to customize the
+            // datasets the website builder reasons over; point
+            // AI_ENGINE_DESIGN_DATA_PATH at the published directory.
+            $this->publishes([
+                __DIR__.'/../resources/design-intelligence' => resource_path('vendor/ai-engine/design-intelligence'),
+            ], 'ai-engine-design-data');
+
             // Laravel 8 specific: publish components to app/View/Components for manual registration
             $this->publishes([
                 __DIR__.'/../resources/views/components' => resource_path('views/components/ai-engine'),

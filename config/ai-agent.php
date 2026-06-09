@@ -571,12 +571,19 @@ return [
     | own AgentTool implementations through the same registry.
      |
      */
-    'tools' => [
+    'tools' => array_filter([
         // 'validate_field' => \LaravelAIEngine\Services\Agent\Tools\ValidateFieldTool::class,
         // 'search_options' => \LaravelAIEngine\Services\Agent\Tools\SearchOptionsTool::class,
         // 'suggest_value' => \LaravelAIEngine\Services\Agent\Tools\SuggestValueTool::class,
         // 'explain_field' => \LaravelAIEngine\Services\Agent\Tools\ExplainFieldTool::class,
-    ],
+
+        // Design-intelligence website builder. Opt-in: enable both the design
+        // builder and the agent tool flag to expose it to the AI runtime.
+        'generate_website' => (
+            filter_var(env('AI_ENGINE_DESIGN_ENABLED', true), FILTER_VALIDATE_BOOL)
+            && filter_var(env('AI_ENGINE_DESIGN_AGENT_TOOL_ENABLED', false), FILTER_VALIDATE_BOOL)
+        ) ? \LaravelAIEngine\Services\Agent\Tools\GenerateWebsiteTool::class : null,
+    ]),
 
     'action_reply' => [
         'ai_enabled' => env('AI_AGENT_ACTION_REPLY_AI_ENABLED', true),
@@ -818,9 +825,15 @@ return [
         'min_confidence' => (float) env('AI_AGENT_INTENT_MIN_CONFIDENCE', 0.6),
     ],
 
-    'skill_providers' => [
+    'skill_providers' => array_values(array_filter([
         // \App\AI\Skills\AppSkillProvider::class,
-    ],
+
+        // Design-intelligence website builder skill (opt-in, same flags as the tool).
+        (
+            filter_var(env('AI_ENGINE_DESIGN_ENABLED', true), FILTER_VALIDATE_BOOL)
+            && filter_var(env('AI_ENGINE_DESIGN_AGENT_TOOL_ENABLED', false), FILTER_VALIDATE_BOOL)
+        ) ? \LaravelAIEngine\Services\Agent\Skills\GenerateWebsiteSkill::class : null,
+    ])),
 
     /*
     |--------------------------------------------------------------------------

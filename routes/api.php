@@ -158,6 +158,14 @@ if (config('ai-engine.api.generate.enabled', true)) {
             Route::post('/video', [GenerateApiController::class, 'video'])
                 ->name('video');
 
+            if (config('ai-engine.design.enabled', true)) {
+                Route::post('/website', [GenerateApiController::class, 'website'])
+                    ->name('website');
+
+                Route::post('/website/stream', [GenerateApiController::class, 'websiteStream'])
+                    ->name('website.stream');
+            }
+
             Route::get('/video/jobs/{jobId}', [GenerateApiController::class, 'videoJobStatus'])
                 ->name('video.jobs.status');
 
