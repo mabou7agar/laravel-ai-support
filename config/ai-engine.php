@@ -243,6 +243,30 @@ return array_replace_recursive($defaults, [
             ],
         ],
     ],
+    'design' => [
+        // Design-intelligence-grounded website builder (POST /generate/website,
+        // generate_website tool/skill). Works out of the box from the bundled
+        // knowledge base — no learned design sources required.
+        'enabled' => env('AI_ENGINE_DESIGN_ENABLED', data_get($defaults, 'design.enabled', true)),
+        // Optional override for the bundled CSV knowledge base directory.
+        'data_path' => env('AI_ENGINE_DESIGN_DATA_PATH', data_get($defaults, 'design.data_path', '')),
+        // Where MASTER.md / page overrides are written when persist=true.
+        'output_path' => env('AI_ENGINE_DESIGN_OUTPUT_PATH', data_get($defaults, 'design.output_path', '')),
+        // Engine/model overrides for generation (blank = ai-engine defaults).
+        'default_engine' => env('AI_ENGINE_DESIGN_ENGINE', data_get($defaults, 'design.default_engine', '')),
+        'default_model' => env('AI_ENGINE_DESIGN_MODEL', data_get($defaults, 'design.default_model', '')),
+        'max_tokens' => (int) env('AI_ENGINE_DESIGN_MAX_TOKENS', data_get($defaults, 'design.max_tokens', 8000)),
+        // Flat credit surcharge per generated website (in addition to the
+        // per-token model credits AIEngineService charges). 0 disables it.
+        // Only applied when ai-engine.credits.enabled is true and a user is set.
+        'credit_cost' => (float) env('AI_ENGINE_DESIGN_CREDIT_COST', data_get($defaults, 'design.credit_cost', 0.0)),
+        // Self-correcting quality-control pass after generation.
+        'quality_review' => env('AI_ENGINE_DESIGN_QUALITY_REVIEW', data_get($defaults, 'design.quality_review', true)),
+        // Max number of LLM fix passes when QC finds issues (iterates until clean).
+        'quality_review_max_passes' => (int) env('AI_ENGINE_DESIGN_QUALITY_REVIEW_MAX_PASSES', data_get($defaults, 'design.quality_review_max_passes', 2)),
+        // Expose the generate_website agent tool/skill to the AI runtime.
+        'agent_tool_enabled' => env('AI_ENGINE_DESIGN_AGENT_TOOL_ENABLED', data_get($defaults, 'design.agent_tool_enabled', false)),
+    ],
     'media' => [
         'document_extraction' => [
             // When true, extraction failures are swallowed and an empty string is

@@ -11,12 +11,14 @@ use LaravelAIEngine\Http\Requests\GenerateImageRequest;
 use LaravelAIEngine\Http\Requests\GenerateTextRequest;
 use LaravelAIEngine\Http\Requests\GenerateTtsRequest;
 use LaravelAIEngine\Http\Requests\GenerateVideoRequest;
+use LaravelAIEngine\Http\Requests\GenerateWebsiteRequest;
 use LaravelAIEngine\Http\Requests\TranscribeAudioRequest;
 use LaravelAIEngine\Services\Media\GenerateAudioService;
 use LaravelAIEngine\Services\Media\GenerateImageService;
 use LaravelAIEngine\Services\Media\GenerateReferencePackService;
 use LaravelAIEngine\Services\Media\GenerateVideoService;
 use LaravelAIEngine\Services\Media\GenerateTextService;
+use LaravelAIEngine\Services\Media\GenerateWebsiteService;
 
 class GenerateApiController extends Controller
 {
@@ -25,7 +27,8 @@ class GenerateApiController extends Controller
         private readonly GenerateImageService $images,
         private readonly GenerateVideoService $videos,
         private readonly GenerateReferencePackService $referencePacks,
-        private readonly GenerateAudioService $audio
+        private readonly GenerateAudioService $audio,
+        private readonly GenerateWebsiteService $websites
     ) {}
 
     public function text(GenerateTextRequest $request): JsonResponse
@@ -41,6 +44,16 @@ class GenerateApiController extends Controller
     public function video(GenerateVideoRequest $request): JsonResponse
     {
         return $this->videos->generate($request->validated());
+    }
+
+    public function website(GenerateWebsiteRequest $request): JsonResponse
+    {
+        return $this->websites->generate($request->validated());
+    }
+
+    public function websiteStream(GenerateWebsiteRequest $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        return $this->websites->stream($request->validated());
     }
 
     public function videoJobStatus(Request $request, string $jobId): JsonResponse
