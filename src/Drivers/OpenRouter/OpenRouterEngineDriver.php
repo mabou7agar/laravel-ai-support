@@ -606,12 +606,31 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             $request->getParameters(),
             $request->getProviderOptions(EngineEnum::OpenRouter->value)
         );
+        $model = $request->getModel()->value;
         $payload = [
-            'model' => $request->getModel()->value,
+            'model' => $model,
             'messages' => $messages,
-            'max_tokens' => $request->getMaxTokens() ?? $parameters['max_tokens'] ?? 4096,
-            'temperature' => $request->getTemperature() ?? $parameters['temperature'] ?? 0.7,
         ];
+
+        // Reasoning models (GPT-5 family, o1/o3) need max_completion_tokens with a
+        // floor and reject a custom temperature; standard models use max_tokens +
+        // temperature. See BaseEngineDriver::applyChatTokenParameters().
+        $resolvedMaxTokens = (int) ($request->getMaxTokens()
+            ?? $parameters['max_completion_tokens']
+            ?? $parameters['max_tokens']
+            ?? 4096);
+        $payload = $this->applyChatTokenParameters(
+            $payload,
+            $model,
+            $resolvedMaxTokens,
+            $request->getTemperature() ?? $parameters['temperature'] ?? null
+        );
+
+        if ($this->isGpt5FamilyModel($model) || $this->isReasoningModel($model)) {
+            // The floored max_completion_tokens is authoritative; don't let the
+            // generic copy loop below reinstate a starving cap from raw parameters.
+            unset($parameters['max_completion_tokens'], $parameters['max_tokens']);
+        }
 
         foreach ([
             'models',

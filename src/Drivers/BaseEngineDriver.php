@@ -14,6 +14,13 @@ use LaravelAIEngine\Services\Vectorization\TokenCalculator;
 
 abstract class BaseEngineDriver implements EngineDriverInterface
 {
+    /**
+     * Minimum max_completion_tokens for reasoning models. They spend hidden
+     * reasoning tokens against the output cap before emitting any answer, so a
+     * tiny cap is consumed entirely by reasoning and yields empty content.
+     */
+    protected const MIN_REASONING_COMPLETION_TOKENS = 1024;
+
     protected array $config;
     protected EngineEnum $engine;
 
@@ -499,20 +506,19 @@ abstract class BaseEngineDriver implements EngineDriverInterface
 
         $payload = $this->applyStructuredOutputPayload($payload, $request);
 
-        // GPT-5 family models have different parameter requirements
+        // Reasoning models (GPT-5 family, o1/o3) need max_completion_tokens with
+        // a floor and reject a custom temperature; standard models use
+        // max_tokens + temperature. See applyChatTokenParameters().
+        $payload = $this->applyChatTokenParameters(
+            $payload,
+            $model,
+            $request->getMaxTokens(),
+            $request->getTemperature()
+        );
+
         if ($this->isGpt5FamilyModel($model)) {
-            // GPT-5 uses max_completion_tokens and doesn't support temperature
-            $payload['max_completion_tokens'] = $request->getMaxTokens();
-            // Use reasoning_effort instead of temperature for GPT-5
+            // GPT-5 maps temperature intent onto reasoning effort.
             $payload['reasoning_effort'] = $this->mapTemperatureToReasoningEffort($request->getTemperature() ?? 0.7);
-        } elseif ($this->isReasoningModel($model)) {
-            // o1, o3 models use max_completion_tokens
-            $payload['max_completion_tokens'] = $request->getMaxTokens();
-            $payload['temperature'] = 1; // Reasoning models only support temperature=1
-        } else {
-            // Standard models (GPT-4, GPT-3.5, etc.)
-            $payload['max_tokens'] = $request->getMaxTokens();
-            $payload['temperature'] = $request->getTemperature() ?? 0.7;
         }
 
         return array_replace_recursive(
@@ -571,7 +577,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function isGpt5FamilyModel(string $model): bool
     {
-        return str_starts_with($model, 'gpt-5');
+        return str_starts_with($this->normalizeModelId($model), 'gpt-5');
     }
 
     /**
@@ -582,6 +588,7 @@ abstract class BaseEngineDriver implements EngineDriverInterface
      */
     protected function isReasoningModel(string $model): bool
     {
+        $model = $this->normalizeModelId($model);
         $reasoningPrefixes = ['o1', 'o3'];
         foreach ($reasoningPrefixes as $prefix) {
             if (str_starts_with($model, $prefix)) {
@@ -589,6 +596,24 @@ abstract class BaseEngineDriver implements EngineDriverInterface
             }
         }
         return false;
+    }
+
+    /**
+     * Strip any provider prefix from a model identifier.
+     *
+     * Gateways such as OpenRouter namespace models as "provider/model"
+     * (e.g. "openai/gpt-5"). Model-family detection works on the bare id.
+     *
+     * @param string $model
+     * @return string
+     */
+    protected function normalizeModelId(string $model): string
+    {
+        if (($pos = strrpos($model, '/')) !== false) {
+            return substr($model, $pos + 1);
+        }
+
+        return $model;
     }
 
     /**
@@ -614,6 +639,48 @@ abstract class BaseEngineDriver implements EngineDriverInterface
         } else {
             return 'high';
         }
+    }
+
+    /**
+     * Apply token-limit and temperature parameters to an OpenAI-compatible
+     * chat/completions payload, accounting for reasoning models.
+     *
+     * GPT-5 family and OpenAI o1/o3 models bill hidden reasoning tokens against
+     * the output cap and expect `max_completion_tokens` (not `max_tokens`); a
+     * small cap is consumed entirely by reasoning, leaving empty content
+     * (finish_reason="length"). They also reject a custom temperature — GPT-5
+     * accepts only its default, o1/o3 only temperature=1. Standard models keep
+     * `max_tokens` + `temperature` unchanged.
+     *
+     * Pass the already-resolved cap (with the caller's own default applied);
+     * null means "let the provider use its default" and is left untouched.
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    protected function applyChatTokenParameters(
+        array $payload,
+        string $model,
+        ?int $maxTokens,
+        ?float $temperature,
+        float $defaultTemperature = 0.7
+    ): array {
+        if ($this->isGpt5FamilyModel($model)) {
+            if ($maxTokens !== null) {
+                $payload['max_completion_tokens'] = max($maxTokens, self::MIN_REASONING_COMPLETION_TOKENS);
+            }
+            // GPT-5 accepts only the default temperature, so it is omitted.
+        } elseif ($this->isReasoningModel($model)) {
+            if ($maxTokens !== null) {
+                $payload['max_completion_tokens'] = max($maxTokens, self::MIN_REASONING_COMPLETION_TOKENS);
+            }
+            $payload['temperature'] = 1; // o1/o3 only support temperature=1
+        } else {
+            $payload['max_tokens'] = $maxTokens;
+            $payload['temperature'] = $temperature ?? $defaultTemperature;
+        }
+
+        return $payload;
     }
 
     /**

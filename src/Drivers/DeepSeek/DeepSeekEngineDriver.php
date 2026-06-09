@@ -158,10 +158,18 @@ class DeepSeekEngineDriver extends BaseEngineDriver
             $payload = [
                 'model' => $request->getModel()->value,
                 'messages' => $messages,
-                'max_tokens' => $request->getMaxTokens() ?? 4096,
-                'temperature' => $request->getTemperature() ?? 0.7,
                 'stream' => true,
             ];
+
+            // Reasoning models (GPT-5 family, o1/o3) need max_completion_tokens
+            // with a floor and reject a custom temperature; standard models use
+            // max_tokens + temperature. See BaseEngineDriver::applyChatTokenParameters().
+            $payload = $this->applyChatTokenParameters(
+                $payload,
+                $request->getModel()->value,
+                (int) ($request->getMaxTokens() ?? 4096),
+                $request->getTemperature()
+            );
 
             $response = $this->httpClient->post('/chat/completions', [
                 'json' => $payload,

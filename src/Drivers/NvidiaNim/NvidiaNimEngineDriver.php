@@ -191,9 +191,18 @@ class NvidiaNimEngineDriver extends BaseEngineDriver
             'model' => $request->getModel()->value,
             'messages' => $this->buildStandardMessages($request),
             'stream' => $stream,
-            'max_tokens' => $request->getMaxTokens() ?? $parameters['max_tokens'] ?? null,
-            'temperature' => $request->getTemperature() ?? $parameters['temperature'] ?? 0.7,
         ];
+
+        // Reasoning models (GPT-5 family, o1/o3) need max_completion_tokens with a
+        // floor and reject a custom temperature; standard models use max_tokens +
+        // temperature. See BaseEngineDriver::applyChatTokenParameters().
+        $resolvedMaxTokens = $request->getMaxTokens() ?? $parameters['max_tokens'] ?? null;
+        $payload = $this->applyChatTokenParameters(
+            $payload,
+            $request->getModel()->value,
+            $resolvedMaxTokens === null ? null : (int) $resolvedMaxTokens,
+            $request->getTemperature() ?? $parameters['temperature'] ?? null
+        );
 
         foreach ([
             'top_p',

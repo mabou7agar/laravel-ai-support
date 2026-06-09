@@ -254,12 +254,25 @@ class GrokEngineDriver extends BaseEngineDriver
             $request->getProviderOptions(EngineEnum::Xai->value)
         );
 
+        $model = $request->getModel()->value;
         $payload = [
-            'model' => $request->getModel()->value,
+            'model' => $model,
             'messages' => $messages,
-            'max_tokens' => $request->getMaxTokens() ?? $parameters['max_tokens'] ?? 4096,
-            'temperature' => $request->getTemperature() ?? $parameters['temperature'] ?? 0.7,
         ];
+
+        // Reasoning models (GPT-5 family, o1/o3) need max_completion_tokens with a
+        // floor and reject a custom temperature; standard models use max_tokens +
+        // temperature. See BaseEngineDriver::applyChatTokenParameters().
+        $payload = $this->applyChatTokenParameters(
+            $payload,
+            $model,
+            (int) ($request->getMaxTokens() ?? $parameters['max_tokens'] ?? 4096),
+            $request->getTemperature() ?? $parameters['temperature'] ?? null
+        );
+
+        if ($this->isGpt5FamilyModel($model) || $this->isReasoningModel($model)) {
+            unset($parameters['max_completion_tokens'], $parameters['max_tokens']);
+        }
 
         foreach ([
             'max_completion_tokens',

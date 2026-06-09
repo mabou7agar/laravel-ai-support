@@ -505,6 +505,77 @@ class OpenRouterEngineDriverTest extends UnitTestCase
             && $request->data()['modalities'] === ['text', 'audio']);
     }
 
+    public function test_openrouter_gpt5_uses_max_completion_tokens_and_drops_temperature(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-gpt5-1',
+                'model' => 'openai/gpt-5',
+                'choices' => [[
+                    'message' => ['role' => 'assistant', 'content' => 'Hello my friend.'],
+                    'finish_reason' => 'stop',
+                ]],
+                'usage' => ['prompt_tokens' => 13, 'completion_tokens' => 5, 'total_tokens' => 18],
+            ]),
+        ]);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateText(new AIRequest(
+            prompt: 'Say hello in 3 words.',
+            engine: EngineEnum::OPENROUTER,
+            model: EntityEnum::OPENROUTER_GPT_5,
+            maxTokens: 50,
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertSame('Hello my friend.', $response->content);
+
+        Http::assertSent(function ($request): bool {
+            $data = $request->data();
+
+            // Reasoning models bill hidden reasoning against the cap; a tiny
+            // max_tokens starves the answer. We must send a floored
+            // max_completion_tokens and never an unsupported temperature.
+            return ($data['max_completion_tokens'] ?? null) === 1024
+                && !array_key_exists('max_tokens', $data)
+                && !array_key_exists('temperature', $data);
+        });
+    }
+
+    public function test_openrouter_standard_model_keeps_max_tokens_and_temperature(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-std-1',
+                'model' => 'meta-llama/llama-3.1-8b-instruct',
+                'choices' => [[
+                    'message' => ['role' => 'assistant', 'content' => 'Hi there friend.'],
+                    'finish_reason' => 'stop',
+                ]],
+                'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 4, 'total_tokens' => 14],
+            ]),
+        ]);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateText(new AIRequest(
+            prompt: 'Say hello in 3 words.',
+            engine: EngineEnum::OPENROUTER,
+            model: 'meta-llama/llama-3.1-8b-instruct',
+            maxTokens: 50,
+            temperature: 0.7,
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+
+        Http::assertSent(function ($request): bool {
+            $data = $request->data();
+
+            return ($data['max_tokens'] ?? null) === 50
+                && ($data['temperature'] ?? null) === 0.7
+                && !array_key_exists('max_completion_tokens', $data);
+        });
+    }
+
     public function test_openrouter_model_catalog_keeps_metadata_and_capabilities(): void
     {
         Http::fake([
