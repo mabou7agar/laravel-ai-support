@@ -68,6 +68,19 @@ class LaravelAgentProcessor
         $context = $this->contextManager->getOrCreate($sessionId, $userId);
         $this->hydrateConversationHistory($context, $options);
 
+        // Thread caller-supplied run metadata into the tool-visible context.
+        // Application tools receive this context, so scoping keys the host app
+        // passes per run (tenant/workspace/page/draft identifiers, governance
+        // hints, …) must land in context->metadata — otherwise tools can only
+        // see runtime-managed keys and every host needs a side-channel. Caller
+        // values win over stale persisted copies of the same keys; runtime
+        // keys (ai_native, conversation_context_metrics, …) use distinct names
+        // and are unaffected.
+        $callerMetadata = is_array($options['metadata'] ?? null) ? $options['metadata'] : [];
+        if ($callerMetadata !== []) {
+            $context->metadata = array_merge($context->metadata, $callerMetadata);
+        }
+
         // Dedup guard (fallback only — used when no idempotency_key is supplied): if the
         // client already included the current turn as the last entry in
         // conversation_history, skip addUserMessage to avoid a double-user-turn in the

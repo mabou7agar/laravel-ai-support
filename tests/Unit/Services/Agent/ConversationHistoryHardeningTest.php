@@ -328,6 +328,42 @@ class ConversationHistoryHardeningTest extends UnitTestCase
         $this->assertContains('reroute message', $contents, 'The current turn is still appended.');
     }
 
+    public function test_caller_run_metadata_is_threaded_into_the_tool_visible_context(): void
+    {
+        $sessionId = 'session-meta-' . uniqid();
+        $context = new UnifiedActionContext($sessionId, 99);
+        $context->metadata['ai_native'] = ['runtime' => 'state'];
+
+        $this->processWithContext($context, 'retheme my site', [
+            'metadata' => [
+                'tenant_id' => 't-1',
+                'draft_uuid' => 'draft-abc',
+                'page_key' => 'checkout',
+            ],
+        ]);
+
+        // Application tools receive this same context — scoping keys the host
+        // passes per run must be readable there.
+        $this->assertSame('draft-abc', $context->metadata['draft_uuid']);
+        $this->assertSame('checkout', $context->metadata['page_key']);
+        $this->assertSame('t-1', $context->metadata['tenant_id']);
+        // Runtime-managed keys are untouched.
+        $this->assertSame(['runtime' => 'state'], $context->metadata['ai_native']);
+    }
+
+    public function test_caller_metadata_refreshes_stale_persisted_values_per_turn(): void
+    {
+        $sessionId = 'session-meta-' . uniqid();
+        $context = new UnifiedActionContext($sessionId, 99);
+        $context->metadata['page_key'] = 'home'; // persisted from a prior turn
+
+        $this->processWithContext($context, 'now the checkout page', [
+            'metadata' => ['page_key' => 'checkout'],
+        ]);
+
+        $this->assertSame('checkout', $context->metadata['page_key']);
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

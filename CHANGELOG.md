@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.2] — 2026-06-10
+
+### Fixed
+
+- **Caller run metadata now reaches tool contexts** — `LaravelAgentProcessor::process()` merges the caller-supplied `options['metadata']` into the tool-visible `UnifiedActionContext->metadata` each turn. Application tools previously only saw runtime-managed keys (`ai_native`, `conversation_context_metrics`), forcing hosts to build side-channels for per-run scoping (tenant/workspace/page/draft identifiers). Caller values refresh stale persisted copies of the same keys; runtime-managed keys are unaffected. Covered by `ConversationHistoryHardeningTest::test_caller_run_metadata_is_threaded_into_the_tool_visible_context`.
+
 ## [2.9.1] — 2026-06-10
 
 ### Added
