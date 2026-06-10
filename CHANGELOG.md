@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.3] — 2026-06-10
+
+### Fixed
+
+- **Loop exhaustion no longer denies completed work** — when the agent loop ends without a parseable final turn from the model but the task frame reports the objective COMPLETED (a write tool succeeded this turn), `AiNativeRuntime` now returns a final response carrying the last successful tool outcome (`data.last_tool_outcome`) instead of "I need more information to continue." — which read as failure to the user when their request had in fact been fulfilled. Successful lookups mid-flow still lead to the planned ask, and sub-agent runs keep their own richer `tool_result_fallback` salvage (guarded by the task-frame status condition).
+
 ## [2.9.2] — 2026-06-10
 
 ### Fixed

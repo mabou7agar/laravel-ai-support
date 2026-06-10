@@ -143,6 +143,7 @@ class AiNativeRuntime
         $state = $this->stateStore->state($context);
         $state['runtime_feedback'] = [];
         unset($state['last_tool_validation_failure']);
+        $outcomesAtTurnStart = count((array) ($state['recent_outcomes'] ?? []));
         if ($this->exposeReasoning($options)) {
             // Per-turn rationale accumulator. The state store allowlist drops this
             // cross-turn, which is intentional: reasoning_trace lives only for the
@@ -300,6 +301,32 @@ class AiNativeRuntime
             return $this->responses->needsUserInput($context, $state, implode("\n", $validationErrors), $this->responses->requiredInputsFromValidation($validationErrors), [
                 'tool_name' => $lastValidation['tool'] ?? null,
             ]);
+        }
+
+        // Loop exhausted without a parseable final turn from the model. If a
+        // tool ALREADY SUCCEEDED this turn, the work is done — answering
+        // "I need more information" would tell the user their request failed
+        // when it didn't. Return a final response carrying that outcome; the
+        // host application can surface the tool's artifacts (previews, ids)
+        // from its own stores.
+        // Only when the task frame itself says the objective COMPLETED — a
+        // successful lookup mid-flow must still lead to the planned ask, and
+        // sub-agent runs keep their own richer tool_result_fallback salvage.
+        $turnOutcomes = ($state['task_frame']['status'] ?? null) === 'completed'
+            ? array_slice((array) ($state['recent_outcomes'] ?? []), $outcomesAtTurnStart)
+            : [];
+        foreach (array_reverse($turnOutcomes) as $turnOutcome) {
+            if (is_array($turnOutcome) && ($turnOutcome['success'] ?? false) === true && ($turnOutcome['needs_user_input'] ?? false) !== true) {
+                $label = trim((string) ($turnOutcome['label'] ?? $turnOutcome['tool'] ?? ''));
+
+                return $this->responses->final(
+                    $context,
+                    $state,
+                    rtrim($this->runtimeText('ai-engine::runtime.responses.completed_without_summary', 'Done — the requested action completed successfully.'), '.')
+                        . ($label !== '' ? ' (' . $label . ').' : '.'),
+                    ['last_tool_outcome' => $turnOutcome],
+                );
+            }
         }
 
         return $this->responses->needsUserInput($context, $state, $this->runtimeText('ai-engine::runtime.responses.need_more_information', 'I need more information to continue.'));
