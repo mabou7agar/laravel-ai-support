@@ -117,6 +117,20 @@ class AiNativePromptBuilder
             }
         }
 
+        if (!empty($options['proactive'])) {
+            // The caller runs an autonomous build/generation flow where the context
+            // snapshot already supplies the needed direction (e.g. a catalog of
+            // sections + a resolved design system). Bias the model toward acting
+            // instead of interviewing the user for direction it already has.
+            $anchor = array_search('Return JSON only. No markdown.', $lines, true);
+            $instruction = 'PROACTIVE MODE: When the user asks to build, create, compose, design, or generate something and the context snapshot already provides the needed structure (e.g. an available catalog/guardrail and a design system or design direction), PROCEED NOW — call the relevant tool(s) with sensible default content. Do NOT ask the user clarifying questions about goal, audience, brand, tone, or visual style; those are already decided. Only ask the user when a required structural choice genuinely cannot be defaulted from the available context/tools.';
+            if ($anchor === false) {
+                $lines[] = $instruction;
+            } else {
+                array_splice($lines, $anchor, 0, [$instruction]);
+            }
+        }
+
         if ($this->respondInUserLanguage($options)) {
             // Most agent output is free text the model writes (the "message" field, questions,
             // summaries), so without an explicit instruction the reply language is left to chance.

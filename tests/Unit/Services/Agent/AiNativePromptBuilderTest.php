@@ -237,6 +237,32 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringNotContainsString('you MUST call the search_knowledge tool', $unforced);
     }
 
+    public function test_prompt_biases_toward_acting_when_proactive_is_set(): void
+    {
+        $tools = new ToolRegistry();
+        $tools->register('compose_page', $this->tool('compose_page'));
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $builder = new AiNativePromptBuilder($tools, $skills);
+
+        $proactive = $builder->build('build me a landing page', new UnifiedActionContext('prompt-proactive'), [], ['proactive' => true]);
+        $this->assertStringContainsString('PROACTIVE MODE', $proactive);
+        $this->assertStringContainsString('PROCEED NOW', $proactive);
+
+        // The autonomy instruction must land before the JSON-only anchor so the
+        // model reads it as part of the actionable instructions block.
+        $this->assertLessThan(
+            strpos($proactive, 'Return JSON only. No markdown.'),
+            strpos($proactive, 'PROACTIVE MODE'),
+        );
+
+        // Without the option the agent keeps its default clarify-first disposition.
+        $default = $builder->build('build me a landing page', new UnifiedActionContext('prompt-not-proactive'), [], []);
+        $this->assertStringNotContainsString('PROACTIVE MODE', $default);
+    }
+
     public function test_prompt_instructs_reply_in_user_language_by_default(): void
     {
         config()->set('ai-agent.ai_native.respond_in_user_language', true);

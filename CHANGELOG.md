@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] — 2026-06-10
+
+### Added
+
+- **`proactive` runtime option (AiNative)** — `AiNativePromptBuilder::build()` honours a new `proactive` option (mirrors the `force_rag` pattern): when set, an autonomy instruction is spliced before the `Return JSON only.` anchor biasing the model to act on build/create/compose/design/generate requests using the context snapshot (catalog guardrails, resolved design system) instead of interviewing the user for direction it already has. Off by default — the agent keeps its clarify-first disposition unless the caller opts in per run. Covered by `AiNativePromptBuilderTest::test_prompt_biases_toward_acting_when_proactive_is_set`.
+
 ## [2.2.39] — 2026-06-01
 
 ### Changed
