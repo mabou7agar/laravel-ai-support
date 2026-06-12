@@ -7,7 +7,7 @@ This repository is a Laravel package, so proposed changes should keep package bo
 ## Development
 
 1. Install dependencies with `composer update`.
-2. Run the test suite with `vendor/bin/phpunit`.
+2. Run the full test suite (Unit + Feature) with `composer test`; `composer test:unit` and `composer test:feature` run a single suite.
 3. Update docs when behavior, configuration, routes, or commands change.
 
 ## Documentation Requirement
