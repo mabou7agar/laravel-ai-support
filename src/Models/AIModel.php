@@ -192,8 +192,11 @@ class AIModel extends Model
     public function clearCache(): void
     {
         Cache::forget("ai_model:{$this->model_id}");
+        Cache::forget("ai_engine:model_resolver:{$this->model_id}");
         Cache::forget('ai_models:active');
         Cache::forget('ai_models:grouped');
+
+        \LaravelAIEngine\Enums\EntityEnum::flushRuntimeCache();
     }
 
     /**

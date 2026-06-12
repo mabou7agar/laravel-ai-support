@@ -146,8 +146,8 @@ class EntityEnumTest extends TestCase
             $this->assertIsFloat($creditIndex);
             $this->assertGreaterThanOrEqual(0, $creditIndex, "Entity {$entity->value} should have non-negative credit index");
             
-            // Free models should have 0.0 credit index
-            if (str_contains($entity->value, ':free')) {
+            // Free models and locally-hosted Ollama models cost nothing
+            if (str_contains($entity->value, ':free') || $entity->engine() === EngineEnum::Ollama) {
                 $this->assertEquals(0.0, $creditIndex, "Free model {$entity->value} should have 0.0 credit index");
             } else {
                 $this->assertGreaterThan(0, $creditIndex, "Non-free entity {$entity->value} should have positive credit index");

@@ -13,6 +13,8 @@ abstract class UnitTestCase extends Orchestra
     {
         parent::setUp();
 
+        \LaravelAIEngine\Enums\EntityEnum::flushRuntimeCache();
+
         if (!class_exists(\App\Models\User::class)) {
             class_alias(User::class, \App\Models\User::class);
         }

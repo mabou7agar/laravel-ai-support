@@ -29,7 +29,10 @@ use LaravelAIEngine\Services\Media\VideoModelCatalog;
 class EntityEnum
 {
     protected static ?DynamicModelResolver $resolver = null;
-    protected ?array $dynamicModel = null;
+    /** @var array<string, array|null> memoized database lookups, including misses */
+    protected static array $databaseCache = [];
+    /** @var array<string, array>|null decoded resources/models.json */
+    protected static ?array $manifest = null;
     // OpenAI Models
     public const GPT_4O = 'gpt-4o';
     public const GPT_4O_MINI = 'gpt-4o-mini';
@@ -320,15 +323,6 @@ class EntityEnum
     public function __construct(string $value)
     {
         $this->value = $value;
-
-        // Try to load dynamic model info if not a predefined constant
-        if (!$this->isPredefinedModel()) {
-            try {
-                $this->dynamicModel = $this->getResolver()->resolve($value);
-            } catch (\Throwable) {
-                $this->dynamicModel = null;
-            }
-        }
     }
 
     /**
@@ -343,13 +337,61 @@ class EntityEnum
     }
 
     /**
-     * Check if this is a predefined model constant
+     * Forget memoized database and manifest lookups (call after the ai_models
+     * table changes so already-constructed entities re-resolve).
+     */
+    public static function flushRuntimeCache(): void
+    {
+        static::$databaseCache = [];
+        static::$manifest = null;
+    }
+
+    /**
+     * Database-backed metadata for this model, memoized per request.
+     * Null when the model is not in the ai_models table or no database is available.
+     */
+    protected function databaseModel(): ?array
+    {
+        if (!array_key_exists($this->value, static::$databaseCache)) {
+            try {
+                static::$databaseCache[$this->value] = $this->getResolver()->resolve($this->value);
+            } catch (\Throwable) {
+                static::$databaseCache[$this->value] = null;
+            }
+        }
+
+        return static::$databaseCache[$this->value];
+    }
+
+    /**
+     * The shipped model catalog (resources/models.json) — offline fallback when
+     * a model has not been synced or seeded into the database.
+     */
+    protected static function manifest(): array
+    {
+        if (static::$manifest === null) {
+            $path = __DIR__ . '/../../resources/models.json';
+            $decoded = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+            static::$manifest = is_array($decoded) ? $decoded : [];
+        }
+
+        return static::$manifest;
+    }
+
+    /**
+     * Manifest entry for this model, if any.
+     */
+    protected function manifestModel(): ?array
+    {
+        return static::manifest()[$this->value] ?? null;
+    }
+
+    /**
+     * Check if this model ships in the package catalog
      */
     protected function isPredefinedModel(): bool
     {
-        $reflection = new \ReflectionClass(static::class);
-        $constants = $reflection->getConstants();
-        return in_array($this->value, $constants, true);
+        return $this->manifestModel() !== null;
     }
 
     /**
@@ -357,52 +399,25 @@ class EntityEnum
      */
     public function isDynamic(): bool
     {
-        return $this->dynamicModel !== null;
+        return $this->databaseModel() !== null;
     }
 
     /**
-     * Get dynamic model property or fallback to switch statement
-     */
-    protected function getDynamicOr(string $key, callable $fallback)
-    {
-        if ($this->isDynamic() && isset($this->dynamicModel[$key])) {
-            return $this->dynamicModel[$key];
-        }
-        return $fallback();
-    }
-
-    /**
-     * Detect engine from model name pattern (for models not in switch statement)
+     * Detect engine from model name pattern (for models not in the catalog)
      */
     protected function detectEngineFromModelName(): EngineEnum
     {
         $model = $this->value;
-
-        // First, check database for model
-        try {
-            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($model);
-            if ($dbModel) {
-                return EngineEnum::from($dbModel->provider);
-            }
-        } catch (\Exception $e) {
-            // Database not available or table doesn't exist, continue with config check
-        }
-
-        // OpenRouter models have format: provider/model-name (e.g., meta-llama/llama-3.1-8b-instruct:free)
-        if (str_contains($model, '/')) {
-            // Check if model exists in OpenRouter config
-            $openrouterModels = config('ai-engine.engines.openrouter.models', []);
-            if (isset($openrouterModels[$model])) {
-                return EngineEnum::OpenRouter;
-            }
-        }
 
         // Check all engine configs to find the model
         $engines = config('ai-engine.engines', []);
         foreach ($engines as $engineName => $engineConfig) {
             $models = $engineConfig['models'] ?? [];
             if (isset($models[$model])) {
-                return EngineEnum::from($engineName);
+                $engine = EngineEnum::tryFrom($engineName);
+                if ($engine !== null) {
+                    return $engine;
+                }
             }
         }
 
@@ -420,160 +435,21 @@ class EntityEnum
      */
     public function engine(): EngineEnum
     {
-        // Use dynamic model data if available
-        if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
-            return EngineEnum::from($this->dynamicModel['engine']);
+        $db = $this->databaseModel();
+        if ($db !== null && !empty($db['engine']) && ($engine = EngineEnum::tryFrom($db['engine'])) !== null) {
+            return $engine;
         }
 
         if ($spec = VideoModelCatalog::get($this->value)) {
             return EngineEnum::from($spec->engine);
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-            case self::GPT_4O_MINI:
-            case self::GPT_3_5_TURBO:
-            case self::GPT_5:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-            case self::GPT_IMAGE_1_5:
-            case self::GPT_IMAGE_1:
-            case self::GPT_IMAGE_1_MINI:
-            case self::DALL_E_3:
-            case self::DALL_E_2:
-            case self::WHISPER_1:
-            case self::OPENAI_GPT_4O_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
-            case self::OPENAI_GPT_4O_MINI_TTS:
-            case self::OPENAI_TTS_1:
-            case self::OPENAI_TTS_1_HD:
-                return EngineEnum::OpenAI;
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_HAIKU_4_5:
-            case self::CLAUDE_SONNET_4_6:
-            case self::CLAUDE_OPUS_4_6:
-            case self::CLAUDE_3_HAIKU:
-            case self::CLAUDE_3_OPUS:
-                return EngineEnum::Anthropic;
-            case self::GEMINI_1_5_PRO:
-            case self::GEMINI_1_5_FLASH:
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-            case self::GEMINI_2_5_PRO:
-            case self::GEMINI_2_5_FLASH:
-            case self::GEMINI_IMAGEN_4_FAST:
-            case self::GEMINI_IMAGEN_4:
-            case self::GEMINI_VEO_3_1:
-            case self::GEMINI_VEO_3_1_FAST:
-            case self::GEMINI_2_5_FLASH_TTS:
-            case self::GEMINI_2_5_PRO_TTS:
-            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
-            case self::GEMINI_LYRIA_002:
-                return EngineEnum::Gemini;
-            case self::SD3_LARGE:
-            case self::SD3_MEDIUM:
-            case self::SDXL_1024:
-                return EngineEnum::StableDiffusion;
-            case self::ELEVEN_MULTILINGUAL_V2:
-            case self::ELEVEN_MULTILINGUAL_STS_V2:
-            case self::ELEVEN_SCRIBE_V2:
-            case self::ELEVEN_MUSIC:
-                return EngineEnum::ElevenLabs;
-            case self::FAL_FLUX_PRO:
-            case self::FAL_FLUX_DEV:
-            case self::FAL_FLUX_SCHNELL:
-            case self::FAL_SDXL:
-            case self::FAL_SD3_MEDIUM:
-            case self::FAL_STABLE_VIDEO:
-            case self::FAL_ANIMATEDIFF:
-            case self::FAL_LUMA_DREAM:
-            case self::FAL_NANO_BANANA_2:
-            case self::FAL_NANO_BANANA_2_EDIT:
-            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
-            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
-            case self::FLUX_PRO:
-            case self::KLING_VIDEO:
-            case self::LUMA_DREAM_MACHINE:
-                return EngineEnum::FalAI;
-            case self::DEEPSEEK_CHAT:
-            case self::DEEPSEEK_REASONER:
-                return EngineEnum::DeepSeek;
-            case self::PERPLEXITY_SONAR_LARGE:
-            case self::PERPLEXITY_SONAR_MEDIUM:
-            case self::PERPLEXITY_SONAR_SMALL:
-                return EngineEnum::Perplexity;
-            case self::SERPER_SEARCH:
-            case self::SERPER_NEWS:
-            case self::SERPER_IMAGES:
-                return EngineEnum::Serper;
-            case self::UNSPLASH_SEARCH:
-                return EngineEnum::Unsplash;
-            case self::PEXELS_SEARCH:
-                return EngineEnum::Pexels;
-            case self::PLAGIARISM_BASIC:
-            case self::PLAGIARISM_ADVANCED:
-            case self::PLAGIARISM_ACADEMIC:
-                return EngineEnum::PlagiarismCheck;
-            case self::MIDJOURNEY_V6:
-            case self::MIDJOURNEY_V5:
-            case self::MIDJOURNEY_NIJI:
-                return EngineEnum::Midjourney;
-            case self::AZURE_TEXT_ANALYTICS:
-            case self::AZURE_TTS:
-            case self::AZURE_STT:
-            case self::AZURE_TRANSLATOR:
-            case self::AZURE_COMPUTER_VISION:
-                return EngineEnum::Azure;
-            case self::GOOGLE_TTS:
-                return EngineEnum::GoogleTts;
-            case self::OPENROUTER_MISTRAL_7B_FREE:
-            case self::OPENROUTER_QWEN_2_5_7B_FREE:
-            case self::OPENROUTER_PHI_3_MINI_FREE:
-            case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return EngineEnum::OpenRouter;
-            case self::GROK_4_1:
-            case self::GROK_4:
-            case self::GROK_3_1:
-                return EngineEnum::Xai;
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return EngineEnum::NvidiaNim;
-            case self::BEDROCK_CLAUDE_SONNET:
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return EngineEnum::Bedrock;
-            case self::CLIPDROP_IMAGE_EDIT:
-                return EngineEnum::Clipdrop;
-            case self::CLOUDFLARE_FLUX_SCHNELL:
-            case self::CLOUDFLARE_DREAMSHAPER:
-            case self::CLOUDFLARE_WHISPER:
-            case self::CLOUDFLARE_MELOTTS:
-                return EngineEnum::CloudflareWorkersAI;
-            case self::HUGGINGFACE_FLUX_SCHNELL:
-            case self::HUGGINGFACE_WHISPER_LARGE_V3:
-            case self::HUGGINGFACE_MMS_TTS:
-                return EngineEnum::HuggingFace;
-            case self::REPLICATE_FLUX_SCHNELL:
-            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return EngineEnum::Replicate;
-            case self::COMFYUI_DEFAULT_IMAGE:
-            case self::COMFYUI_DEFAULT_VIDEO:
-                return EngineEnum::ComfyUI;
-            case self::LOCAL_WHISPER:
-            case self::LOCAL_TTS:
-                return EngineEnum::LocalAudio;
-            default:
-                // Try to detect engine from model name pattern
-                return $this->detectEngineFromModelName();
+        $catalogEngine = $this->manifestModel()['engine'] ?? null;
+        if ($catalogEngine !== null && ($engine = EngineEnum::tryFrom($catalogEngine)) !== null) {
+            return $engine;
         }
+
+        return $this->detectEngineFromModelName();
     }
 
     /**
@@ -581,9 +457,9 @@ class EntityEnum
      */
     public function driverClass(): string
     {
-        // Use dynamic model data if available
-        if ($this->isDynamic() && isset($this->dynamicModel['driver_class'])) {
-            return $this->dynamicModel['driver_class'];
+        $db = $this->databaseModel();
+        if ($db !== null && !empty($db['driver_class']) && class_exists($db['driver_class'])) {
+            return $db['driver_class'];
         }
 
         if ($spec = VideoModelCatalog::get($this->value)) {
@@ -592,191 +468,12 @@ class EntityEnum
                 : \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class;
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-                return GPT4ODriver::class;
-            case self::GPT_4O_MINI:
-                return GPT4OMiniDriver::class;
-            case self::GPT_3_5_TURBO:
-                return GPT35TurboDriver::class;
-            case self::GPT_5:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-                // GPT-5 models use the same driver as GPT-4O for now
-                return GPT4ODriver::class;
-            case self::GPT_IMAGE_1_5:
-            case self::GPT_IMAGE_1:
-            case self::GPT_IMAGE_1_MINI:
-            case self::DALL_E_3:
-                return DallE3Driver::class;
-            case self::DALL_E_2:
-                return DallE2Driver::class;
-            case self::WHISPER_1:
-            case self::OPENAI_GPT_4O_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
-                return WhisperDriver::class;
-            case self::OPENAI_GPT_4O_MINI_TTS:
-            case self::OPENAI_TTS_1:
-            case self::OPENAI_TTS_1_HD:
-                return GPT4ODriver::class;
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_SONNET_4_6:
-                return Claude35SonnetDriver::class;
-            case self::CLAUDE_3_HAIKU:
-            case self::CLAUDE_HAIKU_4_5:
-                return Claude3HaikuDriver::class;
-            case self::CLAUDE_3_OPUS:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_OPUS_4_6:
-                return Claude3OpusDriver::class;
-            case self::GEMINI_1_5_PRO:
-            case self::GEMINI_2_5_PRO:
-                return Gemini15ProDriver::class;
-            case self::GEMINI_1_5_FLASH:
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-            case self::GEMINI_2_5_FLASH:
-            case self::GEMINI_IMAGEN_4_FAST:
-            case self::GEMINI_IMAGEN_4:
-            case self::GEMINI_VEO_3_1:
-            case self::GEMINI_VEO_3_1_FAST:
-            case self::GEMINI_2_5_FLASH_TTS:
-            case self::GEMINI_2_5_PRO_TTS:
-            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
-            case self::GEMINI_LYRIA_002:
-                return Gemini15FlashDriver::class;
-            case self::SD3_LARGE:
-                return SD3LargeDriver::class;
-            case self::SDXL_1024:
-                return SDXL1024Driver::class;
-            case self::ELEVEN_MULTILINGUAL_V2:
-            case self::ELEVEN_MULTILINGUAL_STS_V2:
-            case self::ELEVEN_SCRIBE_V2:
-            case self::ELEVEN_MUSIC:
-                return MultilingualV2Driver::class;
-            case self::FAL_FLUX_PRO:
-            case self::FLUX_PRO:
-                return FluxProDriver::class;
-            case self::FAL_LUMA_DREAM:
-            case self::FAL_NANO_BANANA_2:
-            case self::FAL_NANO_BANANA_2_EDIT:
-            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
-            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
-            case self::KLING_VIDEO:
-            case self::LUMA_DREAM_MACHINE:
-                return \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class;
-            case self::DEEPSEEK_CHAT:
-            case self::DEEPSEEK_REASONER:
-                return DeepSeekEngineDriver::class;
-            case self::OPENROUTER_GPT_5:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_GPT_5_MINI:
-                return GPT4OMiniDriver::class;
-            case self::OPENROUTER_GPT_5_NANO:
-                return GPT4OMiniDriver::class;
-            case self::OPENROUTER_GPT_4O:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_GPT_4O_2024_11_20:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_GPT_4O_MINI:
-                return GPT4OMiniDriver::class;
-            case self::OPENROUTER_GPT_4O_MINI_2024_07_18:
-                return GPT4OMiniDriver::class;
-            case self::OPENROUTER_CLAUDE_4_OPUS:
-                return Claude3OpusDriver::class;
-            case self::OPENROUTER_CLAUDE_4_SONNET:
-                return Claude35SonnetDriver::class;
-            case self::OPENROUTER_CLAUDE_3_5_SONNET:
-                return Claude35SonnetDriver::class;
-            case self::OPENROUTER_CLAUDE_3_5_SONNET_20241022:
-                return Claude35SonnetDriver::class;
-            case self::OPENROUTER_CLAUDE_3_5_HAIKU:
-                return Claude3HaikuDriver::class;
-            case self::OPENROUTER_CLAUDE_3_OPUS:
-                return Claude3OpusDriver::class;
-            case self::OPENROUTER_CLAUDE_3_HAIKU:
-                return Claude3HaikuDriver::class;
-            case self::OPENROUTER_GEMINI_2_5_PRO:
-                return Gemini15ProDriver::class;
-            case self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL:
-                return Gemini15ProDriver::class;
-            case self::OPENROUTER_GEMINI_PRO:
-                return Gemini15ProDriver::class;
-            case self::OPENROUTER_GEMINI_1_5_PRO:
-                return Gemini15ProDriver::class;
-            case self::OPENROUTER_GEMINI_2_0_FLASH:
-                return Gemini15FlashDriver::class;
-            case self::OPENROUTER_LLAMA_3_1_405B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_LLAMA_3_1_70B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_LLAMA_3_2_90B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_LLAMA_3_3_70B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_MIXTRAL_8X7B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_QWEN_2_5_72B:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_DEEPSEEK_V3:
-            case self::OPENROUTER_DEEPSEEK_R1:
-                return DeepSeekEngineDriver::class;
-            case self::OPENROUTER_LLAMA_3_1_8B_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_LLAMA_3_2_3B_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_GEMMA_2_9B_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_MISTRAL_7B_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_QWEN_2_5_7B_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_PHI_3_MINI_FREE:
-                return GPT4ODriver::class;
-            case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return GPT4ODriver::class;
-            case self::GROK_4_1:
-            case self::GROK_4:
-            case self::GROK_3_1:
-                return \LaravelAIEngine\Drivers\Grok\GrokEngineDriver::class;
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class;
-            case self::BEDROCK_CLAUDE_SONNET:
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class;
-            case self::CLIPDROP_IMAGE_EDIT:
-                return \LaravelAIEngine\Drivers\Clipdrop\ClipdropEngineDriver::class;
-            case self::CLOUDFLARE_FLUX_SCHNELL:
-            case self::CLOUDFLARE_DREAMSHAPER:
-            case self::CLOUDFLARE_WHISPER:
-            case self::CLOUDFLARE_MELOTTS:
-                return \LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver::class;
-            case self::HUGGINGFACE_FLUX_SCHNELL:
-            case self::HUGGINGFACE_WHISPER_LARGE_V3:
-            case self::HUGGINGFACE_MMS_TTS:
-                return \LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver::class;
-            case self::REPLICATE_FLUX_SCHNELL:
-            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class;
-            case self::COMFYUI_DEFAULT_IMAGE:
-            case self::COMFYUI_DEFAULT_VIDEO:
-                return \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class;
-            case self::LOCAL_WHISPER:
-            case self::LOCAL_TTS:
-                return LocalAudioEngineDriver::class;
-            default:
-                // For unknown models, use engine-based driver detection
-                return $this->detectDriverFromEngine();
+        $catalogDriver = $this->manifestModel()['driver_class'] ?? null;
+        if ($catalogDriver !== null && class_exists($catalogDriver)) {
+            return $catalogDriver;
         }
+
+        return $this->detectDriverFromEngine();
     }
 
     /**
@@ -784,20 +481,23 @@ class EntityEnum
      */
     protected function detectDriverFromEngine(): string
     {
-        $engine = $this->detectEngineFromModelName();
-
-        // Map engines to their default drivers
-        return match ($engine) {
-            EngineEnum::OpenAI       => GPT4ODriver::class,
-            EngineEnum::Anthropic    => Claude35SonnetDriver::class,
-            EngineEnum::Gemini       => Gemini15ProDriver::class,
-            EngineEnum::OpenRouter   => OpenRouterEngineDriver::class,
-            EngineEnum::DeepSeek     => DeepSeekEngineDriver::class,
-            EngineEnum::Ollama       => OllamaEngineDriver::class,
-            EngineEnum::NvidiaNim    => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
-            EngineEnum::Bedrock      => \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class,
-            EngineEnum::LocalAudio   => LocalAudioEngineDriver::class,
-            default                  => GPT4ODriver::class,
+        return match ($this->engine()) {
+            EngineEnum::OpenAI              => GPT4ODriver::class,
+            EngineEnum::Anthropic           => Claude35SonnetDriver::class,
+            EngineEnum::Gemini              => Gemini15ProDriver::class,
+            EngineEnum::OpenRouter          => OpenRouterEngineDriver::class,
+            EngineEnum::DeepSeek            => DeepSeekEngineDriver::class,
+            EngineEnum::Ollama              => OllamaEngineDriver::class,
+            EngineEnum::FalAI               => \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class,
+            EngineEnum::Replicate           => \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class,
+            EngineEnum::HuggingFace         => \LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver::class,
+            EngineEnum::CloudflareWorkersAI => \LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver::class,
+            EngineEnum::ComfyUI             => \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class,
+            EngineEnum::ElevenLabs          => MultilingualV2Driver::class,
+            EngineEnum::NvidiaNim           => \LaravelAIEngine\Drivers\NvidiaNim\NvidiaNimEngineDriver::class,
+            EngineEnum::Bedrock             => \LaravelAIEngine\Drivers\Bedrock\BedrockEngineDriver::class,
+            EngineEnum::LocalAudio          => LocalAudioEngineDriver::class,
+            default                         => GPT4ODriver::class,
         };
     }
 
@@ -806,250 +506,17 @@ class EntityEnum
      */
     public function label(): string
     {
-        // Use dynamic model name if available
-        if ($this->isDynamic() && isset($this->dynamicModel['name'])) {
-            return $this->dynamicModel['name'];
+        $db = $this->databaseModel();
+        if ($db !== null && !empty($db['name'])) {
+            return $db['name'];
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-                return 'GPT-4o';
-            case self::GPT_4O_MINI:
-                return 'GPT-4o Mini';
-            case self::GPT_3_5_TURBO:
-                return 'GPT-3.5 Turbo';
-            case self::GPT_5:
-                return 'GPT-5';
-            case self::GPT_5_MINI:
-                return 'GPT-5 Mini';
-            case self::GPT_5_NANO:
-                return 'GPT-5 Nano';
-            case self::GPT_IMAGE_1_5:
-                return 'GPT Image 1.5';
-            case self::GPT_IMAGE_1:
-                return 'GPT Image 1';
-            case self::GPT_IMAGE_1_MINI:
-                return 'GPT Image 1 Mini';
-            case self::DALL_E_3:
-                return 'DALL-E 3';
-            case self::DALL_E_2:
-                return 'DALL-E 2';
-            case self::WHISPER_1:
-                return 'Whisper';
-            case self::OPENAI_GPT_4O_TRANSCRIBE:
-                return 'GPT-4o Transcribe';
-            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
-                return 'GPT-4o Mini Transcribe';
-            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
-                return 'GPT-4o Transcribe Diarize';
-            case self::OPENAI_GPT_4O_MINI_TTS:
-                return 'GPT-4o Mini TTS';
-            case self::OPENAI_TTS_1:
-                return 'OpenAI TTS 1';
-            case self::OPENAI_TTS_1_HD:
-                return 'OpenAI TTS 1 HD';
-            case self::CLAUDE_3_5_SONNET:
-                return 'Claude 3.5 Sonnet';
-            case self::CLAUDE_3_5_SONNET_20241022:
-                return 'Claude 3.5 Sonnet (Oct 2024)';
-            case self::CLAUDE_3_7_SONNET:
-                return 'Claude 3.7 Sonnet';
-            case self::CLAUDE_SONNET_4_5:
-                return 'Claude Sonnet 4.5';
-            case self::CLAUDE_OPUS_4_5:
-                return 'Claude Opus 4.5';
-            case self::CLAUDE_HAIKU_4_5:
-                return 'Claude Haiku 4.5';
-            case self::CLAUDE_SONNET_4_6:
-                return 'Claude Sonnet 4.6';
-            case self::CLAUDE_OPUS_4_6:
-                return 'Claude Opus 4.6';
-            case self::CLAUDE_3_HAIKU:
-                return 'Claude 3 Haiku';
-            case self::CLAUDE_3_OPUS:
-                return 'Claude 3 Opus';
-            case self::GEMINI_1_5_PRO:
-                return 'Gemini 1.5 Pro';
-            case self::GEMINI_1_5_FLASH:
-                return 'Gemini 1.5 Flash';
-            case self::GEMINI_2_0_FLASH:
-                return 'Gemini 2.0 Flash';
-            case self::GEMINI_2_0_FLASH_LITE:
-                return 'Gemini 2.0 Flash Lite';
-            case self::GEMINI_2_5_PRO:
-                return 'Gemini 2.5 Pro';
-            case self::GEMINI_2_5_FLASH:
-                return 'Gemini 2.5 Flash';
-            case self::GEMINI_IMAGEN_4_FAST:
-                return 'Imagen 4 Fast';
-            case self::GEMINI_IMAGEN_4:
-                return 'Imagen 4';
-            case self::GEMINI_VEO_3_1:
-                return 'Veo 3.1';
-            case self::GEMINI_VEO_3_1_FAST:
-                return 'Veo 3.1 Fast';
-            case self::GEMINI_2_5_FLASH_TTS:
-                return 'Gemini 2.5 Flash TTS';
-            case self::GEMINI_2_5_PRO_TTS:
-                return 'Gemini 2.5 Pro TTS';
-            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
-                return 'Gemini 3.1 Flash TTS Preview';
-            case self::GEMINI_LYRIA_002:
-                return 'Lyria 002';
-            case self::SD3_LARGE:
-                return 'Stable Diffusion 3 Large';
-            case self::SD3_MEDIUM:
-                return 'Stable Diffusion 3 Medium';
-            case self::SDXL_1024:
-                return 'Stable Diffusion XL';
-            case self::ELEVEN_MULTILINGUAL_V2:
-                return 'ElevenLabs Multilingual v2';
-            case self::ELEVEN_MULTILINGUAL_STS_V2:
-                return 'ElevenLabs Multilingual STS v2';
-            case self::ELEVEN_SCRIBE_V2:
-                return 'ElevenLabs Scribe v2';
-            case self::ELEVEN_MUSIC:
-                return 'ElevenLabs Music';
-            case self::FLUX_PRO:
-                return 'Flux Pro';
-            case self::FAL_NANO_BANANA_2:
-                return 'Nano Banana 2';
-            case self::FAL_NANO_BANANA_2_EDIT:
-                return 'Nano Banana 2 Edit';
-            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
-                return 'Kling O3 Image to Video';
-            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
-                return 'Kling O3 Reference to Video';
-            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
-                return 'Seedance 2.0 Text to Video';
-            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
-                return 'Seedance 2.0 Image to Video';
-            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
-                return 'Seedance 2.0 Reference to Video';
-            case self::KLING_VIDEO:
-                return 'Kling Video';
-            case self::LUMA_DREAM_MACHINE:
-                return 'Luma Dream Machine';
-            case self::DEEPSEEK_CHAT:
-                return 'DeepSeek Chat';
-            case self::DEEPSEEK_REASONER:
-                return 'DeepSeek Reasoner';
-            case self::OPENROUTER_GPT_5:
-                return 'GPT-5 (OpenRouter)';
-            case self::OPENROUTER_GPT_5_MINI:
-                return 'GPT-5 Mini (OpenRouter)';
-            case self::OPENROUTER_GPT_5_NANO:
-                return 'GPT-5 Nano (OpenRouter)';
-            case self::OPENROUTER_GPT_4O:
-                return 'GPT-4o (OpenRouter)';
-            case self::OPENROUTER_GPT_4O_2024_11_20:
-                return 'GPT-4o (2024-11-20) (OpenRouter)';
-            case self::OPENROUTER_GPT_4O_MINI:
-                return 'GPT-4o Mini (OpenRouter)';
-            case self::OPENROUTER_GPT_4O_MINI_2024_07_18:
-                return 'GPT-4o Mini (2024-07-18) (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_4_OPUS:
-                return 'Claude 4 Opus (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_4_SONNET:
-                return 'Claude 4 Sonnet (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_3_5_SONNET:
-                return 'Claude 3.5 Sonnet (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_3_5_SONNET_20241022:
-                return 'Claude 3.5 Sonnet (2024-10-22) (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_3_5_HAIKU:
-                return 'Claude 3.5 Haiku (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_3_OPUS:
-                return 'Claude 3 Opus (OpenRouter)';
-            case self::OPENROUTER_CLAUDE_3_HAIKU:
-                return 'Claude 3 Haiku (OpenRouter)';
-            case self::OPENROUTER_GEMINI_2_5_PRO:
-                return 'Gemini 2.5 Pro (OpenRouter)';
-            case self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL:
-                return 'Gemini 2.5 Pro Experimental (OpenRouter)';
-            case self::OPENROUTER_GEMINI_PRO:
-                return 'Gemini Pro (OpenRouter)';
-            case self::OPENROUTER_GEMINI_1_5_PRO:
-                return 'Gemini 1.5 Pro (OpenRouter)';
-            case self::OPENROUTER_GEMINI_2_0_FLASH:
-                return 'Gemini 2.0 Flash (OpenRouter)';
-            case self::OPENROUTER_LLAMA_3_1_405B:
-                return 'Llama 3.1 405B (OpenRouter)';
-            case self::OPENROUTER_LLAMA_3_1_70B:
-                return 'Llama 3.1 70B (OpenRouter)';
-            case self::OPENROUTER_LLAMA_3_2_90B:
-                return 'Llama 3.2 90B (OpenRouter)';
-            case self::OPENROUTER_LLAMA_3_3_70B:
-                return 'Llama 3.3 70B (OpenRouter)';
-            case self::OPENROUTER_MIXTRAL_8X7B:
-                return 'Mixtral 8x7B (OpenRouter)';
-            case self::OPENROUTER_QWEN_2_5_72B:
-                return 'Qwen 2.5 72B (OpenRouter)';
-            case self::OPENROUTER_DEEPSEEK_V3:
-                return 'DeepSeek V3 (OpenRouter)';
-            case self::OPENROUTER_DEEPSEEK_R1:
-                return 'DeepSeek R1 (OpenRouter)';
-            case self::OPENROUTER_LLAMA_3_1_8B_FREE:
-                return 'Llama 3.1 8B (Free)';
-            case self::OPENROUTER_LLAMA_3_2_3B_FREE:
-                return 'Llama 3.2 3B (Free)';
-            case self::OPENROUTER_GEMMA_2_9B_FREE:
-                return 'Gemma 2 9B (Free)';
-            case self::OPENROUTER_MISTRAL_7B_FREE:
-                return 'Mistral 7B (Free)';
-            case self::OPENROUTER_QWEN_2_5_7B_FREE:
-                return 'Qwen 2.5 7B (Free)';
-            case self::OPENROUTER_PHI_3_MINI_FREE:
-                return 'Phi-3 Mini (Free)';
-            case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return 'OpenChat 3.5 (Free)';
-            case self::GROK_4_1:
-                return 'Grok 4.1 (xAI)';
-            case self::GROK_4:
-                return 'Grok 4 (xAI)';
-            case self::GROK_3_1:
-                return 'Grok 3.1 (xAI)';
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-                return 'Llama 3.1 Nemotron 70B (NVIDIA NIM)';
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-                return 'Llama 3.1 70B (NVIDIA NIM)';
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return 'Llama 3.1 8B (NVIDIA NIM)';
-            case self::BEDROCK_CLAUDE_SONNET:
-                return 'Claude 3.5 Sonnet (AWS Bedrock)';
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return 'Claude 3 Haiku (AWS Bedrock)';
-            case self::CLIPDROP_IMAGE_EDIT:
-                return 'Clipdrop Image Edit';
-            case self::CLOUDFLARE_FLUX_SCHNELL:
-                return 'Cloudflare FLUX Schnell';
-            case self::CLOUDFLARE_DREAMSHAPER:
-                return 'Cloudflare Dreamshaper 8 LCM';
-            case self::CLOUDFLARE_WHISPER:
-                return 'Cloudflare Whisper';
-            case self::CLOUDFLARE_MELOTTS:
-                return 'Cloudflare MeloTTS';
-            case self::HUGGINGFACE_FLUX_SCHNELL:
-                return 'Hugging Face FLUX Schnell';
-            case self::HUGGINGFACE_WHISPER_LARGE_V3:
-                return 'Hugging Face Whisper Large v3';
-            case self::HUGGINGFACE_MMS_TTS:
-                return 'Hugging Face MMS TTS';
-            case self::REPLICATE_FLUX_SCHNELL:
-                return 'Replicate FLUX Schnell';
-            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return 'Replicate WAN Image to Video';
-            case self::COMFYUI_DEFAULT_IMAGE:
-                return 'ComfyUI Default Image';
-            case self::COMFYUI_DEFAULT_VIDEO:
-                return 'ComfyUI Default Video';
-            case self::LOCAL_WHISPER:
-                return 'Local Whisper';
-            case self::LOCAL_TTS:
-                return 'Local TTS';
-            default:
-                // Return model name as label for unknown models
-                return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
+        $label = $this->manifestModel()['label'] ?? null;
+        if ($label !== null) {
+            return $label;
         }
+
+        return ucwords(str_replace(['-', '_', '/'], ' ', $this->value));
     }
 
     /**
@@ -1057,310 +524,28 @@ class EntityEnum
      */
     public function creditIndex(): float
     {
-        // Use dynamic model credit index if available
-        if ($this->isDynamic() && isset($this->dynamicModel['credit_index'])) {
-            return $this->dynamicModel['credit_index'];
+        $db = $this->databaseModel();
+        if ($db !== null && isset($db['credit_index'])) {
+            return (float) $db['credit_index'];
         }
 
         if ($spec = VideoModelCatalog::get($this->value)) {
             return $spec->creditIndex;
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-                return 2.0;
-            case self::GPT_4O_MINI:
-                return 0.5;
-            case self::GPT_3_5_TURBO:
-                return 0.3;
-            case self::GPT_5:
-                return 3.0;  // GPT-5 is more expensive than GPT-4o
-            case self::GPT_5_MINI:
-                return 0.7;  // Between GPT-4o-mini and GPT-4o
-            case self::GPT_5_NANO:
-                return 0.4;  // Similar to GPT-3.5-turbo
-            case self::GPT_IMAGE_1_5:
-                return 6.0;
-            case self::GPT_IMAGE_1:
-                return 5.0;
-            case self::GPT_IMAGE_1_MINI:
-                return 2.0;
-            case self::DALL_E_3:
-                return 5.0;
-            case self::DALL_E_2:
-                return 3.0;
-            case self::WHISPER_1:
-                return 1.0;
-            case self::OPENAI_GPT_4O_TRANSCRIBE:
-                return 1.2;
-            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
-                return 0.8;
-            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
-                return 1.5;
-            case self::OPENAI_GPT_4O_MINI_TTS:
-                return 1.2;
-            case self::OPENAI_TTS_1:
-                return 0.8;
-            case self::OPENAI_TTS_1_HD:
-                return 1.5;
-            case self::CLAUDE_3_5_SONNET:
-                return 1.8;
-            case self::CLAUDE_3_5_SONNET_20241022:
-                return 1.9;
-            case self::CLAUDE_3_7_SONNET:
-                return 2.2;
-            case self::CLAUDE_SONNET_4_5:
-                return 2.5;
-            case self::CLAUDE_OPUS_4_5:
-                return 4.0;
-            case self::CLAUDE_HAIKU_4_5:
-                return 1.0;
-            case self::CLAUDE_SONNET_4_6:
-                return 2.5;
-            case self::CLAUDE_OPUS_4_6:
-                return 4.0;
-            case self::CLAUDE_3_HAIKU:
-                return 0.8;
-            case self::CLAUDE_3_OPUS:
-                return 3.0;
-            case self::GEMINI_1_5_PRO:
-                return 1.5;
-            case self::GEMINI_1_5_FLASH:
-                return 0.4;
-            case self::GEMINI_2_0_FLASH:
-                return 0.5;
-            case self::GEMINI_2_0_FLASH_LITE:
-                return 0.3;
-            case self::GEMINI_2_5_PRO:
-                return 2.5;
-            case self::GEMINI_2_5_FLASH:
-                return 0.6;
-            case self::GEMINI_IMAGEN_4_FAST:
-                return 0.8;
-            case self::GEMINI_IMAGEN_4:
-                return 1.5;
-            case self::GEMINI_VEO_3_1:
-                return 8.0;
-            case self::GEMINI_VEO_3_1_FAST:
-                return 4.0;
-            case self::GEMINI_2_5_FLASH_TTS:
-                return 0.8;
-            case self::GEMINI_2_5_PRO_TTS:
-                return 1.5;
-            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
-                return 1.0;
-            case self::GEMINI_LYRIA_002:
-                return 1.0;
-            case self::SD3_LARGE:
-                return 4.0;
-            case self::SD3_MEDIUM:
-                return 3.0;
-            case self::SDXL_1024:
-                return 2.5;
-            case self::ELEVEN_MULTILINGUAL_V2:
-                return 2.0;
-            case self::ELEVEN_MULTILINGUAL_STS_V2:
-                return 2.5;
-            case self::ELEVEN_SCRIBE_V2:
-                return 1.0;
-            case self::ELEVEN_MUSIC:
-                return 3.0;
-            case self::FAL_FLUX_PRO:
-            case self::FLUX_PRO:
-                return 3.5;
-            case self::FAL_NANO_BANANA_2:
-                return 3.8;
-            case self::FAL_NANO_BANANA_2_EDIT:
-                return 3.9;
-            case self::FAL_FLUX_DEV:
-                return 2.5;
-            case self::FAL_FLUX_SCHNELL:
-                return 1.5;
-            case self::FAL_SDXL:
-                return 2.0;
-            case self::FAL_SD3_MEDIUM:
-                return 2.5;
-            case self::FAL_STABLE_VIDEO:
-            case self::FAL_ANIMATEDIFF:
-                return 5.0;
-            case self::FAL_LUMA_DREAM:
-            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
-            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
-            case self::KLING_VIDEO:
-            case self::LUMA_DREAM_MACHINE:
-                return 8.0;
-            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
-                return 7.5;
-            case self::DEEPSEEK_CHAT:
-                return 0.2;
-            case self::DEEPSEEK_REASONER:
-                return 0.4;
-            case self::PERPLEXITY_SONAR_LARGE:
-                return 1.2;
-            case self::PERPLEXITY_SONAR_MEDIUM:
-                return 0.8;
-            case self::PERPLEXITY_SONAR_SMALL:
-                return 0.4;
-            case self::SERPER_SEARCH:
-                return 0.1;
-            case self::SERPER_NEWS:
-                return 0.1;
-            case self::SERPER_IMAGES:
-                return 0.1;
-            case self::UNSPLASH_SEARCH:
-                return 0.05;
-            case self::PEXELS_SEARCH:
-                return 0.05;
-            case self::PLAGIARISM_BASIC:
-                return 0.5;
-            case self::PLAGIARISM_ADVANCED:
-                return 1.0;
-            case self::PLAGIARISM_ACADEMIC:
-                return 1.5;
-            case self::MIDJOURNEY_V6:
-                return 4.0;
-            case self::MIDJOURNEY_V5:
-                return 3.5;
-            case self::MIDJOURNEY_NIJI:
-                return 3.0;
-            case self::AZURE_TTS:
-                return 1.0;
-            case self::AZURE_STT:
-                return 1.0;
-            case self::AZURE_TRANSLATOR:
-                return 0.3;
-            case self::AZURE_TEXT_ANALYTICS:
-                return 0.5;
-            case self::AZURE_COMPUTER_VISION:
-                return 1.5;
-            case self::OPENROUTER_GPT_5:
-                return 5.0;
-            case self::OPENROUTER_GPT_5_MINI:
-                return 2.5;
-            case self::OPENROUTER_GPT_5_NANO:
-                return 1.0;
-            case self::OPENROUTER_GPT_4O:
-                return 2.2;
-            case self::OPENROUTER_GPT_4O_2024_11_20:
-                return 2.3;
-            case self::OPENROUTER_GPT_4O_MINI:
-                return 0.6;
-            case self::OPENROUTER_GPT_4O_MINI_2024_07_18:
-                return 0.6;
-            case self::OPENROUTER_CLAUDE_4_OPUS:
-                return 4.5;
-            case self::OPENROUTER_CLAUDE_4_SONNET:
-                return 3.5;
-            case self::OPENROUTER_CLAUDE_3_5_SONNET:
-                return 2.0;
-            case self::OPENROUTER_CLAUDE_3_5_SONNET_20241022:
-                return 2.1;
-            case self::OPENROUTER_CLAUDE_3_5_HAIKU:
-                return 1.0;
-            case self::OPENROUTER_CLAUDE_3_OPUS:
-                return 3.2;
-            case self::OPENROUTER_CLAUDE_3_HAIKU:
-                return 0.9;
-            case self::OPENROUTER_GEMINI_2_5_PRO:
-                return 3.0;
-            case self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL:
-                return 3.2;
-            case self::OPENROUTER_GEMINI_PRO:
-                return 1.7;
-            case self::OPENROUTER_GEMINI_1_5_PRO:
-                return 1.8;
-            case self::OPENROUTER_GEMINI_2_0_FLASH:
-                return 1.9;
-            case self::OPENROUTER_LLAMA_3_1_405B:
-                return 3.0;
-            case self::OPENROUTER_LLAMA_3_1_70B:
-                return 1.2;
-            case self::OPENROUTER_LLAMA_3_2_90B:
-                return 1.4;
-            case self::OPENROUTER_LLAMA_3_3_70B:
-                return 1.3;
-            case self::OPENROUTER_MIXTRAL_8X7B:
-                return 0.8;
-            case self::OPENROUTER_QWEN_2_5_72B:
-                return 1.0;
-            case self::OPENROUTER_DEEPSEEK_V3:
-                return 0.3;
-            case self::OPENROUTER_DEEPSEEK_R1:
-                return 0.4;
-            case self::OPENROUTER_LLAMA_3_1_8B_FREE:
-                return 0.0;
-            case self::OPENROUTER_LLAMA_3_2_3B_FREE:
-                return 0.0;
-            case self::OPENROUTER_GEMMA_2_9B_FREE:
-                return 0.0;
-            case self::OPENROUTER_MISTRAL_7B_FREE:
-                return 0.0;
-            case self::OPENROUTER_QWEN_2_5_7B_FREE:
-                return 0.0;
-            case self::OPENROUTER_PHI_3_MINI_FREE:
-                return 0.0;
-            case self::OPENROUTER_OPENCHAT_3_5_FREE:
-                return 0.0;
-            case self::GROK_4_1:
-                return 2.5;
-            case self::GROK_4:
-                return 2.0;
-            case self::GROK_3_1:
-                return 1.0;
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-                return 1.0;
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-                return 0.8;
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return 0.3;
-            case self::BEDROCK_CLAUDE_SONNET:
-                return 2.0;
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return 0.5;
-            case self::CLIPDROP_IMAGE_EDIT:
-                return 1.0;
-            case self::CLOUDFLARE_FLUX_SCHNELL:
-                return 0.4;
-            case self::CLOUDFLARE_DREAMSHAPER:
-                return 0.3;
-            case self::CLOUDFLARE_WHISPER:
-            case self::CLOUDFLARE_MELOTTS:
-                return 0.2;
-            case self::HUGGINGFACE_FLUX_SCHNELL:
-                return 0.6;
-            case self::HUGGINGFACE_WHISPER_LARGE_V3:
-            case self::HUGGINGFACE_MMS_TTS:
-                return 0.4;
-            case self::REPLICATE_FLUX_SCHNELL:
-                return 0.8;
-            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-                return 4.0;
-            case self::COMFYUI_DEFAULT_IMAGE:
-            case self::COMFYUI_DEFAULT_VIDEO:
-                return 0.01;
-            default:
-                // Try to get credit index from config, default to 1.0
-                return $this->getCreditIndexFromConfig();
+        $catalogIndex = $this->manifestModel()['credit_index'] ?? null;
+        if ($catalogIndex !== null) {
+            return (float) $catalogIndex;
         }
+
+        return $this->getCreditIndexFromConfig();
     }
 
     /**
-     * Get credit index from config or database for unknown models
+     * Get credit index from config for unknown models
      */
     protected function getCreditIndexFromConfig(): float
     {
-        // First, check database for model
-        try {
-            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
-            if ($dbModel && isset($dbModel->metadata['credit_index'])) {
-                return (float) $dbModel->metadata['credit_index'];
-            }
-        } catch (\Exception $e) {
-            // Database not available, continue with config check
-        }
-
         $engines = config('ai-engine.engines', []);
         foreach ($engines as $engineConfig) {
             $models = $engineConfig['models'] ?? [];
@@ -1368,6 +553,7 @@ class EntityEnum
                 return (float) $models[$this->value]['credit_index'];
             }
         }
+
         return 1.0; // Default credit index
     }
 
@@ -1384,160 +570,38 @@ class EntityEnum
      */
     public function getContentType(): string
     {
-        // Use dynamic model content type if available
-        if ($this->isDynamic() && isset($this->dynamicModel['content_type'])) {
-            return $this->dynamicModel['content_type'];
+        $db = $this->databaseModel();
+        if ($db !== null && !empty($db['content_type'])) {
+            return $db['content_type'];
         }
 
         if (VideoModelCatalog::isVideo($this->value)) {
             return 'video';
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-            case self::GPT_4O_MINI:
-            case self::GPT_3_5_TURBO:
-            case self::GPT_5:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_HAIKU_4_5:
-            case self::CLAUDE_SONNET_4_6:
-            case self::CLAUDE_OPUS_4_6:
-            case self::CLAUDE_3_HAIKU:
-            case self::CLAUDE_3_OPUS:
-            case self::GEMINI_1_5_PRO:
-            case self::GEMINI_1_5_FLASH:
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-            case self::GEMINI_2_5_PRO:
-            case self::GEMINI_2_5_FLASH:
-            case self::OPENROUTER_MISTRAL_7B_FREE:
-            case self::OPENROUTER_QWEN_2_5_7B_FREE:
-            case self::OPENROUTER_PHI_3_MINI_FREE:
-            case self::OPENROUTER_OPENCHAT_3_5_FREE:
-            case self::GROK_4_1:
-            case self::GROK_4:
-            case self::GROK_3_1:
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-            case self::BEDROCK_CLAUDE_SONNET:
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return 'text';
-            case self::CLOUDFLARE_FLUX_SCHNELL:
-            case self::CLOUDFLARE_DREAMSHAPER:
-            case self::HUGGINGFACE_FLUX_SCHNELL:
-            case self::REPLICATE_FLUX_SCHNELL:
-            case self::COMFYUI_DEFAULT_IMAGE:
-                return 'image';
-            case self::CLIPDROP_IMAGE_EDIT:
-            case self::GPT_IMAGE_1_5:
-            case self::GPT_IMAGE_1:
-            case self::GPT_IMAGE_1_MINI:
-            case self::DALL_E_3:
-            case self::DALL_E_2:
-            case self::FAL_FLUX_PRO:
-            case self::FAL_FLUX_DEV:
-            case self::FAL_FLUX_SCHNELL:
-            case self::FAL_SDXL:
-            case self::FAL_SD3_MEDIUM:
-            case self::FAL_NANO_BANANA_2:
-            case self::FAL_NANO_BANANA_2_EDIT:
-            case self::FLUX_PRO:
-            case self::GEMINI_IMAGEN_4_FAST:
-            case self::GEMINI_IMAGEN_4:
-                return 'image';
-            case self::FAL_STABLE_VIDEO:
-            case self::FAL_ANIMATEDIFF:
-            case self::FAL_LUMA_DREAM:
-            case self::FAL_KLING_O3_IMAGE_TO_VIDEO:
-            case self::FAL_KLING_O3_REFERENCE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_TEXT_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO:
-            case self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO:
-            case self::KLING_VIDEO:
-            case self::LUMA_DREAM_MACHINE:
-            case self::REPLICATE_WAN_IMAGE_TO_VIDEO:
-            case self::COMFYUI_DEFAULT_VIDEO:
-            case self::GEMINI_VEO_3_1:
-            case self::GEMINI_VEO_3_1_FAST:
-                return 'video';
-            case self::WHISPER_1:
-            case self::OPENAI_GPT_4O_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_MINI_TRANSCRIBE:
-            case self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE:
-            case self::OPENAI_GPT_4O_MINI_TTS:
-            case self::OPENAI_TTS_1:
-            case self::OPENAI_TTS_1_HD:
-            case self::ELEVEN_MULTILINGUAL_V2:
-            case self::ELEVEN_MULTILINGUAL_STS_V2:
-            case self::ELEVEN_SCRIBE_V2:
-            case self::ELEVEN_MUSIC:
-            case self::CLOUDFLARE_WHISPER:
-            case self::CLOUDFLARE_MELOTTS:
-            case self::HUGGINGFACE_WHISPER_LARGE_V3:
-            case self::HUGGINGFACE_MMS_TTS:
-            case self::GEMINI_2_5_FLASH_TTS:
-            case self::GEMINI_2_5_PRO_TTS:
-            case self::GEMINI_3_1_FLASH_TTS_PREVIEW:
-            case self::GEMINI_LYRIA_002:
-            case self::LOCAL_WHISPER:
-            case self::LOCAL_TTS:
-                return 'audio';
-            case self::UNSPLASH_SEARCH:
-            case self::PEXELS_SEARCH:
-            case self::PERPLEXITY_SONAR_LARGE:
-            case self::PERPLEXITY_SONAR_MEDIUM:
-            case self::PERPLEXITY_SONAR_SMALL:
-            case self::SERPER_SEARCH:
-            case self::SERPER_NEWS:
-            case self::SERPER_IMAGES:
-                return 'search';
-            case self::PLAGIARISM_BASIC:
-            case self::PLAGIARISM_ADVANCED:
-            case self::PLAGIARISM_ACADEMIC:
-                return 'plagiarism';
-            case self::MIDJOURNEY_V6:
-            case self::MIDJOURNEY_V5:
-            case self::MIDJOURNEY_NIJI:
-                return 'image';
-            case self::AZURE_TTS:
-                return 'audio';
-            case self::AZURE_STT:
-                return 'audio';
-            case self::GOOGLE_TTS:
-                return 'audio';
-            case self::AZURE_TRANSLATOR:
-                return 'text';
-            case self::AZURE_TEXT_ANALYTICS:
-                return 'text';
-            case self::AZURE_COMPUTER_VISION:
-                return 'image';
-            default:
-                $model = strtolower($this->value);
-                if (str_contains($model, 'embedding')) {
-                    return 'embeddings';
-                }
-
-                if (str_contains($model, 'whisper') || str_contains($model, 'transcribe') || str_contains($model, 'speech-to-text') || str_contains($model, 'stt')) {
-                    return 'audio';
-                }
-
-                if (str_contains($model, 'tts') || str_contains($model, 'text-to-speech') || str_contains($model, 'speech')) {
-                    return 'audio';
-                }
-
-                if (str_contains($model, 'image') || str_contains($model, 'imagen')) {
-                    return 'image';
-                }
-
-                return 'text'; // Default content type for unknown models
+        $catalogType = $this->manifestModel()['content_type'] ?? null;
+        if ($catalogType !== null) {
+            return $catalogType;
         }
+
+        $model = strtolower($this->value);
+        if (str_contains($model, 'embedding')) {
+            return 'embeddings';
+        }
+
+        if (str_contains($model, 'whisper') || str_contains($model, 'transcribe') || str_contains($model, 'speech-to-text') || str_contains($model, 'stt')) {
+            return 'audio';
+        }
+
+        if (str_contains($model, 'tts') || str_contains($model, 'text-to-speech') || str_contains($model, 'speech')) {
+            return 'audio';
+        }
+
+        if (str_contains($model, 'image') || str_contains($model, 'imagen')) {
+            return 'image';
+        }
+
+        return 'text'; // Default content type for unknown models
     }
 
     /**
@@ -1545,75 +609,16 @@ class EntityEnum
      */
     public function maxTokens(): int
     {
-        // Use dynamic model max tokens if available
-        if ($this->isDynamic() && isset($this->dynamicModel['max_tokens'])) {
-            return $this->dynamicModel['max_tokens'];
+        $db = $this->databaseModel();
+        if ($db !== null && isset($db['max_tokens'])) {
+            return (int) $db['max_tokens'];
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-                return 128000;
-            case self::GPT_4O_MINI:
-                return 128000;
-            case self::GPT_3_5_TURBO:
-                return 16385;
-            case self::GPT_5:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-                return 200000;  // GPT-5 has larger context window
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_HAIKU_4_5:
-            case self::CLAUDE_SONNET_4_6:
-            case self::CLAUDE_OPUS_4_6:
-                return 200000;
-            case self::CLAUDE_3_HAIKU:
-                return 200000;
-            case self::CLAUDE_3_OPUS:
-                return 200000;
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-                return 1048576;
-            case self::GEMINI_2_5_PRO:
-            case self::GEMINI_2_5_FLASH:
-                return 1048576;
-            case self::GEMINI_1_5_PRO:
-                return 2097152;
-            case self::GEMINI_1_5_FLASH:
-                return 1048576;
-            case self::DEEPSEEK_CHAT:
-                return 32768;
-            case self::DEEPSEEK_REASONER:
-                return 65536;
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-                return 32768;
-            case self::BEDROCK_CLAUDE_SONNET:
-            case self::BEDROCK_CLAUDE_HAIKU:
-                return 200000;
-            default:
-                // Try to get max tokens from database
-                return $this->getMaxTokensFromDatabase();
+        $catalogTokens = $this->manifestModel()['max_tokens'] ?? null;
+        if ($catalogTokens !== null) {
+            return (int) $catalogTokens;
         }
-    }
 
-    /**
-     * Get max tokens from database for unknown models
-     */
-    protected function getMaxTokensFromDatabase(): int
-    {
-        try {
-            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
-            if ($dbModel && $dbModel->max_tokens) {
-                return (int) $dbModel->max_tokens;
-            }
-        } catch (\Exception $e) {
-            // Database not available
-        }
         return 128000; // Default max tokens
     }
 
@@ -1622,54 +627,16 @@ class EntityEnum
      */
     public function supportsVision(): bool
     {
-        // Use dynamic model vision support if available
-        if ($this->isDynamic() && isset($this->dynamicModel['supports_vision'])) {
-            return $this->dynamicModel['supports_vision'];
+        $db = $this->databaseModel();
+        if ($db !== null && isset($db['supports_vision'])) {
+            return (bool) $db['supports_vision'];
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-            case self::GPT_5:
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_HAIKU_4_5:
-            case self::CLAUDE_SONNET_4_6:
-            case self::CLAUDE_OPUS_4_6:
-            case self::CLAUDE_3_OPUS:
-            case self::GEMINI_1_5_PRO:
-            case self::GEMINI_1_5_FLASH:
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-            case self::GEMINI_2_5_PRO:
-            case self::GEMINI_2_5_FLASH:
-                return true;
-            case self::GPT_4O_MINI:
-            case self::GPT_3_5_TURBO:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-                return false;
-            default:
-                // Check database for vision support
-                return $this->getSupportsVisionFromDatabase();
+        $catalogVision = $this->manifestModel()['supports_vision'] ?? null;
+        if ($catalogVision !== null) {
+            return (bool) $catalogVision;
         }
-    }
 
-    /**
-     * Get vision support from database for unknown models
-     */
-    protected function getSupportsVisionFromDatabase(): bool
-    {
-        try {
-            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
-            if ($dbModel) {
-                return (bool) $dbModel->supports_vision;
-            }
-        } catch (\Exception $e) {
-            // Database not available
-        }
         return false; // Default: no vision support
     }
 
@@ -1678,66 +645,16 @@ class EntityEnum
      */
     public function supportsStreaming(): bool
     {
-        // Use dynamic model streaming support if available
-        if ($this->isDynamic() && isset($this->dynamicModel['supports_streaming'])) {
-            return $this->dynamicModel['supports_streaming'];
+        $db = $this->databaseModel();
+        if ($db !== null && isset($db['supports_streaming'])) {
+            return (bool) $db['supports_streaming'];
         }
 
-        switch ($this->value) {
-            case self::GPT_4O:
-            case self::GPT_4O_MINI:
-            case self::GPT_3_5_TURBO:
-            case self::GPT_5:
-            case self::GPT_5_MINI:
-            case self::GPT_5_NANO:
-            case self::DEEPSEEK_CHAT:
-            case self::DEEPSEEK_REASONER:
-            case self::NVIDIA_NIM_NEMOTRON_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_70B:
-            case self::NVIDIA_NIM_LLAMA_3_1_8B:
-            case self::CLAUDE_3_5_SONNET:
-            case self::CLAUDE_3_5_SONNET_20241022:
-            case self::CLAUDE_3_7_SONNET:
-            case self::CLAUDE_SONNET_4_5:
-            case self::CLAUDE_OPUS_4_5:
-            case self::CLAUDE_HAIKU_4_5:
-            case self::CLAUDE_SONNET_4_6:
-            case self::CLAUDE_OPUS_4_6:
-            case self::CLAUDE_3_HAIKU:
-            case self::CLAUDE_3_OPUS:
-            case self::GEMINI_2_0_FLASH:
-            case self::GEMINI_2_0_FLASH_LITE:
-            case self::GEMINI_2_5_PRO:
-            case self::GEMINI_2_5_FLASH:
-                return true;
-            case self::GPT_IMAGE_1_5:
-            case self::GPT_IMAGE_1:
-            case self::GPT_IMAGE_1_MINI:
-            case self::DALL_E_3:
-            case self::DALL_E_2:
-            case self::MIDJOURNEY_V6:
-            case self::MIDJOURNEY_V5:
-            case self::MIDJOURNEY_NIJI:
-                return false;
-            default:
-                // Check database for streaming support
-                return $this->getSupportsStreamingFromDatabase();
+        $catalogStreaming = $this->manifestModel()['supports_streaming'] ?? null;
+        if ($catalogStreaming !== null) {
+            return (bool) $catalogStreaming;
         }
-    }
 
-    /**
-     * Get streaming support from database for unknown models
-     */
-    protected function getSupportsStreamingFromDatabase(): bool
-    {
-        try {
-            $dbModel = \LaravelAIEngine\Models\AIModel::findByModelId($this->value);
-            if ($dbModel) {
-                return (bool) $dbModel->supports_streaming;
-            }
-        } catch (\Exception $e) {
-            // Database not available
-        }
         return true; // Default: assume streaming support
     }
 
@@ -1824,152 +741,19 @@ class EntityEnum
     }
 
     /**
-     * Get all available models
+     * Get all catalog model identifiers
      */
     public static function all(): array
     {
-        return [
-            self::GPT_4O,
-            self::GPT_4O_MINI,
-            self::GPT_3_5_TURBO,
-            self::GPT_IMAGE_1_5,
-            self::GPT_IMAGE_1,
-            self::GPT_IMAGE_1_MINI,
-            self::DALL_E_3,
-            self::DALL_E_2,
-            self::WHISPER_1,
-            self::OPENAI_GPT_4O_TRANSCRIBE,
-            self::OPENAI_GPT_4O_MINI_TRANSCRIBE,
-            self::OPENAI_GPT_4O_TRANSCRIBE_DIARIZE,
-            self::OPENAI_GPT_4O_MINI_TTS,
-            self::OPENAI_TTS_1,
-            self::OPENAI_TTS_1_HD,
-            self::CLAUDE_3_5_SONNET,
-            self::CLAUDE_3_5_SONNET_20241022,
-            self::CLAUDE_3_7_SONNET,
-            self::CLAUDE_SONNET_4_5,
-            self::CLAUDE_OPUS_4_5,
-            self::CLAUDE_HAIKU_4_5,
-            self::CLAUDE_SONNET_4_6,
-            self::CLAUDE_OPUS_4_6,
-            self::CLAUDE_3_HAIKU,
-            self::CLAUDE_3_OPUS,
-            self::GEMINI_1_5_PRO,
-            self::GEMINI_1_5_FLASH,
-            self::GEMINI_2_0_FLASH,
-            self::GEMINI_2_0_FLASH_LITE,
-            self::GEMINI_2_5_PRO,
-            self::GEMINI_2_5_FLASH,
-            self::GEMINI_IMAGEN_4_FAST,
-            self::GEMINI_IMAGEN_4,
-            self::GEMINI_VEO_3_1,
-            self::GEMINI_VEO_3_1_FAST,
-            self::GEMINI_2_5_FLASH_TTS,
-            self::GEMINI_2_5_PRO_TTS,
-            self::GEMINI_3_1_FLASH_TTS_PREVIEW,
-            self::GEMINI_LYRIA_002,
-            self::SD3_LARGE,
-            self::SD3_MEDIUM,
-            self::SDXL_1024,
-            self::FAL_FLUX_PRO,
-            self::FAL_FLUX_DEV,
-            self::FAL_FLUX_SCHNELL,
-            self::FAL_SDXL,
-            self::FAL_SD3_MEDIUM,
-            self::FAL_STABLE_VIDEO,
-            self::FAL_ANIMATEDIFF,
-            self::FAL_LUMA_DREAM,
-            self::FAL_NANO_BANANA_2,
-            self::FAL_NANO_BANANA_2_EDIT,
-            self::FAL_KLING_O3_IMAGE_TO_VIDEO,
-            self::FAL_KLING_O3_REFERENCE_TO_VIDEO,
-            self::FAL_SEEDANCE_2_TEXT_TO_VIDEO,
-            self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO,
-            self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
-            self::FAL_SEEDANCE_2_FAST_TEXT_TO_VIDEO,
-            self::FAL_SEEDANCE_2_FAST_IMAGE_TO_VIDEO,
-            self::FAL_SEEDANCE_2_FAST_REFERENCE_TO_VIDEO,
-            self::FAL_SEEDANCE_15_PRO_TEXT_TO_VIDEO,
-            self::FAL_SEEDANCE_15_PRO_IMAGE_TO_VIDEO,
-            self::FAL_SEEDANCE_1_PRO_TEXT_TO_VIDEO,
-            self::FAL_SEEDANCE_1_PRO_IMAGE_TO_VIDEO,
-            self::FAL_SEEDANCE_1_LITE_REFERENCE_TO_VIDEO,
-            self::FAL_KLING_O3_PRO_IMAGE_TO_VIDEO,
-            self::FAL_KLING_V3_PRO_IMAGE_TO_VIDEO,
-            self::FAL_KLING_O1_IMAGE_TO_VIDEO,
-            self::FAL_KLING_V26_PRO_IMAGE_TO_VIDEO,
-            self::FAL_KLING_V21_STD_IMAGE_TO_VIDEO,
-            self::FAL_KLING_V21_MASTER_TEXT_TO_VIDEO,
-            self::FAL_KLING_V1_STD_IMAGE_TO_VIDEO,
-            self::FAL_KLING_V1_STD_TEXT_TO_VIDEO,
-            self::FAL_LUMA_DREAM_IMAGE_TO_VIDEO,
-            self::FAL_LUMA_RAY2_TEXT_TO_VIDEO,
-            self::FAL_LUMA_RAY2_IMAGE_TO_VIDEO,
-            self::FAL_LUMA_RAY2_FLASH_IMAGE_TO_VIDEO,
-            self::FAL_ANIMATEDIFF_TEXT_TO_VIDEO,
-            self::FLUX_PRO,
-            self::KLING_VIDEO,
-            self::LUMA_DREAM_MACHINE,
-            self::ELEVEN_MULTILINGUAL_V2,
-            self::ELEVEN_MULTILINGUAL_STS_V2,
-            self::ELEVEN_SCRIBE_V2,
-            self::ELEVEN_MUSIC,
-            self::DEEPSEEK_CHAT,
-            self::DEEPSEEK_REASONER,
-            self::PERPLEXITY_SONAR_LARGE,
-            self::PERPLEXITY_SONAR_MEDIUM,
-            self::PERPLEXITY_SONAR_SMALL,
-            self::SERPER_SEARCH,
-            self::SERPER_NEWS,
-            self::SERPER_IMAGES,
-            self::UNSPLASH_SEARCH,
-            self::PEXELS_SEARCH,
-            self::PLAGIARISM_BASIC,
-            self::PLAGIARISM_ADVANCED,
-            self::PLAGIARISM_ACADEMIC,
-            self::MIDJOURNEY_V6,
-            self::MIDJOURNEY_V5,
-            self::MIDJOURNEY_NIJI,
-            self::AZURE_TTS,
-            self::AZURE_STT,
-            self::AZURE_TRANSLATOR,
-            self::AZURE_TEXT_ANALYTICS,
-            self::GOOGLE_TTS,
-            self::OPENROUTER_GPT_5,
-            self::OPENROUTER_GEMINI_2_5_PRO,
-            self::OPENROUTER_CLAUDE_4_OPUS,
-            self::OPENROUTER_CLAUDE_4_SONNET,
-            self::OPENROUTER_GPT_5_MINI,
-            self::OPENROUTER_GEMINI_2_5_PRO_EXPERIMENTAL,
-            self::OPENROUTER_LLAMA_3_3_70B,
-            self::GROK_4_1,
-            self::GROK_4,
-            self::GROK_3_1,
-            self::NVIDIA_NIM_NEMOTRON_70B,
-            self::NVIDIA_NIM_LLAMA_3_1_70B,
-            self::NVIDIA_NIM_LLAMA_3_1_8B,
-            self::BEDROCK_CLAUDE_SONNET,
-            self::BEDROCK_CLAUDE_HAIKU,
-            self::CLIPDROP_IMAGE_EDIT,
-            self::CLOUDFLARE_FLUX_SCHNELL,
-            self::CLOUDFLARE_DREAMSHAPER,
-            self::CLOUDFLARE_WHISPER,
-            self::CLOUDFLARE_MELOTTS,
-            self::HUGGINGFACE_FLUX_SCHNELL,
-            self::HUGGINGFACE_WHISPER_LARGE_V3,
-            self::HUGGINGFACE_MMS_TTS,
-            self::REPLICATE_FLUX_SCHNELL,
-            self::REPLICATE_WAN_IMAGE_TO_VIDEO,
-            self::REPLICATE_WAN_21_I2V_720P,
-            self::REPLICATE_WAN_22_I2V_FAST,
-            self::REPLICATE_WAN_22_I2V_A14B,
-            self::REPLICATE_WAN_25_I2V,
-            self::REPLICATE_WAN_27_I2V,
-            self::COMFYUI_DEFAULT_IMAGE,
-            self::COMFYUI_DEFAULT_VIDEO,
-            self::LOCAL_WHISPER,
-            self::LOCAL_TTS,
-        ];
+        $manifest = static::manifest();
+        if ($manifest !== []) {
+            return array_keys($manifest);
+        }
+
+        // Manifest missing — fall back to the class constants
+        $reflection = new \ReflectionClass(static::class);
+
+        return array_values(array_unique(array_filter($reflection->getConstants(), 'is_string')));
     }
 
     /**

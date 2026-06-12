@@ -218,6 +218,7 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\TestEnginesCommand::class,
                 Console\Commands\TestFalMediaCommand::class,
                 Console\Commands\SyncAIModelsCommand::class,
+                Console\Commands\SeedAIModelsCommand::class,
                 Console\Commands\ListAIModelsCommand::class,
                 Console\Commands\UsageReportCommand::class,
                 Console\Commands\PricingAuditCommand::class,

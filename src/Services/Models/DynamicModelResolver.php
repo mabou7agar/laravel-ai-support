@@ -10,228 +10,129 @@ use Illuminate\Support\Facades\Cache;
 
 class DynamicModelResolver
 {
-    protected const CACHE_KEY = 'ai_engine:model_resolver';
+    // v2: sparse arrays — only keys the database actually knows (pre-v2 entries carried guessed values)
+    protected const CACHE_KEY = 'ai_engine:model_resolver:v2';
     protected const CACHE_TTL = 3600; // 1 hour
 
     /**
-     * Resolve model information from database or fallback to EntityEnum
+     * Resolve model information from the ai_models table.
+     *
+     * Only keys the database actually knows are present in the returned array —
+     * callers (EntityEnum) fall back to the shipped manifest for missing keys,
+     * so this must never emit name-pattern guesses.
      */
     public function resolve(string $modelId): ?array
     {
-        // Try to get from cache first
         $cached = Cache::get(self::CACHE_KEY . ':' . $modelId);
         if ($cached !== null) {
             return $cached;
         }
 
-        // Try to find in database
         $model = AIModel::where('model_id', $modelId)->first();
-        
-        if ($model) {
-            $resolved = [
-                'model_id' => $model->model_id,
-                'name' => $model->name,
-                'provider' => $model->provider,
-                'engine' => $this->mapProviderToEngine($model->provider),
-                'driver_class' => $this->getDriverClass($model->provider, $model->model_id),
-                'max_tokens' => $model->context_window ?? $this->guessMaxTokens($model->model_id),
-                'supports_vision' => $model->supports_vision ?? false,
-                'supports_streaming' => $model->supports_streaming ?? true,
-                'credit_index' => $this->calculateCreditIndex($model),
-                'content_type' => $this->getContentType($model),
-            ];
 
-            Cache::put(self::CACHE_KEY . ':' . $modelId, $resolved, self::CACHE_TTL);
-            return $resolved;
+        if (!$model) {
+            return null;
+        }
+
+        $metadata = (array) ($model->metadata ?? []);
+
+        $resolved = ['model_id' => $model->model_id];
+
+        if (!empty($model->name)) {
+            $resolved['name'] = $model->name;
+        }
+
+        if ($engine = $this->mapProviderToEngine((string) $model->provider)) {
+            $resolved['engine'] = $engine;
+        }
+
+        $driverClass = $metadata['driver_class'] ?? null;
+        if (is_string($driverClass) && class_exists($driverClass)) {
+            $resolved['driver_class'] = $driverClass;
+        }
+
+        $maxTokens = $model->max_tokens ?? $model->getContextWindowSize();
+        if ($maxTokens) {
+            $resolved['max_tokens'] = (int) $maxTokens;
+        }
+
+        if ($model->supports_vision !== null) {
+            $resolved['supports_vision'] = (bool) $model->supports_vision;
+        }
+
+        if ($model->supports_streaming !== null) {
+            $resolved['supports_streaming'] = (bool) $model->supports_streaming;
+        }
+
+        if ($creditIndex = $this->resolveCreditIndex($model, $metadata)) {
+            $resolved['credit_index'] = $creditIndex;
+        }
+
+        if ($contentType = $this->resolveContentType($model, $metadata)) {
+            $resolved['content_type'] = $contentType;
+        }
+
+        Cache::put(self::CACHE_KEY . ':' . $modelId, $resolved, self::CACHE_TTL);
+
+        return $resolved;
+    }
+
+    /**
+     * Map provider name to an EngineEnum value, null when unknown
+     */
+    protected function mapProviderToEngine(string $provider): ?string
+    {
+        $provider = strtolower($provider);
+
+        $mapped = match ($provider) {
+            'google'                        => EngineEnum::Gemini->value,
+            'stability'                     => EngineEnum::StableDiffusion->value,
+            'fal', 'fal-ai'                 => EngineEnum::FalAI->value,
+            'cloudflare'                    => EngineEnum::CloudflareWorkersAI->value,
+            'hugging_face'                  => EngineEnum::HuggingFace->value,
+            'comfy'                         => EngineEnum::ComfyUI->value,
+            'xai'                           => EngineEnum::Xai->value,
+            default                         => $provider,
+        };
+
+        return EngineEnum::tryFrom($mapped)?->value;
+    }
+
+    /**
+     * Credit index from explicit metadata, else derived from real pricing
+     */
+    protected function resolveCreditIndex(AIModel $model, array $metadata): ?float
+    {
+        if (isset($metadata['credit_index'])) {
+            return (float) $metadata['credit_index'];
+        }
+
+        $input = $model->getInputPrice();
+        $output = $model->getOutputPrice();
+        if ($input && $output) {
+            // Average of input and output, normalized to GPT-4o baseline
+            $avgPrice = ($input + $output) / 2;
+            $gpt4oBaseline = 0.000015; // Approximate GPT-4o price
+            return $avgPrice / $gpt4oBaseline;
         }
 
         return null;
     }
 
     /**
-     * Map provider name to EngineEnum
+     * Content type from explicit metadata or declared capabilities
      */
-    protected function mapProviderToEngine(string $provider): string
+    protected function resolveContentType(AIModel $model, array $metadata): ?string
     {
-        return match(strtolower($provider)) {
-            'openai'                          => EngineEnum::OpenAI->value,
-            'anthropic'                       => EngineEnum::Anthropic->value,
-            'google', 'gemini'                => EngineEnum::Gemini->value,
-            'stability', 'stable-diffusion'   => EngineEnum::StableDiffusion->value,
-            'elevenlabs'                      => EngineEnum::ElevenLabs->value,
-            'fal', 'fal-ai', 'fal_ai'         => EngineEnum::FalAI->value,
-            'deepseek'                        => EngineEnum::DeepSeek->value,
-            'perplexity'                      => EngineEnum::Perplexity->value,
-            'openrouter'                      => EngineEnum::OpenRouter->value,
-            'cloudflare_workers_ai', 'cloudflare' => EngineEnum::CloudflareWorkersAI->value,
-            'huggingface', 'hugging_face'     => EngineEnum::HuggingFace->value,
-            'replicate'                       => EngineEnum::Replicate->value,
-            'comfyui', 'comfy'                => EngineEnum::ComfyUI->value,
-            default                           => EngineEnum::OpenAI->value,
-        };
-    }
-
-    /**
-     * Get driver class based on provider and model
-     */
-    protected function getDriverClass(string $provider, string $modelId): string
-    {
-        // Map to appropriate driver based on provider and model type
-        return match(strtolower($provider)) {
-            'openai' => $this->getOpenAIDriver($modelId),
-            'anthropic' => $this->getAnthropicDriver($modelId),
-            'google', 'gemini' => $this->getGeminiDriver($modelId),
-            'cloudflare_workers_ai', 'cloudflare' => \LaravelAIEngine\Drivers\CloudflareWorkersAI\CloudflareWorkersAIEngineDriver::class,
-            'huggingface', 'hugging_face' => \LaravelAIEngine\Drivers\HuggingFace\HuggingFaceEngineDriver::class,
-            'replicate' => \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class,
-            'comfyui', 'comfy' => \LaravelAIEngine\Drivers\ComfyUI\ComfyUIEngineDriver::class,
-            default => \LaravelAIEngine\Drivers\OpenAI\GPT4ODriver::class,
-        };
-    }
-
-    /**
-     * Get OpenAI driver based on model
-     */
-    protected function getOpenAIDriver(string $modelId): string
-    {
-        if (str_contains($modelId, 'gpt-4o-mini')) {
-            return \LaravelAIEngine\Drivers\OpenAI\GPT4OMiniDriver::class;
-        }
-        if (str_contains($modelId, 'gpt-4o') || str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-4.1')) {
-            return \LaravelAIEngine\Drivers\OpenAI\GPT4ODriver::class;
-        }
-        if (str_contains($modelId, 'gpt-3.5')) {
-            return \LaravelAIEngine\Drivers\OpenAI\GPT35TurboDriver::class;
-        }
-        if (str_contains($modelId, 'dall-e-3')) {
-            return \LaravelAIEngine\Drivers\OpenAI\DallE3Driver::class;
-        }
-        if (str_contains($modelId, 'dall-e-2')) {
-            return \LaravelAIEngine\Drivers\OpenAI\DallE2Driver::class;
-        }
-        if (str_contains($modelId, 'whisper')) {
-            return \LaravelAIEngine\Drivers\OpenAI\WhisperDriver::class;
-        }
-        
-        // Default to GPT-4O driver for unknown OpenAI models
-        return \LaravelAIEngine\Drivers\OpenAI\GPT4ODriver::class;
-    }
-
-    /**
-     * Get Anthropic driver based on model
-     */
-    protected function getAnthropicDriver(string $modelId): string
-    {
-        if (str_contains($modelId, 'sonnet')) {
-            return \LaravelAIEngine\Drivers\Anthropic\Claude35SonnetDriver::class;
-        }
-        if (str_contains($modelId, 'haiku')) {
-            return \LaravelAIEngine\Drivers\Anthropic\Claude3HaikuDriver::class;
-        }
-        if (str_contains($modelId, 'opus')) {
-            return \LaravelAIEngine\Drivers\Anthropic\Claude3OpusDriver::class;
-        }
-        
-        return \LaravelAIEngine\Drivers\Anthropic\Claude35SonnetDriver::class;
-    }
-
-    /**
-     * Get Gemini driver based on model
-     */
-    protected function getGeminiDriver(string $modelId): string
-    {
-        if (str_contains($modelId, 'flash')) {
-            return \LaravelAIEngine\Drivers\Gemini\Gemini15FlashDriver::class;
-        }
-        
-        return \LaravelAIEngine\Drivers\Gemini\Gemini15ProDriver::class;
-    }
-
-    /**
-     * Guess max tokens based on model name
-     */
-    protected function guessMaxTokens(string $modelId): int
-    {
-        // GPT-5 and newer models
-        if (str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-4.1')) {
-            return 200000;
-        }
-        
-        // GPT-4o models
-        if (str_contains($modelId, 'gpt-4o')) {
-            return 128000;
-        }
-        
-        // Claude models
-        if (str_contains($modelId, 'claude')) {
-            return 200000;
-        }
-        
-        // Gemini models
-        if (str_contains($modelId, 'gemini-1.5-pro')) {
-            return 2097152;
-        }
-        if (str_contains($modelId, 'gemini')) {
-            return 1048576;
-        }
-        
-        // GPT-3.5
-        if (str_contains($modelId, 'gpt-3.5')) {
-            return 16385;
-        }
-        
-        // Default
-        return 128000;
-    }
-
-    /**
-     * Calculate credit index based on model
-     */
-    protected function calculateCreditIndex(AIModel $model): float
-    {
-        // If model has pricing info, calculate based on that
-        if ($model->input_price_per_token && $model->output_price_per_token) {
-            // Average of input and output, normalized to GPT-4o baseline
-            $avgPrice = ($model->input_price_per_token + $model->output_price_per_token) / 2;
-            $gpt4oBaseline = 0.000015; // Approximate GPT-4o price
-            return $avgPrice / $gpt4oBaseline;
+        if (isset($metadata['content_type'])) {
+            return (string) $metadata['content_type'];
         }
 
-        // Fallback to model name-based estimation
-        $modelId = strtolower($model->model_id);
-        
-        if (str_contains($modelId, 'gpt-5-pro') || str_contains($modelId, 'gpt-4.1')) {
-            return 3.0;
-        }
-        if (str_contains($modelId, 'gpt-5') && !str_contains($modelId, 'mini') && !str_contains($modelId, 'nano')) {
-            return 2.5;
-        }
-        if (str_contains($modelId, 'gpt-4o') && !str_contains($modelId, 'mini')) {
-            return 2.0;
-        }
-        if (str_contains($modelId, 'gpt-5-mini') || str_contains($modelId, 'gpt-4o-mini')) {
-            return 0.5;
-        }
-        if (str_contains($modelId, 'gpt-5-nano') || str_contains($modelId, 'gpt-3.5')) {
-            return 0.3;
-        }
-        if (str_contains($modelId, 'claude-3.5-sonnet') || str_contains($modelId, 'claude-3-opus')) {
-            return 1.8;
-        }
-        if (str_contains($modelId, 'claude') && str_contains($modelId, 'haiku')) {
-            return 0.8;
-        }
-        
-        // Default
-        return 1.0;
-    }
-
-    /**
-     * Get content type for model
-     */
-    protected function getContentType(AIModel $model): string
-    {
         $capabilities = array_map('strtolower', array_map('strval', (array) ($model->capabilities ?? [])));
+        if ($capabilities === []) {
+            return null;
+        }
+
         if (array_intersect($capabilities, ['video_generation', 'text_to_video', 'image_to_video', 'reference_to_video'])) {
             return 'video';
         }
@@ -244,23 +145,11 @@ class DynamicModelResolver
             return 'audio';
         }
 
-        $modelId = strtolower($model->model_id);
-        
-        if (str_contains($modelId, 'dall-e') || str_contains($modelId, 'stable-diffusion') || 
-            str_contains($modelId, 'flux') || str_contains($modelId, 'midjourney')) {
-            return 'image';
+        if (array_intersect($capabilities, ['chat', 'completion', 'text_generation'])) {
+            return 'text';
         }
-        
-        if (str_contains($modelId, 'whisper') || str_contains($modelId, 'audio')) {
-            return 'audio';
-        }
-        
-        if (str_contains($modelId, 'video') || str_contains($modelId, 'kling') || 
-            str_contains($modelId, 'luma')) {
-            return 'video';
-        }
-        
-        return 'text';
+
+        return null;
     }
 
     /**
@@ -277,6 +166,8 @@ class DynamicModelResolver
                 Cache::forget(self::CACHE_KEY . ':' . $id);
             }
         }
+
+        \LaravelAIEngine\Enums\EntityEnum::flushRuntimeCache();
     }
 
     /**
