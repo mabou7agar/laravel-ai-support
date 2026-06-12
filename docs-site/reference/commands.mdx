@@ -78,13 +78,24 @@ Safe workflow:
 2. optionally run with `--autofix`
 3. apply with `--apply --prune --ping --force` once plan is clean
 
-## Vector and RAG
+## Model Catalog
 
 ```bash
+php artisan ai:models:seed
+php artisan ai:models:seed --fresh
 php artisan ai:sync-models --provider=openai
 php artisan ai:sync-models --provider=fal_ai
 php artisan ai:sync-models --provider=all
 php artisan ai:list-models
+```
+
+Model metadata (engine, driver, credit index, content type, context window, capability flags) resolves database-first: a row in `ai_models` wins, then the package catalog shipped at `resources/models.json`, then name-pattern heuristics. The package works with zero database rows — the shipped catalog covers every predefined model.
+
+`ai:models:seed` imports the shipped catalog into `ai_models` so model metadata becomes editable data (admin UIs, per-tenant pricing). It skips models that already have rows; `--fresh` overwrites existing rows back to catalog values. `ai:sync-models` refreshes rows from live provider APIs and is the path for adopting models newer than the shipped catalog.
+
+## Vector and RAG
+
+```bash
 php artisan ai:analyze-model "App\\Models\\Invoice"
 php artisan ai:docs-index ./docs --recursive --store-name="App Docs"
 php artisan ai:vector-index "App\\Models\\Invoice" --with-relationships

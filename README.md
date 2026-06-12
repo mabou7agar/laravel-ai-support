@@ -159,6 +159,17 @@ php artisan ai:infra-health
 
 `ai:test-real-agent` includes only generic built-in scripts: `minimal` and `followup`. Use repeated `--message` options for quick checks, and use `--script-file` for app-specific business flows.
 
+### Model Catalog
+
+```bash
+php artisan ai:models:seed          # import the shipped catalog into ai_models
+php artisan ai:models:seed --fresh  # overwrite existing rows back to catalog values
+php artisan ai:sync-models --provider=all
+php artisan ai:list-models
+```
+
+Model metadata (engine, driver, credit index, content type, context window, capability flags) resolves database-first: an `ai_models` row wins, then the package catalog at `resources/models.json`, then name-pattern heuristics. No database rows are required — the shipped catalog covers every predefined model out of the box. Seed it when you want metadata editable as data (admin UIs, per-tenant pricing), and sync from live provider APIs to adopt models newer than the shipped catalog.
+
 ### Provider, MCP, and Realtime APIs
 
 ```bash
