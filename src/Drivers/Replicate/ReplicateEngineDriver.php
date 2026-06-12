@@ -10,8 +10,11 @@ use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\Drivers\Concerns\BuildsMediaResponses;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\VideoModelSpec;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
+use LaravelAIEngine\Exceptions\AIEngineException;
+use LaravelAIEngine\Services\Media\VideoModelCatalog;
 
 class ReplicateEngineDriver extends BaseEngineDriver
 {
@@ -57,10 +60,18 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     public function getAvailableModels(): array
     {
-        return [
+        $models = [
             EntityEnum::REPLICATE_FLUX_SCHNELL => ['name' => 'FLUX Schnell', 'type' => 'image'],
             EntityEnum::REPLICATE_WAN_IMAGE_TO_VIDEO => ['name' => 'WAN Image to Video', 'type' => 'video'],
         ];
+
+        foreach (VideoModelCatalog::all() as $model => $spec) {
+            if ($spec->isReplicate() && !isset($models[$model])) {
+                $models[$model] = ['name' => EntityEnum::from($model)->label(), 'type' => 'video'];
+            }
+        }
+
+        return $models;
     }
 
     public function generateJsonAnalysis(string $prompt, string $systemPrompt, ?string $model = null, int $maxTokens = 300): string
@@ -75,7 +86,11 @@ class ReplicateEngineDriver extends BaseEngineDriver
 
     public function generateVideo(AIRequest $request): AIResponse
     {
-        return $this->runPrediction($request);
+        $spec = VideoModelCatalog::get($request->getModel()->value);
+
+        return $spec !== null
+            ? $this->runPrediction($request, $this->prepareReplicateVideoInput($request, $spec))
+            : $this->runPrediction($request);
     }
 
     public function generateAudio(AIRequest $request): AIResponse
@@ -83,11 +98,56 @@ class ReplicateEngineDriver extends BaseEngineDriver
         return $this->runPrediction($request);
     }
 
-    protected function runPrediction(AIRequest $request): AIResponse
+    /**
+     * Build a WAN (or other Replicate video) prediction input from the catalog spec:
+     * route the canonical start/end frame to the model's field names (e.g.
+     * image/last_image or first_frame/last_frame) and forward only whitelisted options.
+     *
+     * @return array<string, mixed>
+     */
+    protected function prepareReplicateVideoInput(AIRequest $request, VideoModelSpec $spec): array
+    {
+        $parameters = $request->getParameters();
+        $input = (array) ($parameters['input'] ?? []);
+
+        if ($spec->acceptsPrompt() && trim($request->getPrompt()) !== '') {
+            $input['prompt'] = $request->getPrompt();
+        }
+
+        if ($spec->firstFrameField !== null) {
+            $first = VideoModelSpec::firstNonEmpty(
+                $parameters['start_image_url'] ?? null,
+                $parameters['image_url'] ?? null,
+                $parameters['image'] ?? null,
+                $parameters['first_frame'] ?? null,
+            );
+            if ($first !== null) {
+                $input[$spec->firstFrameField] = $first;
+            } elseif ($spec->firstFrameRequired) {
+                throw new AIEngineException("Model {$spec->endpoint} requires a start image.");
+            }
+        }
+
+        if ($spec->lastFrameField !== null) {
+            $last = VideoModelSpec::firstNonEmpty(
+                $parameters['end_image_url'] ?? null,
+                $parameters['last_image'] ?? null,
+                $parameters['last_frame'] ?? null,
+            );
+            if ($last !== null) {
+                $input[$spec->lastFrameField] = $last;
+            }
+        }
+
+        return $spec->applyOptions($input, $parameters);
+    }
+
+    protected function runPrediction(AIRequest $request, ?array $inputOverride = null): AIResponse
     {
         try {
             $parameters = $request->getParameters();
-            $input = array_merge(['prompt' => $request->getPrompt()], (array) ($parameters['input'] ?? []), $parameters);
+            $input = $inputOverride
+                ?? array_merge(['prompt' => $request->getPrompt()], (array) ($parameters['input'] ?? []), $parameters);
             unset($input['input'], $input['version'], $input['webhook'], $input['webhook_events_filter']);
 
             $version = $parameters['version'] ?? null;

@@ -11,12 +11,14 @@ use Illuminate\Support\Str;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\VideoModelSpec;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Repositories\AIModelRepository;
 use LaravelAIEngine\Services\AIMediaManager;
 use LaravelAIEngine\Services\Fal\FalCatalogExecutionService;
+use LaravelAIEngine\Services\Media\VideoModelCatalog;
 
 class FalAIEngineDriver extends BaseEngineDriver
 {
@@ -88,14 +90,26 @@ class FalAIEngineDriver extends BaseEngineDriver
                 || !empty($parameters['character_sources'])
                 || !empty($parameters['reference_video_urls'])
                 || !empty($parameters['video_urls']);
-            $isTextToVideo = $model === EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO;
 
-            if ($isTextToVideo && !$hasPrompt) {
-                throw new AIEngineException('Prompt is required for text-to-video generation');
-            }
+            $resolvedModel = $this->resolveAliasVideoModel(
+                $model,
+                $this->normalizeCharacterSources($parameters['character_sources'] ?? []),
+                $this->normalizeStringList($parameters['reference_image_urls'] ?? [])
+            );
+            $spec = VideoModelCatalog::get($resolvedModel);
 
-            if (!$isTextToVideo && !$hasStartImage && !$hasReferences && !$this->isAliasTextToVideoModel($model)) {
-                throw new AIEngineException('Video generation requires a start image or references for the selected model');
+            if ($spec !== null) {
+                if ($spec->requiresPrompt() && !$hasPrompt) {
+                    throw new AIEngineException('Prompt is required for this video model');
+                }
+                if ($spec->kind === 'image' && $spec->firstFrameRequired && !$hasStartImage) {
+                    throw new AIEngineException('Video generation requires a start image for the selected model');
+                }
+                if ($spec->kind === 'reference' && !$hasReferences) {
+                    throw new AIEngineException('Video generation requires references for the selected model');
+                }
+            } elseif (!$hasStartImage && !$hasReferences && !$hasPrompt) {
+                throw new AIEngineException('Video generation requires a prompt, start image, or references for the selected model');
             }
         }
 
@@ -109,7 +123,7 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     public function getAvailableModels(): array
     {
-        return [
+        $models = [
             EntityEnum::FAL_FLUX_PRO => ['name' => 'FLUX.1 Pro', 'type' => 'image'],
             EntityEnum::FAL_FLUX_DEV => ['name' => 'FLUX.1 Dev', 'type' => 'image'],
             EntityEnum::FAL_FLUX_SCHNELL => ['name' => 'FLUX.1 Schnell', 'type' => 'image'],
@@ -126,6 +140,16 @@ class FalAIEngineDriver extends BaseEngineDriver
             EntityEnum::FAL_SEEDANCE_2_IMAGE_TO_VIDEO => ['name' => 'Seedance 2.0 Image to Video', 'type' => 'video'],
             EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO => ['name' => 'Seedance 2.0 Reference to Video', 'type' => 'video'],
         ];
+
+        // Register every FAL video model described in the catalog so the driver
+        // claims them (image/text/reference tiers across Seedance, Kling, Luma, …).
+        foreach (VideoModelCatalog::all() as $model => $spec) {
+            if ($spec->isFal() && !isset($models[$model])) {
+                $models[$model] = ['name' => EntityEnum::from($model)->label(), 'type' => 'video'];
+            }
+        }
+
+        return $models;
     }
 
     public function test(): bool
@@ -340,8 +364,108 @@ class FalAIEngineDriver extends BaseEngineDriver
             $request->getProviderOptions(EngineEnum::FalAI->value),
             $request->getProviderOptions('fal')
         );
+
         $characterSources = $this->normalizeCharacterSources($parameters['character_sources'] ?? []);
         $referenceImageUrls = $this->normalizeStringList($parameters['reference_image_urls'] ?? []);
+
+        $requestedModel = $this->resolveAliasVideoModel($request->getModel()->value, $characterSources, $referenceImageUrls);
+        $spec = VideoModelCatalog::get($requestedModel);
+
+        if ($spec === null) {
+            // Unknown / catalog model — fall back to a permissive pass-through payload.
+            return [
+                'endpoint' => $this->resolveEndpointForModel($requestedModel),
+                'payload' => $this->buildGenericVideoPayload($request, $parameters),
+                'resolved_model' => $requestedModel,
+            ];
+        }
+
+        $payload = $spec->kind === 'reference'
+            ? $this->buildReferenceVideoPayload($request, $spec, $parameters, $characterSources, $referenceImageUrls)
+            : $this->buildFramedVideoPayload($request, $spec, $parameters);
+
+        return [
+            'endpoint' => $spec->endpoint,
+            'payload' => $payload,
+            'resolved_model' => $requestedModel,
+        ];
+    }
+
+    /**
+     * Resolve the simplified KLING_VIDEO / LUMA aliases to a concrete model based on inputs.
+     */
+    private function resolveAliasVideoModel(string $model, array $characterSources, array $referenceImageUrls): string
+    {
+        if ($model === EntityEnum::KLING_VIDEO) {
+            return ($characterSources !== [] || $referenceImageUrls !== [])
+                ? EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO
+                : EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO;
+        }
+
+        if ($model === EntityEnum::LUMA_DREAM_MACHINE) {
+            return EntityEnum::FAL_LUMA_DREAM;
+        }
+
+        return $model;
+    }
+
+    /**
+     * Build a text/image payload: prompt (per prompt mode), first/last frame routed
+     * to the model's field names, and the model's whitelisted options.
+     */
+    private function buildFramedVideoPayload(AIRequest $request, VideoModelSpec $spec, array $parameters): array
+    {
+        $payload = [];
+        $multiPrompt = $this->normalizeMultiPrompt($parameters['multi_prompt'] ?? []);
+        $prompt = trim($request->getPrompt());
+
+        if ($spec->acceptsPrompt() && $prompt !== '') {
+            $payload['prompt'] = $request->getPrompt();
+        }
+
+        // First frame (start image). Accept start_image_url, falling back to image_url.
+        if ($spec->firstFrameField !== null) {
+            $firstFrame = $this->firstNonEmpty($parameters['start_image_url'] ?? null, $parameters['image_url'] ?? null);
+            if ($firstFrame !== null) {
+                $payload[$spec->firstFrameField] = $firstFrame;
+            } elseif ($spec->firstFrameRequired) {
+                throw new AIEngineException("Model {$spec->endpoint} requires a start image (start_image_url).");
+            }
+        }
+
+        // Last frame (end image) routed to the model's field name.
+        if ($spec->lastFrameField !== null) {
+            $lastFrame = $this->firstNonEmpty($parameters['end_image_url'] ?? null);
+            if ($lastFrame !== null) {
+                $payload[$spec->lastFrameField] = $lastFrame;
+            }
+        }
+
+        if ($spec->requiresPrompt() && $prompt === '' && $multiPrompt === []) {
+            throw new AIEngineException("Model {$spec->endpoint} requires a prompt.");
+        }
+
+        $payload = $this->applyVideoOptions($payload, $parameters, $spec);
+
+        if ($spec->supportsMultiPrompt && $multiPrompt !== []) {
+            $payload['multi_prompt'] = $multiPrompt;
+            $payload['shot_type'] = $parameters['shot_type'] ?? 'customize';
+            unset($payload['prompt']);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Build a reference-to-video payload (Kling elements / Seedance multi-modal refs).
+     */
+    private function buildReferenceVideoPayload(
+        AIRequest $request,
+        VideoModelSpec $spec,
+        array $parameters,
+        array $characterSources,
+        array $referenceImageUrls
+    ): array {
         $referenceVideoUrls = array_values(array_unique(array_merge(
             $this->normalizeStringList($parameters['reference_video_urls'] ?? []),
             $this->normalizeStringList($parameters['video_urls'] ?? [])
@@ -350,171 +474,73 @@ class FalAIEngineDriver extends BaseEngineDriver
             $this->normalizeStringList($parameters['reference_audio_urls'] ?? []),
             $this->normalizeStringList($parameters['audio_urls'] ?? [])
         )));
-        $multiPrompt = $this->normalizeMultiPrompt($parameters['multi_prompt'] ?? []);
-        $requestedModel = $request->getModel()->value;
 
-        if ($requestedModel === EntityEnum::KLING_VIDEO) {
-            $requestedModel = ($characterSources !== [] || $referenceImageUrls !== [])
-                ? EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO
-                : EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO;
-        }
-
-        if ($requestedModel === EntityEnum::FAL_KLING_O3_REFERENCE_TO_VIDEO) {
+        if ($spec->augmentStyle === 'kling') {
             if ($characterSources === [] && $referenceImageUrls === []) {
                 throw new AIEngineException('Kling reference-to-video requires reference_image_urls or character_sources');
             }
 
             $payload = [
                 'prompt' => $this->augmentPromptWithCharacterReferences($request->getPrompt(), $characterSources, $referenceImageUrls),
-                'duration' => (string) ($parameters['duration'] ?? '5'),
-                'aspect_ratio' => $parameters['aspect_ratio'] ?? '16:9',
-                'generate_audio' => $parameters['generate_audio'] ?? true,
                 'image_urls' => $referenceImageUrls,
-                'elements' => $this->buildKlingElements($characterSources),
             ];
+            if ($spec->supportsElements) {
+                $payload['elements'] = $this->buildKlingElements($characterSources);
+            }
+            if ($spec->firstFrameField !== null && ($first = $this->firstNonEmpty($parameters['start_image_url'] ?? null)) !== null) {
+                $payload[$spec->firstFrameField] = $first;
+            }
+            if ($spec->lastFrameField !== null && ($last = $this->firstNonEmpty($parameters['end_image_url'] ?? null)) !== null) {
+                $payload[$spec->lastFrameField] = $last;
+            }
 
-            if (!empty($parameters['start_image_url'])) {
-                $payload['start_image_url'] = $parameters['start_image_url'];
-            }
-            if (!empty($parameters['end_image_url'])) {
-                $payload['end_image_url'] = $parameters['end_image_url'];
-            }
-            if ($multiPrompt !== []) {
+            $payload = $this->applyVideoOptions($payload, $parameters, $spec);
+
+            $multiPrompt = $this->normalizeMultiPrompt($parameters['multi_prompt'] ?? []);
+            if ($spec->supportsMultiPrompt && $multiPrompt !== []) {
                 $payload['multi_prompt'] = $multiPrompt;
                 $payload['shot_type'] = $parameters['shot_type'] ?? 'customize';
                 unset($payload['prompt']);
             }
 
-            return [
-                'endpoint' => $this->resolveEndpointForModel($requestedModel),
-                'payload' => $payload,
-                'resolved_model' => $requestedModel,
-            ];
+            return $payload;
         }
 
-        if ($requestedModel === EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO) {
-            $imageUrl = $parameters['start_image_url'] ?? $parameters['image_url'] ?? null;
-            if (!is_string($imageUrl) || trim($imageUrl) === '') {
-                throw new AIEngineException('Kling image-to-video requires start_image_url');
-            }
+        // Seedance-style references.
+        $imageUrls = array_values(array_unique(array_merge(
+            $referenceImageUrls,
+            $this->collectCharacterSourceImages($characterSources)
+        )));
 
-            $payload = [
-                'image_url' => $imageUrl,
-                'duration' => (string) ($parameters['duration'] ?? '5'),
-                'generate_audio' => $parameters['generate_audio'] ?? true,
-            ];
-
-            if (trim($request->getPrompt()) !== '') {
-                $payload['prompt'] = $request->getPrompt();
-            }
-            if (!empty($parameters['end_image_url'])) {
-                $payload['end_image_url'] = $parameters['end_image_url'];
-            }
-            if ($multiPrompt !== []) {
-                $payload['multi_prompt'] = $multiPrompt;
-                $payload['shot_type'] = $parameters['shot_type'] ?? 'customize';
-                unset($payload['prompt']);
-            }
-
-            return [
-                'endpoint' => $this->resolveEndpointForModel($requestedModel),
-                'payload' => $payload,
-                'resolved_model' => $requestedModel,
-            ];
+        if ($imageUrls === [] && $referenceVideoUrls === []) {
+            throw new AIEngineException('Seedance reference-to-video requires reference_image_urls, reference_video_urls, or character_sources');
         }
 
-        if ($requestedModel === EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO) {
-            $payload = [
-                'prompt' => $request->getPrompt(),
-                'duration' => (string) ($parameters['duration'] ?? 'auto'),
-                'aspect_ratio' => $parameters['aspect_ratio'] ?? '16:9',
-                'resolution' => $parameters['resolution'] ?? '720p',
-                'generate_audio' => $parameters['generate_audio'] ?? true,
-            ];
-            if (isset($parameters['seed'])) {
-                $payload['seed'] = (int) $parameters['seed'];
-            }
-
-            return [
-                'endpoint' => $this->resolveEndpointForModel($requestedModel),
-                'payload' => $payload,
-                'resolved_model' => $requestedModel,
-            ];
-        }
-
-        if ($requestedModel === EntityEnum::FAL_SEEDANCE_2_IMAGE_TO_VIDEO) {
-            $imageUrl = $parameters['start_image_url'] ?? $parameters['image_url'] ?? null;
-            if (!is_string($imageUrl) || trim($imageUrl) === '') {
-                throw new AIEngineException('Seedance image-to-video requires start_image_url');
-            }
-
-            $payload = [
-                'prompt' => $request->getPrompt(),
-                'image_url' => $imageUrl,
-                'duration' => (string) ($parameters['duration'] ?? 'auto'),
-                'aspect_ratio' => $parameters['aspect_ratio'] ?? 'auto',
-                'resolution' => $parameters['resolution'] ?? '720p',
-                'generate_audio' => $parameters['generate_audio'] ?? true,
-            ];
-            if (!empty($parameters['end_image_url'])) {
-                $payload['end_image_url'] = $parameters['end_image_url'];
-            }
-            if (isset($parameters['seed'])) {
-                $payload['seed'] = (int) $parameters['seed'];
-            }
-
-            return [
-                'endpoint' => $this->resolveEndpointForModel($requestedModel),
-                'payload' => $payload,
-                'resolved_model' => $requestedModel,
-            ];
-        }
-
-        if ($requestedModel === EntityEnum::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO) {
-            $imageUrls = array_values(array_unique(array_merge(
-                $referenceImageUrls,
-                $this->collectCharacterSourceImages($characterSources)
-            )));
-
-            if ($imageUrls === [] && $referenceVideoUrls === []) {
-                throw new AIEngineException('Seedance reference-to-video requires reference_image_urls, reference_video_urls, or character_sources');
-            }
-
-            $payload = [
-                'prompt' => $this->augmentPromptWithSeedanceReferences($request->getPrompt(), $characterSources, $referenceImageUrls, $referenceVideoUrls, $referenceAudioUrls),
-                'image_urls' => $imageUrls,
-                'video_urls' => $referenceVideoUrls,
-                'audio_urls' => $referenceAudioUrls,
-                'duration' => (string) ($parameters['duration'] ?? 'auto'),
-                'aspect_ratio' => $parameters['aspect_ratio'] ?? '16:9',
-                'resolution' => $parameters['resolution'] ?? '720p',
-                'generate_audio' => $parameters['generate_audio'] ?? true,
-            ];
-            if ($referenceAudioUrls === []) {
-                unset($payload['audio_urls']);
-            }
-            if ($referenceVideoUrls === []) {
-                unset($payload['video_urls']);
-            }
-            if ($imageUrls === []) {
-                unset($payload['image_urls']);
-            }
-            if (isset($parameters['seed'])) {
-                $payload['seed'] = (int) $parameters['seed'];
-            }
-
-            return [
-                'endpoint' => $this->resolveEndpointForModel($requestedModel),
-                'payload' => $payload,
-                'resolved_model' => $requestedModel,
-            ];
-        }
-
-        return [
-            'endpoint' => $this->resolveEndpointForModel($requestedModel),
-            'payload' => $this->buildAliasVideoPayload($request),
-            'resolved_model' => $requestedModel,
+        $imageField = $spec->referenceImageField ?? 'image_urls';
+        $payload = [
+            'prompt' => $this->augmentPromptWithSeedanceReferences($request->getPrompt(), $characterSources, $referenceImageUrls, $referenceVideoUrls, $referenceAudioUrls),
         ];
+        if ($imageUrls !== []) {
+            $payload[$imageField] = $imageUrls;
+        }
+        if ($spec->supportsVideoRefs && $referenceVideoUrls !== []) {
+            $payload['video_urls'] = $referenceVideoUrls;
+        }
+        if ($spec->supportsAudioRefs && $referenceAudioUrls !== []) {
+            $payload['audio_urls'] = $referenceAudioUrls;
+        }
+
+        return $this->applyVideoOptions($payload, $parameters, $spec);
+    }
+
+    private function applyVideoOptions(array $payload, array $parameters, VideoModelSpec $spec): array
+    {
+        return $spec->applyOptions($payload, $parameters);
+    }
+
+    private function firstNonEmpty(mixed ...$values): ?string
+    {
+        return VideoModelSpec::firstNonEmpty(...$values);
     }
 
     public function submitVideoAsync(AIRequest $request, ?string $webhookUrl = null): array
@@ -607,17 +633,18 @@ class FalAIEngineDriver extends BaseEngineDriver
 
     private function resolveEndpointForModel(string $model): string
     {
+        // Video models carry their endpoint in the catalog (single source of truth).
+        if ($spec = VideoModelCatalog::get($model)) {
+            return $spec->endpoint;
+        }
+
         return match ($model) {
             EntityEnum::FAL_FLUX_PRO => 'fal-ai/flux-pro',
             EntityEnum::FAL_FLUX_DEV => 'fal-ai/flux/dev',
             EntityEnum::FAL_FLUX_SCHNELL => 'fal-ai/flux/schnell',
             EntityEnum::FAL_SDXL => 'fal-ai/stable-diffusion-xl',
             EntityEnum::FAL_SD3_MEDIUM => 'fal-ai/stable-diffusion-v3-medium',
-            EntityEnum::FAL_STABLE_VIDEO => 'fal-ai/stable-video-diffusion',
-            EntityEnum::FAL_ANIMATEDIFF => 'fal-ai/animatediff-lightning',
-            EntityEnum::FAL_LUMA_DREAM => 'fal-ai/luma-ai/dream-machine',
             EntityEnum::KLING_VIDEO => EntityEnum::FAL_KLING_O3_IMAGE_TO_VIDEO,
-            EntityEnum::LUMA_DREAM_MACHINE => 'fal-ai/luma-ai/dream-machine',
             default => $model,
         };
     }
@@ -847,10 +874,12 @@ class FalAIEngineDriver extends BaseEngineDriver
         return $elements;
     }
 
-    private function buildAliasVideoPayload(AIRequest $request): array
+    /**
+     * Permissive payload for video models not described in the catalog (e.g. dynamic
+     * catalog models). Forwards the prompt, first/last frame and any supplied scalars.
+     */
+    private function buildGenericVideoPayload(AIRequest $request, array $parameters): array
     {
-        $parameters = $request->getParameters();
-
         $payload = [
             'prompt' => $request->getPrompt(),
             'duration' => $parameters['duration'] ?? 5,
@@ -859,8 +888,12 @@ class FalAIEngineDriver extends BaseEngineDriver
             'motion_scale' => $parameters['motion_scale'] ?? 1.0,
         ];
 
-        if (!empty($parameters['image_url'])) {
-            $payload['image_url'] = $parameters['image_url'];
+        $firstFrame = $this->firstNonEmpty($parameters['start_image_url'] ?? null, $parameters['image_url'] ?? null);
+        if ($firstFrame !== null) {
+            $payload['image_url'] = $firstFrame;
+        }
+        if (($lastFrame = $this->firstNonEmpty($parameters['end_image_url'] ?? null)) !== null) {
+            $payload['end_image_url'] = $lastFrame;
         }
 
         if (isset($parameters['seed'])) {
@@ -968,14 +1001,4 @@ class FalAIEngineDriver extends BaseEngineDriver
         ], true);
     }
 
-    private function isAliasTextToVideoModel(string $model): bool
-    {
-        return in_array($model, [
-            EntityEnum::FAL_STABLE_VIDEO,
-            EntityEnum::FAL_ANIMATEDIFF,
-            EntityEnum::FAL_LUMA_DREAM,
-            EntityEnum::KLING_VIDEO,
-            EntityEnum::LUMA_DREAM_MACHINE,
-        ], true);
-    }
 }

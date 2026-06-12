@@ -15,6 +15,27 @@ use Throwable;
 
 class GenerateVideoService
 {
+    /**
+     * Provider-specific scalar options accepted at the top level of a video request.
+     * The selected model's driver whitelists which of these it forwards.
+     */
+    private const PASSTHROUGH_OPTIONS = [
+        'negative_prompt',
+        'cfg_scale',
+        'camera_fixed',
+        'camera_control',
+        'loop',
+        'motion_bucket_id',
+        'cond_aug',
+        'num_frames',
+        'fps',
+        'shot_type',
+        'enable_safety_checker',
+        'enable_prompt_expansion',
+        'end_user_id',
+    ];
+
+
     public function __construct(
         private readonly AIEngineService $ai,
         private readonly FalAsyncVideoService $asyncVideo,
@@ -178,6 +199,14 @@ class GenerateVideoService
         }
         if (array_key_exists('use_webhook', $validated)) {
             $parameters['use_webhook'] = (bool) $validated['use_webhook'];
+        }
+
+        // Forward common provider-specific scalar options when supplied at the top
+        // level. Each video model's driver whitelists which of these it actually uses.
+        foreach (self::PASSTHROUGH_OPTIONS as $key) {
+            if (array_key_exists($key, $validated) && $validated[$key] !== null && $validated[$key] !== '') {
+                $parameters[$key] = $validated[$key];
+            }
         }
 
         return $parameters;

@@ -24,6 +24,7 @@ use LaravelAIEngine\Drivers\Ollama\OllamaEngineDriver;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\Drivers\LocalAudio\LocalAudioEngineDriver;
 use LaravelAIEngine\Services\Models\DynamicModelResolver;
+use LaravelAIEngine\Services\Media\VideoModelCatalog;
 
 class EntityEnum
 {
@@ -98,6 +99,39 @@ class EntityEnum
     public const FAL_SEEDANCE_2_TEXT_TO_VIDEO = 'bytedance/seedance-2.0/text-to-video';
     public const FAL_SEEDANCE_2_IMAGE_TO_VIDEO = 'bytedance/seedance-2.0/image-to-video';
     public const FAL_SEEDANCE_2_REFERENCE_TO_VIDEO = 'bytedance/seedance-2.0/reference-to-video';
+
+    // Seedance 2.0 Fast tier
+    public const FAL_SEEDANCE_2_FAST_TEXT_TO_VIDEO = 'bytedance/seedance-2.0/fast/text-to-video';
+    public const FAL_SEEDANCE_2_FAST_IMAGE_TO_VIDEO = 'bytedance/seedance-2.0/fast/image-to-video';
+    public const FAL_SEEDANCE_2_FAST_REFERENCE_TO_VIDEO = 'bytedance/seedance-2.0/fast/reference-to-video';
+
+    // Seedance v1.5 Pro
+    public const FAL_SEEDANCE_15_PRO_TEXT_TO_VIDEO = 'fal-ai/bytedance/seedance/v1.5/pro/text-to-video';
+    public const FAL_SEEDANCE_15_PRO_IMAGE_TO_VIDEO = 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video';
+
+    // Seedance v1 Pro / Lite
+    public const FAL_SEEDANCE_1_PRO_TEXT_TO_VIDEO = 'fal-ai/bytedance/seedance/v1/pro/text-to-video';
+    public const FAL_SEEDANCE_1_PRO_IMAGE_TO_VIDEO = 'fal-ai/bytedance/seedance/v1/pro/image-to-video';
+    public const FAL_SEEDANCE_1_LITE_REFERENCE_TO_VIDEO = 'fal-ai/bytedance/seedance/v1/lite/reference-to-video';
+
+    // Kling additional tiers
+    public const FAL_KLING_O3_PRO_IMAGE_TO_VIDEO = 'fal-ai/kling-video/o3/pro/image-to-video';
+    public const FAL_KLING_V3_PRO_IMAGE_TO_VIDEO = 'fal-ai/kling-video/v3/pro/image-to-video';
+    public const FAL_KLING_O1_IMAGE_TO_VIDEO = 'fal-ai/kling-video/o1/image-to-video';
+    public const FAL_KLING_V26_PRO_IMAGE_TO_VIDEO = 'fal-ai/kling-video/v2.6/pro/image-to-video';
+    public const FAL_KLING_V21_STD_IMAGE_TO_VIDEO = 'fal-ai/kling-video/v2.1/standard/image-to-video';
+    public const FAL_KLING_V21_MASTER_TEXT_TO_VIDEO = 'fal-ai/kling-video/v2.1/master/text-to-video';
+    public const FAL_KLING_V1_STD_IMAGE_TO_VIDEO = 'fal-ai/kling-video/v1/standard/image-to-video';
+    public const FAL_KLING_V1_STD_TEXT_TO_VIDEO = 'fal-ai/kling-video/v1/standard/text-to-video';
+
+    // Luma tiers
+    public const FAL_LUMA_DREAM_IMAGE_TO_VIDEO = 'fal-ai/luma-dream-machine/image-to-video';
+    public const FAL_LUMA_RAY2_TEXT_TO_VIDEO = 'fal-ai/luma-dream-machine/ray-2';
+    public const FAL_LUMA_RAY2_IMAGE_TO_VIDEO = 'fal-ai/luma-dream-machine/ray-2/image-to-video';
+    public const FAL_LUMA_RAY2_FLASH_IMAGE_TO_VIDEO = 'fal-ai/luma-dream-machine/ray-2-flash/image-to-video';
+
+    // AnimateDiff text-to-video (standard speed; FAL_ANIMATEDIFF is the turbo tier)
+    public const FAL_ANIMATEDIFF_TEXT_TO_VIDEO = 'fal-ai/fast-animatediff/text-to-video';
 
     // Simplified aliases for common models
     public const FLUX_PRO = 'flux-pro';
@@ -271,6 +305,11 @@ class EntityEnum
     public const HUGGINGFACE_MMS_TTS = 'facebook/mms-tts';
     public const REPLICATE_FLUX_SCHNELL = 'black-forest-labs/flux-schnell';
     public const REPLICATE_WAN_IMAGE_TO_VIDEO = 'wavespeedai/wan-2.1-i2v-480p';
+    public const REPLICATE_WAN_21_I2V_720P = 'wavespeedai/wan-2.1-i2v-720p';
+    public const REPLICATE_WAN_22_I2V_FAST = 'wan-video/wan-2.2-i2v-fast';
+    public const REPLICATE_WAN_22_I2V_A14B = 'wan-video/wan-2.2-i2v-a14b';
+    public const REPLICATE_WAN_25_I2V = 'wan-video/wan-2.5-i2v';
+    public const REPLICATE_WAN_27_I2V = 'wan-video/wan-2.7-i2v';
     public const COMFYUI_DEFAULT_IMAGE = 'comfyui/default-image';
     public const COMFYUI_DEFAULT_VIDEO = 'comfyui/default-video';
     public const LOCAL_WHISPER = 'local-whisper';
@@ -384,6 +423,10 @@ class EntityEnum
         // Use dynamic model data if available
         if ($this->isDynamic() && isset($this->dynamicModel['engine'])) {
             return EngineEnum::from($this->dynamicModel['engine']);
+        }
+
+        if ($spec = VideoModelCatalog::get($this->value)) {
+            return EngineEnum::from($spec->engine);
         }
 
         switch ($this->value) {
@@ -541,6 +584,12 @@ class EntityEnum
         // Use dynamic model data if available
         if ($this->isDynamic() && isset($this->dynamicModel['driver_class'])) {
             return $this->dynamicModel['driver_class'];
+        }
+
+        if ($spec = VideoModelCatalog::get($this->value)) {
+            return $spec->isReplicate()
+                ? \LaravelAIEngine\Drivers\Replicate\ReplicateEngineDriver::class
+                : \LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver::class;
         }
 
         switch ($this->value) {
@@ -1013,6 +1062,10 @@ class EntityEnum
             return $this->dynamicModel['credit_index'];
         }
 
+        if ($spec = VideoModelCatalog::get($this->value)) {
+            return $spec->creditIndex;
+        }
+
         switch ($this->value) {
             case self::GPT_4O:
                 return 2.0;
@@ -1334,6 +1387,10 @@ class EntityEnum
         // Use dynamic model content type if available
         if ($this->isDynamic() && isset($this->dynamicModel['content_type'])) {
             return $this->dynamicModel['content_type'];
+        }
+
+        if (VideoModelCatalog::isVideo($this->value)) {
+            return 'video';
         }
 
         switch ($this->value) {
@@ -1829,6 +1886,27 @@ class EntityEnum
             self::FAL_SEEDANCE_2_TEXT_TO_VIDEO,
             self::FAL_SEEDANCE_2_IMAGE_TO_VIDEO,
             self::FAL_SEEDANCE_2_REFERENCE_TO_VIDEO,
+            self::FAL_SEEDANCE_2_FAST_TEXT_TO_VIDEO,
+            self::FAL_SEEDANCE_2_FAST_IMAGE_TO_VIDEO,
+            self::FAL_SEEDANCE_2_FAST_REFERENCE_TO_VIDEO,
+            self::FAL_SEEDANCE_15_PRO_TEXT_TO_VIDEO,
+            self::FAL_SEEDANCE_15_PRO_IMAGE_TO_VIDEO,
+            self::FAL_SEEDANCE_1_PRO_TEXT_TO_VIDEO,
+            self::FAL_SEEDANCE_1_PRO_IMAGE_TO_VIDEO,
+            self::FAL_SEEDANCE_1_LITE_REFERENCE_TO_VIDEO,
+            self::FAL_KLING_O3_PRO_IMAGE_TO_VIDEO,
+            self::FAL_KLING_V3_PRO_IMAGE_TO_VIDEO,
+            self::FAL_KLING_O1_IMAGE_TO_VIDEO,
+            self::FAL_KLING_V26_PRO_IMAGE_TO_VIDEO,
+            self::FAL_KLING_V21_STD_IMAGE_TO_VIDEO,
+            self::FAL_KLING_V21_MASTER_TEXT_TO_VIDEO,
+            self::FAL_KLING_V1_STD_IMAGE_TO_VIDEO,
+            self::FAL_KLING_V1_STD_TEXT_TO_VIDEO,
+            self::FAL_LUMA_DREAM_IMAGE_TO_VIDEO,
+            self::FAL_LUMA_RAY2_TEXT_TO_VIDEO,
+            self::FAL_LUMA_RAY2_IMAGE_TO_VIDEO,
+            self::FAL_LUMA_RAY2_FLASH_IMAGE_TO_VIDEO,
+            self::FAL_ANIMATEDIFF_TEXT_TO_VIDEO,
             self::FLUX_PRO,
             self::KLING_VIDEO,
             self::LUMA_DREAM_MACHINE,
@@ -1882,6 +1960,11 @@ class EntityEnum
             self::HUGGINGFACE_MMS_TTS,
             self::REPLICATE_FLUX_SCHNELL,
             self::REPLICATE_WAN_IMAGE_TO_VIDEO,
+            self::REPLICATE_WAN_21_I2V_720P,
+            self::REPLICATE_WAN_22_I2V_FAST,
+            self::REPLICATE_WAN_22_I2V_A14B,
+            self::REPLICATE_WAN_25_I2V,
+            self::REPLICATE_WAN_27_I2V,
             self::COMFYUI_DEFAULT_IMAGE,
             self::COMFYUI_DEFAULT_VIDEO,
             self::LOCAL_WHISPER,

@@ -97,9 +97,12 @@ class AiDoctorCommand extends Command
     }
 
     /**
-     * Per-engine credential health for the default engine and every engine referenced in a
-     * failover chain. `keyless_in_chain` are fallback engines with no API key — they are
-     * skipped at runtime, but flagged so the chain can be made meaningful.
+     * Per-engine credential health for the default engine, every engine referenced in a
+     * failover chain, and any engine that has an API key actually configured. The last
+     * group matters because a key the user added (e.g. xai/Grok) would otherwise be
+     * invisible here unless that engine happened to be the default or wired into a chain.
+     * `keyless_in_chain` are fallback engines with no API key — they are skipped at
+     * runtime, but flagged so the chain can be made meaningful.
      *
      * @return array{engines: array<string, bool>, keyless_in_chain: array<int, string>}
      */
@@ -115,6 +118,16 @@ class AiDoctorCommand extends Command
                 $names[] = (string) $fallback;
             }
         }
+
+        // Surface any engine the user has actually configured a key for, even if it is
+        // neither the default nor part of a failover chain — otherwise an added key
+        // (e.g. xai/Grok) never appears in the report and looks "unhandled".
+        foreach ((array) config('ai-engine.engines', []) as $engine => $config) {
+            if (is_array($config) && !empty($config['api_key'])) {
+                $names[] = (string) $engine;
+            }
+        }
+
         $names = array_values(array_unique(array_filter($names, static fn ($n): bool => $n !== '')));
 
         $engines = [];

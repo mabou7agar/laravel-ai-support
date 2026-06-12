@@ -55,4 +55,22 @@ class AiDoctorCommandTest extends TestCase
         $keylessWarning = array_filter($json['warnings'], static fn ($w): bool => str_contains($w, 'no API key') && str_contains($w, 'gemini'));
         $this->assertNotEmpty($keylessWarning, 'a keyless fallback engine must be flagged.');
     }
+
+    public function test_reports_configured_engine_outside_default_and_failover_chain(): void
+    {
+        // xai/Grok is neither the default nor wired into any failover chain, but the
+        // user has added a key — the doctor must still surface it.
+        config()->set('ai-engine.default', 'openai');
+        config()->set('ai-engine.engines.openai.api_key', 'sk-present');
+        config()->set('ai-engine.engines.xai.api_key', 'xai-present');
+        config()->set('ai-engine.error_handling.fallback_engines', [
+            'openai' => ['gemini'],
+        ]);
+
+        $this->withoutMockingConsoleOutput()->artisan('ai:doctor --json');
+        $json = json_decode(\Illuminate\Support\Facades\Artisan::output(), true);
+
+        $this->assertArrayHasKey('xai', $json['engines'], 'a configured engine must appear even outside the failover chain.');
+        $this->assertTrue($json['engines']['xai'], 'xai has a key, so it is reported as configured.');
+    }
 }

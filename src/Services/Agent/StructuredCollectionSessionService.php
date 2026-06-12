@@ -316,8 +316,8 @@ PROMPT;
 
     protected function confirmationMessage(StructuredCollectionDefinition $definition, array $state): string
     {
-        $summary = $this->summaryLines((array) ($state['data'] ?? []));
         $locale = $this->language($state);
+        $summary = $this->summaryLines((array) ($state['data'] ?? []), $locale);
         $translated = $this->translate('structured_collection.awaiting_confirmation', [
             'summary' => $summary,
         ], $locale);
@@ -331,7 +331,7 @@ PROMPT;
             : "Please confirm the collected data:\n{$summary}";
     }
 
-    protected function summaryLines(array $data): string
+    protected function summaryLines(array $data, string $locale = 'en'): string
     {
         $lines = [];
         foreach ($data as $key => $value) {
@@ -339,10 +339,27 @@ PROMPT;
                 continue;
             }
 
-            $lines[] = '- ' . $key . ': ' . $this->stringifyValue($value);
+            $lines[] = '- ' . $this->summaryFieldLabel($key, $locale) . ': ' . $this->stringifyValue($value);
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Localized label for a collected field in the confirmation summary, so the
+     * summary reads in the conversation language instead of by raw key. Falls
+     * back to a humanized version of the key when no translation exists.
+     */
+    protected function summaryFieldLabel(string $key, string $locale): string
+    {
+        $translated = $this->translate('structured_collection.fields.' . $key, [], $locale);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        $label = preg_replace('/\s+/', ' ', str_replace(['_', '-'], ' ', trim($key))) ?: $key;
+
+        return mb_convert_case($label, MB_CASE_TITLE, 'UTF-8');
     }
 
     protected function stringifyValue(mixed $value): string

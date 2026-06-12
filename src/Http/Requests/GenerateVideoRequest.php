@@ -51,6 +51,20 @@ class GenerateVideoRequest extends FormRequest
             'multi_prompt.*.duration' => 'nullable',
             'async' => 'nullable|boolean',
             'use_webhook' => 'nullable|boolean',
+            // Provider-specific options (forwarded per-model by the driver whitelist).
+            'negative_prompt' => 'nullable|string|max:2500',
+            'cfg_scale' => 'nullable|numeric',
+            'camera_fixed' => 'nullable|boolean',
+            'camera_control' => 'nullable|string|max:60',
+            'loop' => 'nullable|boolean',
+            'motion_bucket_id' => 'nullable|integer',
+            'cond_aug' => 'nullable|numeric',
+            'num_frames' => 'nullable|integer',
+            'fps' => 'nullable|integer',
+            'shot_type' => 'nullable|string|max:30',
+            'enable_safety_checker' => 'nullable|boolean',
+            'enable_prompt_expansion' => 'nullable|boolean',
+            'end_user_id' => 'nullable|string|max:255',
             'parameters' => 'nullable|array',
         ];
     }
