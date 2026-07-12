@@ -22,7 +22,13 @@ class AiNativeFinalToolPolicy
      */
     public function requirementApplies(string $message, array $state, array $options): bool
     {
-        if (($options['skill_id'] ?? '') !== '' || ($options['runtime_scope'] ?? '') === 'skill') {
+        // An explicitly selected skill always enforces its final tool. A bare
+        // runtime_scope=skill must NOT: that scope only says the runtime uses
+        // skills — treating it as "every message is a skill task" forced final
+        // tools onto unrelated messages (live-proven: a host preamble
+        // containing a trigger word seeded an objective, and every turn then
+        // looped on final_without_required_final_tool).
+        if (($options['skill_id'] ?? '') !== '') {
             return true;
         }
 
@@ -63,6 +69,20 @@ class AiNativeFinalToolPolicy
                 continue;
             }
 
+            // An active objective alone must not force a final tool: the
+            // objective may have been seeded by loose trigger noise (e.g. a
+            // host preamble containing a trigger word). Unless the skill was
+            // EXPLICITLY selected, force only when the CURRENT message matches
+            // the skill or the task shows genuine engagement with it — a
+            // payload collected on prior turns, or a successful result from
+            // one of the skill's own tools.
+            if ($selectedSkill !== ''
+                && trim((string) ($options['skill_id'] ?? '')) === ''
+                && !$this->matcher->skillMatchesMessage($skill, $normalized)
+                && !$this->skillEngaged($skill, $state)) {
+                continue;
+            }
+
             if ($selectedSkill === '' && !$this->matcher->skillMatchesMessage($skill, $normalized)) {
                 continue;
             }
@@ -81,6 +101,39 @@ class AiNativeFinalToolPolicy
         }
 
         return array_values(array_unique($tools));
+    }
+
+    /**
+     * Genuine engagement with a skill's task: a working payload collected on
+     * prior turns, or a successful result from one of the skill's OWN tools.
+     * Tool activity from unrelated tools does not count — that is exactly the
+     * noise-seeded-objective case this guards against.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function skillEngaged(mixed $skill, array $state): bool
+    {
+        if ((array) data_get($state, 'task_frame.current_payload', []) !== []) {
+            return true;
+        }
+
+        $skillTools = array_map(static fn (mixed $tool): string => (string) $tool, (array) ($skill->tools ?? []));
+        if ($skillTools === []) {
+            return false;
+        }
+
+        foreach ((array) ($state['tool_results'] ?? []) as $toolResult) {
+            if (!is_array($toolResult)) {
+                continue;
+            }
+            $result = is_array($toolResult['result'] ?? null) ? $toolResult['result'] : [];
+            if (($result['success'] ?? false) === true
+                && in_array((string) ($toolResult['tool'] ?? ''), $skillTools, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

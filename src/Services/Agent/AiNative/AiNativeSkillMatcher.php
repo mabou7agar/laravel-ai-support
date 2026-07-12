@@ -37,7 +37,10 @@ class AiNativeSkillMatcher
      */
     public function messageMatchesSkill(string $message, array $options): bool
     {
-        if (($options['skill_id'] ?? '') !== '' || ($options['runtime_scope'] ?? '') === 'skill') {
+        // Explicit skill selection short-circuits; a bare runtime_scope=skill
+        // must not — it made trigger matching vacuous (every message
+        // "matched"), which cascaded into forced final tools on unrelated asks.
+        if (($options['skill_id'] ?? '') !== '') {
             return true;
         }
 
