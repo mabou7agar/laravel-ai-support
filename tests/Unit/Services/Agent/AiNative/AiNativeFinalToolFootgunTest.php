@@ -92,6 +92,48 @@ class AiNativeFinalToolFootgunTest extends UnitTestCase
         ));
     }
 
+    public function test_successful_result_from_the_skills_own_tool_counts_as_engagement(): void
+    {
+        // The skill's own lookup succeeded on a prior step — this is a genuine
+        // task, so the data-only follow-up keeps the final tool required.
+        $state = ['task_frame' => ['active_objective' => 'adapt_theme_style', 'status' => 'working'],
+            'tool_results' => [[
+                'tool' => 'set_brand_tokens',
+                'params' => [],
+                'result' => ['success' => false],
+            ], [
+                'tool' => 'set_brand_tokens',
+                'params' => [],
+                'result' => ['success' => true],
+            ]],
+        ];
+
+        self::assertSame(['set_brand_tokens'], $this->policy()->requiredTools(
+            'looks good',
+            ['runtime_scope' => 'skill'],
+            $state,
+        ));
+    }
+
+    public function test_unrelated_tool_activity_does_not_count_as_engagement(): void
+    {
+        // A DIFFERENT tool succeeded (e.g. a reorder) while the objective was
+        // noise-seeded — that must not force this skill's final tool.
+        $state = ['task_frame' => ['active_objective' => 'adapt_theme_style', 'status' => 'working'],
+            'tool_results' => [[
+                'tool' => 'reorder_remove_sections',
+                'params' => [],
+                'result' => ['success' => true],
+            ]],
+        ];
+
+        self::assertSame([], $this->policy()->requiredTools(
+            'move the pricing section up one position',
+            ['runtime_scope' => 'skill'],
+            $state,
+        ));
+    }
+
     public function test_engaged_multi_turn_task_still_forces_final_tool(): void
     {
         // Turn 2 of a genuine skill task: the payload collected on turn 1 is

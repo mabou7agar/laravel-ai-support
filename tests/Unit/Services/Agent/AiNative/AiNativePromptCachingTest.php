@@ -115,6 +115,26 @@ class AiNativePromptCachingTest extends UnitTestCase
         self::assertIsString($messages[0]['content']);
     }
 
+    public function test_bare_claude_slug_without_vendor_prefix_is_still_marked(): void
+    {
+        config()->set('ai-engine.engines.openrouter.prompt_caching', true);
+
+        $messages = $this->openRouterMessages('claude-haiku-4-5');
+
+        self::assertIsArray($messages[0]['content']);
+        self::assertSame(['type' => 'ephemeral'], $messages[0]['content'][0]['cache_control']);
+    }
+
+    public function test_gemini_and_other_vendors_keep_plain_system_strings(): void
+    {
+        config()->set('ai-engine.engines.openrouter.prompt_caching', true);
+
+        foreach (['google/gemini-2.5-pro', 'deepseek/deepseek-v3.2', 'minimax/minimax-m3'] as $model) {
+            $messages = $this->openRouterMessages($model);
+            self::assertIsString($messages[0]['content'], $model);
+        }
+    }
+
     public function test_openrouter_caching_can_be_disabled_via_config(): void
     {
         config()->set('ai-engine.engines.openrouter.prompt_caching', false);
