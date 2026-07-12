@@ -42,6 +42,15 @@ class AiNativeToolCallActionHandler
         $toolName = trim((string) ($plan['tool'] ?? $plan['tool_name'] ?? ''));
         $tool = $toolName !== '' ? $this->tools->get($toolName) : null;
         if (!$tool instanceof AgentTool) {
+            // A hallucinated tool name (e.g. a section family used as a tool)
+            // is usually self-correctable — feed the real tool list back and
+            // let the model re-plan once before surfacing a failure.
+            if ($this->shouldRetryUnknownTool($state, $toolName)) {
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             $this->stateStore->put($context, $state);
 
             return AiNativeActionOutcome::response($this->responses->needsUserInput($context, $state, "Tool {$toolName} is not available."));
@@ -417,10 +426,39 @@ class AiNativeToolCallActionHandler
         $state['auto_retry_attempts'] = $attempts + 1;
         $state['runtime_feedback'][] = [
             'reason' => 'tool_execution_recoverable_failure',
-            'message' => 'The tool call failed but is recoverable. Re-plan: fix the arguments, call a lookup/alternative tool, or ask the user only if no automated recovery is possible.',
+            'message' => 'The tool call failed but is recoverable. Re-plan: fix the arguments using the details below, call a lookup/alternative tool, or ask the user only if no automated recovery is possible.',
             'tool' => $toolName,
             'error' => $result->error ?? $result->message,
+            // Failure hints (e.g. the tool's available_sections list) are what
+            // make the retry converge instead of repeating the same mistake.
+            'details' => $this->stateStore->redactedArray((array) $result->metadata),
             'attempt' => $attempts + 1,
+        ];
+
+        return true;
+    }
+
+    /**
+     * One re-plan chance for a hallucinated tool name, with the actual tool
+     * list as feedback. Capped per turn so a persistently confused model
+     * still surfaces the failure instead of looping.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function shouldRetryUnknownTool(array &$state, string $toolName): bool
+    {
+        $attempts = (int) ($state['unknown_tool_attempts'] ?? 0);
+        if ($attempts >= 1) {
+            return false;
+        }
+
+        $state['unknown_tool_attempts'] = $attempts + 1;
+        $state['runtime_feedback'][] = [
+            'reason' => 'unknown_tool',
+            'message' => "There is no tool named \"{$toolName}\". Pick one of the available tools by its EXACT name: "
+                . implode(', ', array_keys($this->tools->all()))
+                . '. Section names/families are NOT tools — pass them inside the tool arguments instead.',
+            'tool' => $toolName,
         ];
 
         return true;
