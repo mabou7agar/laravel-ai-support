@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent\AiNative;
 
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
 class AiNativeToolCallActionHandler
 {
+    use TranslatesRuntimeText;
+
     public function __construct(
         private readonly ToolRegistry $tools,
         private readonly ToolResultAuthorityService $authority,
@@ -108,9 +111,27 @@ class AiNativeToolCallActionHandler
 
             $this->stateStore->put($context, $state);
 
-            return AiNativeActionOutcome::response($this->responses->needsUserInput($context, $state, implode("\n", $validation), $this->responses->requiredInputsFromValidation($validation), [
-                'tool_name' => $toolName,
-            ]));
+            // A tool that ALREADY SUCCEEDED this turn is the user's outcome —
+            // a bogus trailing call (e.g. an unrequested apply/execute step
+            // with missing arguments) must not bury it under a validator error.
+            $salvaged = $this->salvageTurnSuccess($context, $state, $toolName, $validation);
+            if ($salvaged instanceof AgentResponse) {
+                return AiNativeActionOutcome::response($salvaged);
+            }
+
+            $errorsText = implode('; ', $validation);
+
+            return AiNativeActionOutcome::response($this->responses->needsUserInput(
+                $context,
+                $state,
+                $this->runtimeText(
+                    'ai-engine::runtime.responses.tool_step_failed',
+                    "I couldn't run the \"{$toolName}\" step: {$errorsText}",
+                    ['tool' => $toolName, 'errors' => $errorsText],
+                ),
+                $this->responses->requiredInputsFromValidation($validation),
+                ['tool_name' => $toolName],
+            ));
         }
 
         if ($isConfirmedSuggestedWrite) {
@@ -300,6 +321,43 @@ class AiNativeToolCallActionHandler
         $message = trim((string) ($plan['message'] ?? ''));
 
         return $message !== '' ? $message : 'Done.';
+    }
+
+    /**
+     * The most recent successful, non-ask tool outcome recorded THIS TURN by a
+     * different tool — returned as the final response when a trailing tool
+     * call dies on validation, so completed work (a staged preview, a created
+     * record) reaches the user instead of a raw validator string. Null when
+     * nothing succeeded this turn.
+     *
+     * @param array<string, mixed> $state
+     * @param array<int, string> $validation
+     */
+    private function salvageTurnSuccess(UnifiedActionContext $context, array &$state, string $failedTool, array $validation): ?AgentResponse
+    {
+        $turnStart = (int) ($state['outcomes_at_turn_start'] ?? 0);
+        $turnOutcomes = array_slice((array) ($state['recent_outcomes'] ?? []), $turnStart);
+
+        foreach (array_reverse($turnOutcomes) as $outcome) {
+            if (!is_array($outcome)
+                || ($outcome['success'] ?? false) !== true
+                || ($outcome['needs_user_input'] ?? false) === true
+                || (string) ($outcome['tool'] ?? '') === $failedTool
+            ) {
+                continue;
+            }
+
+            $label = trim((string) ($outcome['label'] ?? $outcome['tool'] ?? ''));
+            $message = rtrim($this->runtimeText('ai-engine::runtime.responses.completed_without_summary', 'Done — the requested action completed successfully.'), '.')
+                . ($label !== '' ? ' (' . $label . ').' : '.');
+
+            return $this->responses->final($context, $state, $message, [
+                'last_tool_outcome' => $outcome,
+                'skipped_followup' => ['tool' => $failedTool, 'validation_errors' => $validation],
+            ]);
+        }
+
+        return null;
     }
 
     /**

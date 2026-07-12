@@ -25,6 +25,8 @@ return [
         'context_noted' => 'لقد دوّنت هذا السياق. أخبرني بما تريد فعله به بعد ذلك.',
         'more_information_required' => 'مطلوب مزيد من المعلومات.',
         'need_more_information' => 'أحتاج إلى مزيد من المعلومات للمتابعة.',
+        'completed_without_summary' => 'تم — اكتمل الإجراء المطلوب بنجاح.',
+        'tool_step_failed' => 'تعذّر تنفيذ خطوة ":tool": :errors',
         'runtime_failed' => 'فشل تشغيل الذكاء الاصطناعي.',
         'confirmation_label' => 'التأكيد',
         'change_label' => 'تغيير',

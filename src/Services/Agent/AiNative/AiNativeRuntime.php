@@ -144,6 +144,11 @@ class AiNativeRuntime
         $state['runtime_feedback'] = [];
         unset($state['last_tool_validation_failure']);
         $outcomesAtTurnStart = count((array) ($state['recent_outcomes'] ?? []));
+        // Turn-scoped marker so downstream handlers (e.g. the tool-call
+        // handler's validation-failure salvage) can tell which outcomes
+        // belong to THIS turn. In-memory only; the state-store allowlist
+        // drops it cross-turn.
+        $state['outcomes_at_turn_start'] = $outcomesAtTurnStart;
         if ($this->exposeReasoning($options)) {
             // Per-turn rationale accumulator. The state store allowlist drops this
             // cross-turn, which is intentional: reasoning_trace lives only for the
@@ -297,24 +302,26 @@ class AiNativeRuntime
 
         $lastValidation = is_array($state['last_tool_validation_failure'] ?? null) ? $state['last_tool_validation_failure'] : [];
         $validationErrors = array_values(array_filter((array) ($lastValidation['validation_errors'] ?? []), static fn (mixed $error): bool => is_string($error) && trim($error) !== ''));
-        if ($validationErrors !== []) {
-            return $this->responses->needsUserInput($context, $state, implode("\n", $validationErrors), $this->responses->requiredInputsFromValidation($validationErrors), [
-                'tool_name' => $lastValidation['tool'] ?? null,
-            ]);
-        }
 
         // Loop exhausted without a parseable final turn from the model. If a
         // tool ALREADY SUCCEEDED this turn, the work is done — answering
-        // "I need more information" would tell the user their request failed
-        // when it didn't. Return a final response carrying that outcome; the
-        // host application can surface the tool's artifacts (previews, ids)
-        // from its own stores.
-        // Only when the task frame itself says the objective COMPLETED — a
-        // successful lookup mid-flow must still lead to the planned ask, and
-        // sub-agent runs keep their own richer tool_result_fallback salvage.
-        $turnOutcomes = ($state['task_frame']['status'] ?? null) === 'completed'
+        // "I need more information" (or a raw validator string from a bogus
+        // trailing call) would tell the user their request failed when it
+        // didn't. Return a final response carrying that outcome; the host
+        // application can surface the tool's artifacts (previews, ids) from
+        // its own stores.
+        // Gate: the task frame says the objective COMPLETED — a successful
+        // lookup mid-flow must still lead to the planned ask — OR a trailing
+        // tool call failed validation after an earlier tool succeeded (the
+        // completed work must win over the validator error). Sub-agent runs
+        // keep their own richer tool_result_fallback salvage.
+        $turnOutcomes = ($state['task_frame']['status'] ?? null) === 'completed' || $validationErrors !== []
             ? array_slice((array) ($state['recent_outcomes'] ?? []), $outcomesAtTurnStart)
             : [];
+        if ($validationErrors !== []) {
+            $failedTool = (string) ($lastValidation['tool'] ?? '');
+            $turnOutcomes = array_values(array_filter($turnOutcomes, static fn (mixed $outcome): bool => is_array($outcome) && (string) ($outcome['tool'] ?? '') !== $failedTool));
+        }
         foreach (array_reverse($turnOutcomes) as $turnOutcome) {
             if (is_array($turnOutcome) && ($turnOutcome['success'] ?? false) === true && ($turnOutcome['needs_user_input'] ?? false) !== true) {
                 $label = trim((string) ($turnOutcome['label'] ?? $turnOutcome['tool'] ?? ''));
@@ -327,6 +334,23 @@ class AiNativeRuntime
                     ['last_tool_outcome' => $turnOutcome],
                 );
             }
+        }
+
+        if ($validationErrors !== []) {
+            $failedTool = (string) ($lastValidation['tool'] ?? '');
+            $errorsText = implode('; ', $validationErrors);
+
+            return $this->responses->needsUserInput(
+                $context,
+                $state,
+                $this->runtimeText(
+                    'ai-engine::runtime.responses.tool_step_failed',
+                    $failedTool !== '' ? "I couldn't run the \"{$failedTool}\" step: {$errorsText}" : "I couldn't complete that step: {$errorsText}",
+                    ['tool' => $failedTool, 'errors' => $errorsText],
+                ),
+                $this->responses->requiredInputsFromValidation($validationErrors),
+                ['tool_name' => $lastValidation['tool'] ?? null],
+            );
         }
 
         return $this->responses->needsUserInput($context, $state, $this->runtimeText('ai-engine::runtime.responses.need_more_information', 'I need more information to continue.'));

@@ -25,6 +25,8 @@ return [
         'context_noted' => 'Ich habe diesen Kontext notiert. Sagen Sie mir, was Sie als Nächstes damit tun möchten.',
         'more_information_required' => 'Weitere Informationen sind erforderlich.',
         'need_more_information' => 'Ich benötige weitere Informationen, um fortzufahren.',
+        'completed_without_summary' => 'Erledigt — die angeforderte Aktion wurde erfolgreich abgeschlossen.',
+        'tool_step_failed' => 'Der Schritt „:tool“ konnte nicht ausgeführt werden: :errors',
         'runtime_failed' => 'Die KI-Laufzeit ist fehlgeschlagen.',
         'confirmation_label' => 'Bestätigung',
         'change_label' => 'Ändern',

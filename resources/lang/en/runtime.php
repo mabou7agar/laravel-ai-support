@@ -25,6 +25,8 @@ return [
         'context_noted' => 'I noted that context. Tell me what you want to do with it next.',
         'more_information_required' => 'More information is required.',
         'need_more_information' => 'I need more information to continue.',
+        'completed_without_summary' => 'Done — the requested action completed successfully.',
+        'tool_step_failed' => 'I couldn\'t run the ":tool" step: :errors',
         'runtime_failed' => 'AI runtime failed.',
         'confirmation_label' => 'Confirmation',
         'change_label' => 'Change',

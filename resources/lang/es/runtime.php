@@ -25,6 +25,8 @@ return [
         'context_noted' => 'He tomado nota de ese contexto. Dime qué quieres hacer a continuación.',
         'more_information_required' => 'Se requiere más información.',
         'need_more_information' => 'Necesito más información para continuar.',
+        'completed_without_summary' => 'Listo — la acción solicitada se completó correctamente.',
+        'tool_step_failed' => 'No pude ejecutar el paso ":tool": :errors',
         'runtime_failed' => 'El motor de IA ha fallado.',
         'confirmation_label' => 'Confirmación',
         'change_label' => 'Cambiar',

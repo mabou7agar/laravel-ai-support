@@ -25,6 +25,8 @@ return [
         'context_noted' => "J'ai noté ce contexte. Dites-moi ce que vous souhaitez faire ensuite.",
         'more_information_required' => 'Des informations supplémentaires sont requises.',
         'need_more_information' => "J'ai besoin de plus d'informations pour continuer.",
+        'completed_without_summary' => 'Terminé — l’action demandée a été effectuée avec succès.',
+        'tool_step_failed' => 'Impossible d’exécuter l’étape « :tool » : :errors',
         'runtime_failed' => "L'exécution de l'IA a échoué.",
         'confirmation_label' => 'Confirmation',
         'change_label' => 'Modifier',

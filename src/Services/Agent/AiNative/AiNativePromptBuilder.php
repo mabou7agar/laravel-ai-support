@@ -31,6 +31,12 @@ class AiNativePromptBuilder
      */
     public function build(string $message, UnifiedActionContext $context, array $state, array $options = []): string
     {
+        // Human-approval mode: hosts that stage work for an explicit user
+        // approval step (previews with an Apply button, drafts, proposals)
+        // must not have the model auto-chain apply/execute/final tools after
+        // a staging tool succeeds — that skips the human.
+        $requireHumanApprovals = (bool) ($options['require_human_approvals'] ?? false);
+
         $lines = [
             'AI_NATIVE_AGENT_RUNTIME',
             'You are controlling a Laravel application through declared tools and skills.',
@@ -43,7 +49,9 @@ class AiNativePromptBuilder
             'If the latest user message only shares background facts, preferences, requirements, or domain information without asking you to perform an action, do not start a tool or skill flow. Reply conversationally and let suggestions expose possible next actions.',
             'Only begin a write/action flow when the user asks for an outcome, asks you to do/use/create/update/delete/send/generate/search/inspect something, approves a pending action, or clearly refers to a previous actionable task.',
             'When asking for more input or summarizing a draft, include the complete updated draft in data.current_payload so Laravel can carry it into the next turn.',
-            'When the current payload is ready for a skill final tool, call that final tool with the complete current_payload instead of returning a final answer.',
+            $requireHumanApprovals
+                ? 'Human approval mode: when a tool stages or prepares work (a preview, draft, or proposal), that IS the outcome — return a final answer describing it. Never call an apply/execute/publish/final tool in the same turn unless the latest user message explicitly approves or requests exactly that.'
+                : 'When the current payload is ready for a skill final tool, call that final tool with the complete current_payload instead of returning a final answer.',
             'For an active skill, prefer the tools listed in that skill. Use the skill relation lookup/create tools for related records before considering unrelated helper tools.',
             'When a skill has multiple relations, resolve root/scalar relations before child/list relations unless the user clearly asks for the child/list relation first.',
             'Never reuse a value extracted for one relation as another relation create payload. If relation ownership is ambiguous, ask or run the matching lookup instead of creating a different relation.',
