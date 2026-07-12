@@ -55,6 +55,10 @@ return array_replace_recursive($defaults, [
         ],
         'anthropic' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
+            // Mark stable system prompts cache_control: ephemeral (~0.1x input
+            // price on cache reads). Safe default: sub-minimum blocks simply
+            // aren't cached.
+            'prompt_caching' => (bool) env('ANTHROPIC_PROMPT_CACHING', true),
         ],
         'bedrock' => [
             'region' => env('AWS_BEDROCK_REGION', env('AWS_DEFAULT_REGION', 'us-east-1')),
@@ -85,6 +89,10 @@ return array_replace_recursive($defaults, [
         ],
         'openrouter' => [
             'api_key' => env('OPENROUTER_API_KEY'),
+            // Anthropic models via OpenRouter: mark stable system prompts
+            // cache_control: ephemeral (forwarded to Anthropic; ~0.1x input
+            // price on cache reads). Ignored for non-Anthropic models.
+            'prompt_caching' => (bool) env('OPENROUTER_PROMPT_CACHING', true),
             'default_model' => env('OPENROUTER_DEFAULT_MODEL', data_get($defaults, 'engines.openrouter.default_model')),
             'cost_optimization' => [
                 'enabled' => env('OPENROUTER_COST_OPTIMIZATION_ENABLED', data_get($defaults, 'engines.openrouter.cost_optimization.enabled', false)),

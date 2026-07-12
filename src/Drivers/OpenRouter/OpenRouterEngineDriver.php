@@ -417,7 +417,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
         $systemPrompt = $request->getSystemPrompt();
         if ($systemPrompt) {
-            $messages[] = ['role' => 'system', 'content' => $systemPrompt];
+            $messages[] = ['role' => 'system', 'content' => $this->systemContent($request, $systemPrompt)];
         }
 
         // Add conversation history if present (stored in messages)
@@ -438,6 +438,34 @@ class OpenRouterEngineDriver extends BaseEngineDriver
         ];
 
         return $messages;
+    }
+
+    /**
+     * System message content. OpenRouter forwards Anthropic-style block-level
+     * `cache_control` to Anthropic models, so a stable system prompt is sent as
+     * a content block marked `cache_control: ephemeral` — Anthropic then caches
+     * that prefix across the plan steps of a turn (and across turns within the
+     * cache TTL) at ~0.1x input price on reads. Non-Anthropic models keep the
+     * plain string (other providers ignore or reject the field). Blocks below
+     * Anthropic's minimum cacheable size are simply not cached — no error — so
+     * this is safe to leave on.
+     *
+     * @return string|array<int, array<string, mixed>>
+     */
+    protected function systemContent(AIRequest $request, string $systemPrompt): string|array
+    {
+        $model = strtolower($request->getModel()->value);
+        $isAnthropicModel = str_starts_with($model, 'anthropic/') || str_contains($model, 'claude');
+
+        if (!$isAnthropicModel || !(bool) config('ai-engine.engines.openrouter.prompt_caching', true)) {
+            return $systemPrompt;
+        }
+
+        return [[
+            'type' => 'text',
+            'text' => $systemPrompt,
+            'cache_control' => ['type' => 'ephemeral'],
+        ]];
     }
 
     /**

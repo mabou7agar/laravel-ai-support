@@ -369,7 +369,7 @@ class AiNativeRuntime
         $redactedState = $this->stateStore->redactedState($state);
 
         try {
-            if ($this->supportsSystemPromptCaching($engine)) {
+            if ($this->supportsSystemPromptCaching($engine, (string) $model)) {
                 // Anthropic doesn't auto-cache like OpenAI: split the prompt so the stable
                 // instruction prefix goes in the (cacheable) system block and the per-turn body
                 // stays in the user message. The Anthropic driver marks the system block
@@ -451,9 +451,16 @@ class AiNativeRuntime
      * the longest common prompt prefix automatically, so only Anthropic (Claude) benefits from
      * the split + cache_control breakpoint.
      */
-    private function supportsSystemPromptCaching(string $engine): bool
+    private function supportsSystemPromptCaching(string $engine, string $model = ''): bool
     {
-        return in_array(strtolower(trim($engine)), ['anthropic', 'claude'], true);
+        $engine = strtolower(trim($engine));
+        if (in_array($engine, ['anthropic', 'claude'], true)) {
+            return true;
+        }
+
+        // OpenRouter forwards Anthropic-style block-level cache_control to
+        // Anthropic models — same split, driver marks the system block.
+        return $engine === 'openrouter' && str_contains(strtolower($model), 'claude');
     }
 
     private function maxSteps(array $options): int

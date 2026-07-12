@@ -199,16 +199,31 @@ class AiNativePromptBuilder
     public function buildParts(string $message, UnifiedActionContext $context, array $state, array $options = []): array
     {
         $full = $this->build($message, $context, $state, $options);
-        $marker = "\n\nAvailable skills JSON:";
-        $pos = strpos($full, $marker);
-        if ($pos === false) {
-            return ['system' => '', 'body' => $full];
+
+        // Widest byte-stable prefix wins: with deterministic tool selection
+        // ('all'), the skills JSON and tools JSON are identical across the plan
+        // steps of a turn and across turns — include them in the cacheable
+        // system block (on a large tool registry they are the bulk of the
+        // prompt). With message-dependent selection (keyword/semantic) or
+        // progressive disclosure the tool list varies per message, so only the
+        // static instruction prefix is safely cacheable.
+        $strategy = strtolower((string) config('ai-agent.ai_native.tool_selection.strategy', 'all'));
+        $deterministicTools = $strategy === 'all' && !$this->progressiveDisclosure();
+
+        foreach (array_filter([
+            $deterministicTools ? "\n\nRecent conversation JSON:" : null,
+            "\n\nAvailable skills JSON:",
+        ]) as $marker) {
+            $pos = strpos($full, $marker);
+            if ($pos !== false) {
+                return [
+                    'system' => substr($full, 0, $pos),
+                    'body' => substr($full, $pos + 2), // drop the leading "\n\n" separator
+                ];
+            }
         }
 
-        return [
-            'system' => substr($full, 0, $pos),
-            'body' => substr($full, $pos + 2), // drop the leading "\n\n" separator
-        ];
+        return ['system' => '', 'body' => $full];
     }
 
     /**

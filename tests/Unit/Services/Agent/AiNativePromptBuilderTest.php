@@ -302,10 +302,14 @@ class AiNativePromptBuilderTest extends UnitTestCase
 
         // Re-joining the two parts reproduces build() byte-for-byte (model sees same content).
         $this->assertSame($full, $parts['system'] . "\n\n" . $parts['body']);
-        // Stable prefix holds the runtime rules; dynamic body holds the per-turn data + message.
+        // Stable prefix holds the runtime rules AND (with the default
+        // deterministic tool selection) the skills/tools JSON — they are
+        // byte-stable across plan steps, so caching them is the whole win.
+        // The dynamic body holds the per-turn data + message.
         $this->assertStringContainsString('AI_NATIVE_AGENT_RUNTIME', $parts['system']);
-        $this->assertStringNotContainsString('Available skills JSON:', $parts['system']);
-        $this->assertStringStartsWith('Available skills JSON:', $parts['body']);
+        $this->assertStringContainsString('Available skills JSON:', $parts['system']);
+        $this->assertStringContainsString('Available tools JSON:', $parts['system']);
+        $this->assertStringStartsWith('Recent conversation JSON:', $parts['body']);
         $this->assertStringContainsString('Look up Acme', $parts['body']);
     }
 
