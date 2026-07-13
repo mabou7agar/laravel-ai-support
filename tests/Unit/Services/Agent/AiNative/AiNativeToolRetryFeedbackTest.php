@@ -85,9 +85,14 @@ class AiNativeToolRetryFeedbackTest extends UnitTestCase
         self::assertStringContainsString('set_brand_tokens', $feedback['message']);
         self::assertStringContainsString('NOT tools', $feedback['message']);
 
-        // Second hallucination in the same turn surfaces the failure.
+        // A second hallucination still self-corrects (complex plans can mis-name
+        // a tool more than once before re-reading the tool list).
         $args2 = [&$state, 'testimonials'];
-        self::assertFalse($m->invokeArgs($handler, $args2));
+        self::assertTrue($m->invokeArgs($handler, $args2));
+
+        // The THIRD surfaces the failure (cap is 2 retries).
+        $args3 = [&$state, 'pricing'];
+        self::assertFalse($m->invokeArgs($handler, $args3));
     }
 
     public function test_recoverable_failure_feedback_carries_the_result_metadata(): void

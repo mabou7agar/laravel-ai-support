@@ -447,8 +447,13 @@ class AiNativeToolCallActionHandler
      */
     private function shouldRetryUnknownTool(array &$state, string $toolName): bool
     {
+        // Two self-correction attempts, not one: on a COMPLEX plan (e.g. building
+        // a large nested structure) the model may hallucinate a tool name more
+        // than once before it re-reads the tool list and picks the real one — a
+        // single retry dead-ended those turns with a cryptic "Tool X is not
+        // available" to the user.
         $attempts = (int) ($state['unknown_tool_attempts'] ?? 0);
-        if ($attempts >= 1) {
+        if ($attempts >= 2) {
             return false;
         }
 
