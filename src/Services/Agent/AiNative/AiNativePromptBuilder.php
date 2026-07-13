@@ -305,7 +305,7 @@ class AiNativePromptBuilder
         // Progressive disclosure: list tools by name + summary only, and always expose
         // find_tools (full) so the planner can load a tool's full parameter schema on
         // demand. Keeps the base prompt small even with a large registry.
-        if ($this->progressiveDisclosure()) {
+        if ($this->progressiveDisclosure($options)) {
             if ($this->tools->has('find_tools') && !isset($tools['find_tools'])) {
                 $tools['find_tools'] = $this->tools->get('find_tools');
             }
@@ -324,9 +324,22 @@ class AiNativePromptBuilder
         ));
     }
 
-    private function progressiveDisclosure(): bool
+    /**
+     * A per-request override (options.tool_selection.disclosure) wins over the
+     * global config, so ONE agent (e.g. a tool-heavy one whose big schemas bloat
+     * the prompt) can opt into progressive disclosure without flipping it on for
+     * every agent in the app.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function progressiveDisclosure(array $options = []): bool
     {
-        return (string) config('ai-agent.ai_native.tool_selection.disclosure', 'full') === 'progressive';
+        $perRequest = $options['tool_selection']['disclosure'] ?? null;
+        $disclosure = is_string($perRequest) && $perRequest !== ''
+            ? $perRequest
+            : (string) config('ai-agent.ai_native.tool_selection.disclosure', 'full');
+
+        return $disclosure === 'progressive';
     }
 
     private function toolSelector(): ToolSelectorContract

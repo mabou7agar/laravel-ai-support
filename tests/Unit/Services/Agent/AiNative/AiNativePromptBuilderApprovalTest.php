@@ -45,6 +45,47 @@ class AiNativePromptBuilderApprovalTest extends UnitTestCase
         return $builder->build('remove the stats section', new UnifiedActionContext(sessionId: 't'), [], $options);
     }
 
+    /** Build a prompt with one param-heavy tool present, under the given options. */
+    private function buildWithTool(array $options): string
+    {
+        $tool = Mockery::mock(\LaravelAIEngine\Services\Agent\Tools\AgentTool::class);
+        $tool->shouldReceive('getName')->andReturn('paint_wall');
+        $tool->shouldReceive('getDescription')->andReturn('Paint a wall a color.');
+        $tool->shouldReceive('getParameters')->andReturn(['color' => ['type' => 'string', 'description' => 'UNIQUE_PARAM_MARKER']]);
+        $tool->shouldReceive('toArray')->andReturn(['name' => 'paint_wall', 'description' => 'Paint a wall a color.', 'parameters' => ['color' => ['type' => 'string', 'description' => 'UNIQUE_PARAM_MARKER']]]);
+
+        $tools = Mockery::mock(ToolRegistry::class);
+        $tools->shouldReceive('all')->andReturn(['paint_wall' => $tool]);
+        $tools->shouldReceive('has')->with('find_tools')->andReturn(false);
+        $tools->shouldReceive('has')->andReturn(false);
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+        $snapshots = Mockery::mock(AgentContextSnapshotBuilder::class);
+        $snapshots->shouldReceive('build')->andReturn([]);
+
+        return (new AiNativePromptBuilder($tools, $skills, $snapshots))
+            ->build('paint the wall', new UnifiedActionContext(sessionId: 't'), [], $options);
+    }
+
+    public function test_full_disclosure_includes_tool_parameter_schemas(): void
+    {
+        $prompt = $this->buildWithTool([]);
+
+        $this->assertStringContainsString('paint_wall', $prompt);
+        $this->assertStringContainsString('UNIQUE_PARAM_MARKER', $prompt); // params present
+    }
+
+    public function test_per_request_progressive_disclosure_drops_parameter_schemas(): void
+    {
+        $prompt = $this->buildWithTool(['tool_selection' => ['disclosure' => 'progressive']]);
+
+        // Name + description stay; the param schema is deferred to find_tools.
+        $this->assertStringContainsString('paint_wall', $prompt);
+        $this->assertStringContainsString('Paint a wall a color.', $prompt);
+        $this->assertStringNotContainsString('UNIQUE_PARAM_MARKER', $prompt);
+    }
+
     public function test_default_prompt_keeps_the_final_tool_auto_call_instruction(): void
     {
         $prompt = $this->build([]);
