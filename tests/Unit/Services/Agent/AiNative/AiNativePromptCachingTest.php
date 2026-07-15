@@ -62,6 +62,30 @@ class AiNativePromptCachingTest extends UnitTestCase
         );
     }
 
+    public function test_system_guidance_renders_into_the_cached_prefix(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.strategy', 'all');
+
+        $builder = $this->builder();
+        $context = new UnifiedActionContext(sessionId: 't');
+        $guide = 'DESIGN TOKENS: style everything with var(--token-*) — never hardcode colors.';
+
+        // Per-request guidance lands in the CACHED system prefix (before skills/tools),
+        // so it is billed at cache-read rates on repeat turns, not re-sent full each time.
+        $parts = $builder->buildParts('add a hero', $context, [], ['system_guidance' => $guide]);
+        self::assertStringContainsString('Domain guidance:', $parts['system']);
+        self::assertStringContainsString($guide, $parts['system']);
+        self::assertStringNotContainsString($guide, $parts['body']);
+        self::assertSame(
+            $builder->build('add a hero', $context, [], ['system_guidance' => $guide]),
+            $parts['system'] . "\n\n" . $parts['body'],
+        );
+
+        // Absent by default (no config, no option) — no empty "Domain guidance:" block.
+        $plain = $builder->build('add a hero', $context, []);
+        self::assertStringNotContainsString('Domain guidance:', $plain);
+    }
+
     public function test_message_dependent_tool_selection_caches_only_the_instruction_prefix(): void
     {
         config()->set('ai-agent.ai_native.tool_selection.strategy', 'keyword');

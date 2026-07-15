@@ -181,6 +181,23 @@ class AiNativePromptBuilder
             }
         }
 
+        // Domain authoring guidance: a caller-provided, byte-stable block of rules the
+        // model should ALWAYS follow (design tokens, text direction, house style, …).
+        // Placed before the skills/tools blocks so it lands in the cacheable prefix — the
+        // model sees it every turn at ~10% cost, instead of the rules being copy-pasted
+        // into individual tool descriptions (which the model only sees if that tool is
+        // loaded / its full schema is fetched).
+        $guidance = $this->systemGuidance($options);
+        if ($guidance !== '') {
+            $anchor = array_search('Available skills JSON:', $lines, true);
+            $block = ['Domain guidance:', $guidance];
+            if ($anchor === false) {
+                array_push($lines, ...$block);
+            } else {
+                array_splice($lines, $anchor, 0, $block);
+            }
+        }
+
         return implode("\n\n", $lines);
     }
 
@@ -262,6 +279,24 @@ class AiNativePromptBuilder
         }
 
         return (bool) config('ai-agent.ai_native.respond_in_user_language', true);
+    }
+
+    /**
+     * Caller-provided domain guidance rendered into the cacheable prefix — a stable
+     * block of rules the model should always follow (e.g. design-token usage, text
+     * direction, house style). A per-request override (options.system_guidance) wins
+     * over config('ai-agent.ai_native.system_guidance'). Empty string = no block.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function systemGuidance(array $options = []): string
+    {
+        $perRequest = $options['system_guidance'] ?? null;
+        $guidance = is_string($perRequest) && trim($perRequest) !== ''
+            ? $perRequest
+            : (string) config('ai-agent.ai_native.system_guidance', '');
+
+        return trim($guidance);
     }
 
     /**

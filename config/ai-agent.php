@@ -293,6 +293,14 @@ return [
         // recently-completed create flow. Read/write verb lists default in ActionIntentGuard;
         // override with ai_native.read_intent_terms / write_intent_terms.
         'guard_read_intent_writes' => env('AI_AGENT_GUARD_READ_INTENT_WRITES', false),
+        // Domain authoring guidance: a stable block of house rules rendered into the
+        // CACHED prompt prefix (before the skills/tools blocks) so the model follows it
+        // every turn at ~10% cost — instead of the same rules being copy-pasted into
+        // individual tool descriptions. Leave '' to omit. A per-request
+        // options.system_guidance override wins, so one agent can supply its own rules
+        // (e.g. the theme builder's design-token / RTL / contrast guide) without setting
+        // a global default for every agent.
+        'system_guidance' => '',
         // Which registered tools are exposed to the planner each turn. Every tool's full
         // schema goes into the prompt, so a large registry inflates context.
         //   'all'          — expose every tool (default; no behaviour change)
