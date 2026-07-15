@@ -315,6 +315,13 @@ return [
             // lists tools by name + summary only and registers a find_tools meta-tool the
             // planner calls to load a tool's full parameters on demand.
             'disclosure' => env('AI_AGENT_TOOL_DISCLOSURE', 'full'),
+            // Hybrid disclosure: under 'progressive', these tool names keep their FULL
+            // parameter schema (callable directly, no find_tools round-trip) — the
+            // "hot core" — while every other tool stays name + summary. null falls back
+            // to `always` (so the common core is never gated); [] defers everything.
+            // A per-request options.tool_selection.disclosure_full_tools override wins,
+            // so one agent can tune its own hot core without changing the global default.
+            'disclosure_full_tools' => null,
         ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),

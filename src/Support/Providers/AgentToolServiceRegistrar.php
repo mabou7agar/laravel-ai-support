@@ -70,8 +70,14 @@ class AgentToolServiceRegistrar
                 $registry->register('search_knowledge', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchKnowledgeTool::class));
             }
             // Progressive disclosure: the planner loads full tool schemas on demand via
-            // find_tools (the prompt lists tools by name + summary only).
-            if ((string) config('ai-agent.ai_native.tool_selection.disclosure', 'full') === 'progressive' && !$registry->has('find_tools')) {
+            // find_tools (the prompt lists the long tail by name + summary only). Register
+            // it unconditionally: progressive can also be turned on PER REQUEST
+            // (options.tool_selection.disclosure), which this boot-time registrar cannot
+            // see — gating on the global config alone left find_tools missing for
+            // per-request progressive agents, so the deferred tail could never be loaded.
+            // The prompt builder only lists find_tools under progressive disclosure and
+            // hides it in full mode, so unconditional registration is invisible otherwise.
+            if (!$registry->has('find_tools')) {
                 $registry->register('find_tools', new \LaravelAIEngine\Services\Agent\Tools\FindToolsTool($registry));
             }
 

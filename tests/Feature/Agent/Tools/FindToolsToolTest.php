@@ -101,4 +101,48 @@ class FindToolsToolTest extends TestCase
         $this->assertArrayHasKey('find_tools', $docs);
         $this->assertArrayHasKey('parameters', $docs['find_tools']);
     }
+
+    public function test_hybrid_disclosure_keeps_hot_core_full_and_defers_the_rest(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.strategy', 'all');
+        config()->set('ai-agent.ai_native.tool_selection.disclosure', 'progressive');
+        // Hot core: this tool keeps its full schema so the planner calls it directly.
+        config()->set('ai-agent.ai_native.tool_selection.disclosure_full_tools', ['create_invoice']);
+
+        $builder = new AiNativePromptBuilder($this->registry(), app(AgentSkillRegistry::class));
+        $method = new \ReflectionMethod($builder, 'toolDocuments');
+        $method->setAccessible(true);
+
+        $docs = collect($method->invoke($builder, 'create an invoice', [], []))->keyBy('name');
+
+        // Hot-core tool is FULL (no find_tools round-trip on the hot path).
+        $this->assertArrayHasKey('parameters', $docs['create_invoice']);
+        // A non-core tool stays name + summary only.
+        $this->assertArrayNotHasKey('parameters', $docs['translate_text']);
+        $this->assertArrayHasKey('description', $docs['translate_text']);
+        // find_tools is always full so the deferred tail can be loaded on demand.
+        $this->assertArrayHasKey('parameters', $docs['find_tools']);
+    }
+
+    public function test_per_request_disclosure_full_tools_overrides_config(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.strategy', 'all');
+        // Global config is FULL disclosure with an empty hot core; the per-request
+        // options turn on progressive AND supply the hot core — proving one agent can
+        // opt in without changing the global default (how the theme builder wires it).
+        config()->set('ai-agent.ai_native.tool_selection.disclosure', 'full');
+        config()->set('ai-agent.ai_native.tool_selection.disclosure_full_tools', []);
+
+        $builder = new AiNativePromptBuilder($this->registry(), app(AgentSkillRegistry::class));
+        $method = new \ReflectionMethod($builder, 'toolDocuments');
+        $method->setAccessible(true);
+
+        $options = ['tool_selection' => ['disclosure' => 'progressive', 'disclosure_full_tools' => ['find_customer']]];
+        $docs = collect($method->invoke($builder, 'look up a customer', [], $options))->keyBy('name');
+
+        // The per-request hot core is full; everything else defers; find_tools stays full.
+        $this->assertArrayHasKey('parameters', $docs['find_customer']);
+        $this->assertArrayNotHasKey('parameters', $docs['create_invoice']);
+        $this->assertArrayHasKey('parameters', $docs['find_tools']);
+    }
 }

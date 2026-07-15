@@ -71,8 +71,8 @@ class AiNativePromptBuilder
             '{"action":"final","message":"answer to user","data":{}}',
             'Available skills JSON:',
             json_encode($this->skillDocuments(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
-            $this->progressiveDisclosure()
-                ? 'Available tools JSON (name + summary only; call find_tools to load a tool\'s full parameters before using it):'
+            $this->progressiveDisclosure($options)
+                ? 'Available tools JSON (a tool listed with a "parameters" field is ready to call directly; a tool shown as name + summary only must be loaded with find_tools to get its parameters before you use it):'
                 : 'Available tools JSON:',
             json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Recent conversation JSON:',
@@ -204,11 +204,13 @@ class AiNativePromptBuilder
         // ('all'), the skills JSON and tools JSON are identical across the plan
         // steps of a turn and across turns — include them in the cacheable
         // system block (on a large tool registry they are the bulk of the
-        // prompt). With message-dependent selection (keyword/semantic) or
-        // progressive disclosure the tool list varies per message, so only the
-        // static instruction prefix is safely cacheable.
+        // prompt). Progressive disclosure does NOT vary per message — it lists
+        // the same tools (hot-core full + tail name/summary) every turn — so it
+        // stays cacheable too. Only message-dependent selection (keyword/semantic)
+        // forces the tool list out of the cached prefix, leaving just the static
+        // instruction prefix safely cacheable.
         $strategy = strtolower((string) config('ai-agent.ai_native.tool_selection.strategy', 'all'));
-        $deterministicTools = $strategy === 'all' && !$this->progressiveDisclosure();
+        $deterministicTools = $strategy === 'all';
 
         foreach (array_filter([
             $deterministicTools ? "\n\nRecent conversation JSON:" : null,
@@ -290,6 +292,12 @@ class AiNativePromptBuilder
             (array) config('ai-agent.ai_native.excluded_tools', ['run_skill'])
         ));
 
+        // find_tools is the progressive-disclosure loader — it is registered
+        // unconditionally (per-request progressive needs it) but is only meaningful
+        // under progressive disclosure, where the branch below re-adds it from the
+        // registry. Keep it out of the base set so full mode never lists it.
+        $excluded['find_tools'] = true;
+
         $tools = [];
         foreach ($this->tools->all() as $tool) {
             $name = $tool->getName();
@@ -302,16 +310,23 @@ class AiNativePromptBuilder
         // a large registry does not bloat the prompt. Defaults to "all" (no trimming).
         $tools = $this->toolSelector()->select($tools, $message, $state, $options);
 
-        // Progressive disclosure: list tools by name + summary only, and always expose
-        // find_tools (full) so the planner can load a tool's full parameter schema on
-        // demand. Keeps the base prompt small even with a large registry.
+        // Progressive disclosure: list the long tail by name + summary only, and always
+        // expose find_tools (full) so the planner can load a tool's full parameter schema
+        // on demand. Keeps the base prompt small even with a large registry.
+        //
+        // Hybrid: a curated hot-core (disclosure_full_tools) keeps its FULL schema so the
+        // planner can call those common tools directly, with no find_tools round-trip on
+        // the hot path — while the heavy/rare tools stay deferred. find_tools is always
+        // full. With an empty hot-core this degrades to pure name+summary (prior behavior).
         if ($this->progressiveDisclosure($options)) {
             if ($this->tools->has('find_tools') && !isset($tools['find_tools'])) {
                 $tools['find_tools'] = $this->tools->get('find_tools');
             }
 
+            $full = array_flip($this->disclosureFullTools($options));
+
             return array_values(array_map(
-                static fn ($tool): array => $tool->getName() === 'find_tools'
+                static fn ($tool): array => ($tool->getName() === 'find_tools' || isset($full[$tool->getName()]))
                     ? $tool->toArray()
                     : ['name' => $tool->getName(), 'description' => $tool->getDescription()],
                 $tools
@@ -340,6 +355,31 @@ class AiNativePromptBuilder
             : (string) config('ai-agent.ai_native.tool_selection.disclosure', 'full');
 
         return $disclosure === 'progressive';
+    }
+
+    /**
+     * Tool names that keep their FULL parameter schema even under progressive
+     * disclosure — the "hot core" the planner may call directly, with no
+     * find_tools round-trip. A per-request override
+     * (options.tool_selection.disclosure_full_tools) wins over config; both fall
+     * back to the always-on selection core (search_knowledge, data_query) so the
+     * most common tools are never gated behind an extra hop. Pass an explicit
+     * empty array to defer everything (pure name + summary).
+     *
+     * @param array<string, mixed> $options
+     * @return array<int, string>
+     */
+    private function disclosureFullTools(array $options = []): array
+    {
+        $perRequest = $options['tool_selection']['disclosure_full_tools'] ?? null;
+        $configured = $perRequest
+            ?? config('ai-agent.ai_native.tool_selection.disclosure_full_tools')
+            ?? config('ai-agent.ai_native.tool_selection.always', ['search_knowledge', 'data_query']);
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $name): string => trim((string) $name),
+            (array) $configured
+        )));
     }
 
     private function toolSelector(): ToolSelectorContract
