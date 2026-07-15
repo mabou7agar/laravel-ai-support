@@ -145,4 +145,36 @@ class FindToolsToolTest extends TestCase
         $this->assertArrayNotHasKey('parameters', $docs['create_invoice']);
         $this->assertArrayHasKey('parameters', $docs['find_tools']);
     }
+
+    public function test_deferred_summary_is_truncated_but_find_tools_keeps_full_text(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.strategy', 'all');
+        config()->set('ai-agent.ai_native.tool_selection.disclosure', 'progressive');
+        config()->set('ai-agent.ai_native.tool_selection.summary_max_chars', 180);
+
+        // A realistic multi-paragraph tool description (the kind that bloats the prompt).
+        $long = trim('Generate a fully custom HTML section as one opaque block. '
+            . str_repeat('Extensive guidance about tokens, layout, direction, and design quality follows here. ', 8));
+
+        $registry = $this->registry();
+        $registry->register('generate_view', $this->tool('generate_view', $long));
+
+        $builder = new AiNativePromptBuilder($registry, app(AgentSkillRegistry::class));
+        $method = new \ReflectionMethod($builder, 'toolDocuments');
+        $method->setAccessible(true);
+
+        // Deferred: the listed summary is just the first sentence, not the whole essay.
+        $docs = collect($method->invoke($builder, 'build a custom section', [], []))->keyBy('name');
+        $this->assertSame('Generate a fully custom HTML section as one opaque block.', $docs['generate_view']['description']);
+        $this->assertArrayNotHasKey('parameters', $docs['generate_view']);
+
+        // find_tools still returns the FULL description + parameter schema — nothing lost.
+        $found = $registry->get('find_tools')->execute(['query' => 'generate_view', 'limit' => 1], new UnifiedActionContext('s'));
+        $this->assertSame($long, trim((string) $found->data['tools'][0]['description']));
+        $this->assertArrayHasKey('parameters', $found->data['tools'][0]);
+
+        // summary_max_chars = 0 (per request) disables truncation — full description listed.
+        $docsFull = collect($method->invoke($builder, 'build a custom section', [], ['tool_selection' => ['summary_max_chars' => 0]]))->keyBy('name');
+        $this->assertSame($long, $docsFull['generate_view']['description']);
+    }
 }

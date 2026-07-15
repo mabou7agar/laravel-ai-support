@@ -318,17 +318,23 @@ class AiNativePromptBuilder
         // planner can call those common tools directly, with no find_tools round-trip on
         // the hot path — while the heavy/rare tools stay deferred. find_tools is always
         // full. With an empty hot-core this degrades to pure name+summary (prior behavior).
+        //
+        // The deferred tail is listed by name + a SHORT summary (first sentence, capped),
+        // not the full description — tool descriptions are often multi-paragraph essays,
+        // and keeping them verbatim defeats the point of deferring. The full description
+        // and parameters are recoverable via find_tools, so nothing is lost.
         if ($this->progressiveDisclosure($options)) {
             if ($this->tools->has('find_tools') && !isset($tools['find_tools'])) {
                 $tools['find_tools'] = $this->tools->get('find_tools');
             }
 
             $full = array_flip($this->disclosureFullTools($options));
+            $cap = $this->summaryMaxChars($options);
 
             return array_values(array_map(
-                static fn ($tool): array => ($tool->getName() === 'find_tools' || isset($full[$tool->getName()]))
+                fn ($tool): array => ($tool->getName() === 'find_tools' || isset($full[$tool->getName()]))
                     ? $tool->toArray()
-                    : ['name' => $tool->getName(), 'description' => $tool->getDescription()],
+                    : ['name' => $tool->getName(), 'description' => $this->summarizeDescription((string) $tool->getDescription(), $cap)],
                 $tools
             ));
         }
@@ -380,6 +386,53 @@ class AiNativePromptBuilder
             static fn (mixed $name): string => trim((string) $name),
             (array) $configured
         )));
+    }
+
+    /**
+     * Max characters for a deferred tool's one-line summary under progressive
+     * disclosure. A per-request override (options.tool_selection.summary_max_chars)
+     * wins over config (default 180). 0 disables truncation (full description).
+     *
+     * @param array<string, mixed> $options
+     */
+    private function summaryMaxChars(array $options = []): int
+    {
+        $perRequest = $options['tool_selection']['summary_max_chars'] ?? null;
+        $value = is_numeric($perRequest)
+            ? (int) $perRequest
+            : (int) config('ai-agent.ai_native.tool_selection.summary_max_chars', 180);
+
+        return max(0, $value);
+    }
+
+    /**
+     * Condense a (possibly multi-paragraph) tool description to a short summary for
+     * the progressive-disclosure listing: collapse whitespace, prefer to end on the
+     * first sentence terminator within the cap, else break on the last word and add
+     * an ellipsis. The full text remains available via find_tools. $cap <= 0 returns
+     * the description unchanged.
+     */
+    private function summarizeDescription(string $description, int $cap): string
+    {
+        $description = trim((string) preg_replace('/\s+/u', ' ', $description));
+        if ($cap <= 0 || mb_strlen($description) <= $cap) {
+            return $description;
+        }
+
+        $head = mb_substr($description, 0, $cap);
+
+        // Prefer a clean sentence boundary within the cap (needs a bit of substance).
+        if (preg_match('/^(.*?[.!?])(\s|$)/u', $head, $m) && mb_strlen($m[1]) >= 40) {
+            return $m[1];
+        }
+
+        // Otherwise avoid a mid-word cut.
+        $lastSpace = mb_strrpos($head, ' ');
+        if ($lastSpace !== false && $lastSpace >= 40) {
+            $head = mb_substr($head, 0, $lastSpace);
+        }
+
+        return rtrim($head) . '…';
     }
 
     private function toolSelector(): ToolSelectorContract

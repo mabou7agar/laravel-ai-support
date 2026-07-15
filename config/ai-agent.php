@@ -322,6 +322,12 @@ return [
             // A per-request options.tool_selection.disclosure_full_tools override wins,
             // so one agent can tune its own hot core without changing the global default.
             'disclosure_full_tools' => null,
+            // Under 'progressive', deferred (name + summary) tools show only the first
+            // ~N chars of their description — a one-line summary — since full tool
+            // descriptions are often multi-paragraph. The full text + parameters are
+            // still recoverable via find_tools. 0 disables truncation (full description).
+            // A per-request options.tool_selection.summary_max_chars override wins.
+            'summary_max_chars' => (int) env('AI_AGENT_TOOL_SUMMARY_MAX_CHARS', 180),
         ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),
