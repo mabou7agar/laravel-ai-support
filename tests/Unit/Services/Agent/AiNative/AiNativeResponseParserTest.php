@@ -95,4 +95,48 @@ class AiNativeResponseParserTest extends UnitTestCase
     {
         $this->assertSame('ask_user', $this->parser->parse('   ')['action']);
     }
+    public function test_markdown_tool_call_narration_is_salvaged_not_dumped(): void
+    {
+        // The exact shape reported in production: the model wrote the tool call
+        // as markdown (name in prose, args-only JSON) instead of the JSON action.
+        $content = "**Tool Call:** theme_builder_add_section\n```json\n{\"family\": \"hero\"}\n```";
+        $plan = $this->parser->parse($content);
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_add_section', $plan['tool']);
+        $this->assertSame(['family' => 'hero'], $plan['arguments']);
+        // The raw markdown must NOT leak into a user-facing message.
+        $this->assertStringNotContainsString('Tool Call', (string) ($plan['message'] ?? ''));
+    }
+
+    public function test_inline_tool_narration_with_arguments_label_is_salvaged(): void
+    {
+        $content = '**Tool Call**: theme_builder_add_section | **Arguments**: {"family":"cta"}';
+        $plan = $this->parser->parse($content);
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_add_section', $plan['tool']);
+        $this->assertSame(['family' => 'cta'], $plan['arguments']);
+    }
+
+    public function test_prose_without_a_tool_cue_stays_a_final_message(): void
+    {
+        // A normal reply that merely mentions a snake_case word must not be
+        // mis-salvaged into a tool call.
+        $content = 'I updated the hero_section copy as you asked.';
+        $plan = $this->parser->parse($content);
+
+        $this->assertSame('final', $plan['action']);
+        $this->assertSame($content, $plan['message']);
+    }
+
+    public function test_embedded_full_plan_still_wins_over_salvage(): void
+    {
+        // When the JSON itself is a proper plan, the embedded-plan path handles it.
+        $content = 'Here is the plan: {"action":"tool_call","tool":"do_x","arguments":{"a":1}}';
+        $plan = $this->parser->parse($content);
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('do_x', $plan['tool']);
+    }
 }
