@@ -80,9 +80,9 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('Laravel will pause for confirmation before executing it.', $prompt);
         $this->assertStringContainsString('"pending_confirmation"', $prompt);
         $this->assertStringContainsString('"current_payload"', $prompt);
-        $this->assertStringContainsString('"quantity": 2', $prompt);
-        $this->assertStringContainsString('"tool": "create_invoice"', $prompt);
-        $this->assertStringContainsString('"Customer": "Ahmed"', $prompt);
+        $this->assertStringContainsString('"quantity":2', $prompt);
+        $this->assertStringContainsString('"tool":"create_invoice"', $prompt);
+        $this->assertStringContainsString('"Customer":"Ahmed"', $prompt);
         $this->assertStringContainsString('"already_completed"', $prompt);
     }
 
@@ -114,8 +114,8 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $prompt = (new AiNativePromptBuilder($tools, $skills))
             ->build('show the latest state', $context, []);
 
-        $this->assertStringContainsString('"content": "Please provide the invoice ID."', $prompt);
-        $this->assertStringContainsString('"timestamp": "2026-05-20T08:00:00Z"', $prompt);
+        $this->assertStringContainsString('"content":"Please provide the invoice ID."', $prompt);
+        $this->assertStringContainsString('"timestamp":"2026-05-20T08:00:00Z"', $prompt);
         $this->assertStringNotContainsString('runtime_feedback', $prompt);
         $this->assertStringNotContainsString('final_without_required_final_tool', $prompt);
         $this->assertStringNotContainsString('"metadata"', $prompt);
@@ -142,7 +142,7 @@ class AiNativePromptBuilderTest extends UnitTestCase
                 ],
             ]);
 
-        $this->assertStringContainsString('"content": "last created invoices"', $prompt);
+        $this->assertStringContainsString('"content":"last created invoices"', $prompt);
         $this->assertStringNotContainsString('Please provide the invoice ID.', $prompt);
         $this->assertStringContainsString('"current_payload"', $prompt);
     }

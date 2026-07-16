@@ -75,12 +75,17 @@ class AiNativePromptBuilder
                 ? 'Available tools JSON (a tool listed with a "parameters" field is ready to call directly; a tool shown as name + summary only must be loaded with find_tools to get its parameters before you use it):'
                 : 'Available tools JSON:',
             json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            // Conversation, snapshot and runtime state are the UNCACHED per-step
+            // body — compact encoding (no pretty-print) cuts their ~20-30%
+            // whitespace tax on every planner step. Skills/tools stay pretty:
+            // they live in the byte-stable CACHED prefix, where readability is
+            // effectively free.
             'Recent conversation JSON:',
-            json_encode($this->conversationDocuments($this->withoutLatestUserEcho($context->conversationHistory, $message), $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($this->conversationDocuments($this->withoutLatestUserEcho($context->conversationHistory, $message), $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Context snapshot JSON:',
-            json_encode($this->snapshotBuilder()->build($context, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($this->snapshotBuilder()->build($context, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Current runtime state JSON:',
-            json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Latest user message:',
             $message,
         ];
