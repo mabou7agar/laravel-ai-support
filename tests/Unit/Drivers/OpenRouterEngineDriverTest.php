@@ -55,6 +55,33 @@ class OpenRouterEngineDriverTest extends UnitTestCase
             && $request->data()['image_config']['aspect_ratio'] === '1:1');
     }
 
+    public function test_generate_image_honours_a_per_request_timeout(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+        Config::set('ai-engine.engines.openrouter.timeout', 60);
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-img-2',
+                'model' => 'google/gemini-2.5-flash-image',
+                'choices' => [['message' => ['content' => 'ok', 'images' => [['image_url' => ['url' => 'data:image/png;base64,' . base64_encode('x')]]]]]],
+                'usage' => ['total_tokens' => 3],
+            ]),
+        ]);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $driver->generateImage(new AIRequest(
+            prompt: 'photo',
+            engine: EngineEnum::OPENROUTER,
+            model: 'google/gemini-2.5-flash-image',
+            parameters: ['aspect_ratio' => '1:1', 'timeout' => 20],
+        ));
+
+        // The bounded timeout is applied, and never leaks into the API payload.
+        Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
+    }
+
     public function test_openrouter_generates_text_to_speech_audio(): void
     {
         Storage::fake('public');

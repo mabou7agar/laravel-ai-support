@@ -138,7 +138,11 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                 unset($payload['image_config']);
             }
 
-            $response = $this->postJson('/chat/completions', $payload);
+            $requestOptions = [];
+            if (isset($parameters['timeout']) && is_numeric($parameters['timeout'])) {
+                $requestOptions['timeout'] = max(1, (int) $parameters['timeout']);
+            }
+            $response = $this->postJson('/chat/completions', $payload, $requestOptions);
 
             if (!$response->successful()) {
                 return AIResponse::error(
@@ -863,9 +867,17 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
     protected function postJson(string $path, array $payload, array $options = []): Response
     {
+        // A caller may bound a SINGLE request with options['timeout'] (e.g. a
+        // fail-soft image call) without changing the shared engine timeout that
+        // long text generations legitimately need.
+        $timeout = isset($options['timeout']) && is_numeric($options['timeout'])
+            ? max(1, (int) $options['timeout'])
+            : (int) ($this->config['timeout'] ?? config('ai-engine.engines.openrouter.timeout', 60));
+        unset($options['timeout']);
+
         return Http::withHeaders($this->getHeaders())
             ->withOptions($options)
-            ->timeout((int) ($this->config['timeout'] ?? config('ai-engine.engines.openrouter.timeout', 60)))
+            ->timeout($timeout)
             ->post($this->baseUrl . $path, $payload);
     }
 
