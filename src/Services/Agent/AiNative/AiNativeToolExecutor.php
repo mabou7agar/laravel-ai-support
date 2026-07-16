@@ -32,10 +32,65 @@ class AiNativeToolExecutor
         $state['tool_results'][] = [
             'tool' => $toolName,
             'params' => $this->stateStore->redactedArray($params),
-            'result' => $this->stateStore->redactedArray($result->toArray()),
+            'result' => $this->capForState($this->stateStore->redactedArray($result->toArray())),
         ];
 
         $this->taskState->recordToolResult($state, $toolName, $params, $result, $writeTool);
+    }
+
+    /**
+     * Cap an oversized tool result BEFORE it enters the planner state. The whole
+     * runtime state is re-serialized into EVERY subsequent planner step's prompt,
+     * so one large result (a staged preview with its full operations payload, a
+     * generated HTML view) re-ships tens of KB on each remaining step of the
+     * turn. When the entry exceeds ai_native.state_result_max_bytes, long strings
+     * are truncated and long lists elided — scalars (ids, statuses, counts) at
+     * any depth survive so follow-up steps can still reference them. Default 0
+     * (off) preserves today's behavior byte-for-byte; the ActionResult handed to
+     * the host/response layer is never touched.
+     *
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    private function capForState(array $result): array
+    {
+        $max = (int) config('ai-agent.ai_native.state_result_max_bytes', 0);
+        if ($max <= 0) {
+            return $result;
+        }
+        $encoded = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($encoded === false || strlen($encoded) <= $max) {
+            return $result;
+        }
+
+        $pruned = $this->pruneForState($result);
+        $pruned['_state_truncated'] = true;
+        $pruned['_original_bytes'] = strlen($encoded);
+
+        return is_array($pruned) ? $pruned : $result;
+    }
+
+    private function pruneForState(mixed $value, int $depth = 0): mixed
+    {
+        if (is_string($value)) {
+            return mb_strlen($value) > 300 ? mb_substr($value, 0, 300) . '…[truncated]' : $value;
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+        if ($depth >= 6) {
+            return '[pruned: too deep]';
+        }
+        if (array_is_list($value) && count($value) > 10) {
+            $omitted = count($value) - 10;
+            $value = array_slice($value, 0, 10);
+            $prunedList = array_map(fn ($v) => $this->pruneForState($v, $depth + 1), $value);
+            $prunedList[] = sprintf('[pruned: +%d more entries]', $omitted);
+
+            return $prunedList;
+        }
+
+        return array_map(fn ($v) => $this->pruneForState($v, $depth + 1), $value);
     }
 
     public function withConfirmationForValidation(AgentTool $tool, array $params): array

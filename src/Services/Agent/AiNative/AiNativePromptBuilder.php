@@ -76,7 +76,7 @@ class AiNativePromptBuilder
                 : 'Available tools JSON:',
             json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Recent conversation JSON:',
-            json_encode($this->conversationDocuments($context->conversationHistory, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            json_encode($this->conversationDocuments($this->withoutLatestUserEcho($context->conversationHistory, $message), $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Context snapshot JSON:',
             json_encode($this->snapshotBuilder()->build($context, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
             'Current runtime state JSON:',
@@ -498,6 +498,32 @@ class AiNativePromptBuilder
             static fn ($skill): array => $skill->toArray(),
             $this->skills->skills()
         );
+    }
+
+    /**
+     * Drop the trailing history entry when it is an exact echo of the message
+     * already rendered in the "Latest user message:" block. The processor adds
+     * the dispatched message to conversationHistory before planning, so without
+     * this the (host-enriched, often multi-KB) message was serialized TWICE into
+     * every planner step's prompt — once in the conversation JSON and once as
+     * the latest-message block. Pure prompt-size optimization: the model still
+     * sees the message exactly once, so behavior is unchanged.
+     *
+     * @param array<int, array<string, mixed>> $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function withoutLatestUserEcho(array $messages, string $message): array
+    {
+        $last = end($messages);
+        if (
+            is_array($last)
+            && ($last['role'] ?? null) === 'user'
+            && trim((string) ($last['content'] ?? '')) === trim($message)
+        ) {
+            array_pop($messages);
+        }
+
+        return array_values($messages);
     }
 
     /**

@@ -199,6 +199,13 @@ return [
             'enabled' => env('AI_AGENT_AI_NATIVE_BUDGET_ENABLED', false),
             'max_steps' => (int) env('AI_AGENT_AI_NATIVE_BUDGET_MAX_STEPS', 16),
         ],
+        // Per-entry byte cap for tool results recorded into the planner state.
+        // The runtime state is re-serialized into EVERY subsequent planner step,
+        // so one oversized result re-ships its full payload on each remaining
+        // step of the turn. Above the cap, long strings are truncated and long
+        // lists elided (scalars/ids at any depth survive). 0 = off (today's
+        // behavior byte-for-byte).
+        'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 0),
         'compaction' => [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows

@@ -313,6 +313,48 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('Look up Acme', $parts['body']);
     }
 
+    public function test_latest_user_message_renders_once_when_history_echoes_it(): void
+    {
+        $tools = new ToolRegistry();
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        // The processor appends the dispatched message to conversationHistory
+        // before planning, so a host-enriched multi-KB message used to be
+        // serialized TWICE per planner step (conversation JSON + the
+        // "Latest user message" block).
+        $message = 'UNIQUE_ECHO_MARKER make the hero darker';
+        $ctx = new UnifiedActionContext('prompt-echo');
+        $ctx->conversationHistory = [
+            ['role' => 'user', 'content' => 'make the hero darker'],
+            ['role' => 'assistant', 'content' => 'Which hero?'],
+            ['role' => 'user', 'content' => $message],
+        ];
+
+        $prompt = (new AiNativePromptBuilder($tools, $skills))->build($message, $ctx, []);
+
+        $this->assertSame(1, substr_count($prompt, 'UNIQUE_ECHO_MARKER'));
+        // Earlier history survives untouched.
+        $this->assertStringContainsString('Which hero?', $prompt);
+    }
+
+    public function test_history_is_untouched_when_the_last_entry_is_not_an_echo(): void
+    {
+        $tools = new ToolRegistry();
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $ctx = new UnifiedActionContext('prompt-no-echo');
+        $ctx->conversationHistory = [
+            ['role' => 'user', 'content' => 'DISTINCT_HISTORY_TAIL an earlier ask'],
+        ];
+
+        $prompt = (new AiNativePromptBuilder($tools, $skills))->build('a brand new ask', $ctx, []);
+
+        $this->assertStringContainsString('DISTINCT_HISTORY_TAIL', $prompt);
+        $this->assertStringContainsString('a brand new ask', $prompt);
+    }
+
     private function tool(string $name): AgentTool
     {
         return new class($name) extends AgentTool {
