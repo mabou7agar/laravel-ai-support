@@ -107,12 +107,21 @@ class AiNativeResponseParser
         $prefix = $jsonStart !== false ? substr($content, 0, $jsonStart) : $content;
 
         // A tool-call cue somewhere in the prose lead-in. Beyond the verbose
-        // cues, two terse narration formats observed live must match:
+        // cues, terse narration formats observed live must match:
         //   "**Tool: theme_builder_add_section**"        (bare "Tool:" label)
         //   "_call theme_builder_regenerate_section"     (underscore prefix —
         //    the \b in the verbose cue can never fire inside "_call" because
         //    the underscore is a word character)
-        if (preg_match(
+        //   "**theme_builder_generate_view**"            (bold tool name, NO cue
+        //    word) — the content OPENS with a markdown-emphasised snake_case
+        //    identifier and nothing else on that first line; a strong tool-call
+        //    signal with no verb, so treat a leading bold/emphasised bare tool
+        //    name as its own cue.
+        $leadingBoldTool = preg_match(
+            '/^\s*(?:[*_`]{1,2})\s*([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\s*(?:[*_`]{1,2})/i',
+            (string) preg_replace('/^\s*#{1,6}\s*/', '', $content),
+        ) === 1;
+        if (! $leadingBoldTool && preg_match(
             '/(?:\b(?:tool\s*_?\s*call|call\s+tool|invoke|calling|function\s+call|use\s+tool)\b|\btool\s*:|(?:^|[\s>*`\-])_call\b|\bcall\s*:)/im',
             $prefix,
         ) !== 1) {

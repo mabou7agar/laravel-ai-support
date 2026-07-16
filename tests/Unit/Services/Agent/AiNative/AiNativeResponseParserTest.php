@@ -141,6 +141,24 @@ class AiNativeResponseParserTest extends UnitTestCase
         $this->assertSame([], $plan['arguments']);
     }
 
+    public function test_leading_bold_tool_name_is_salvaged(): void
+    {
+        // Live repro: the model narrated a bare bold tool name (no cue word).
+        $plan = $this->parser->parse('**theme_builder_generate_view**');
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_generate_view', $plan['tool']);
+    }
+
+    public function test_leading_bold_tool_with_args_is_salvaged(): void
+    {
+        $plan = $this->parser->parse('**theme_builder_add_section**' . chr(10) . '{"family":"faq"}');
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_add_section', $plan['tool']);
+        $this->assertSame(['family' => 'faq'], $plan['arguments']);
+    }
+
     public function test_prose_mentioning_a_recall_stays_final(): void
     {
         // "recall" contains "call" but has no boundary before it; prose with a
