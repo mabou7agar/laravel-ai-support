@@ -206,6 +206,11 @@ return [
         // lists elided (scalars/ids at any depth survive). 0 = off (today's
         // behavior byte-for-byte).
         'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 0),
+        // Newest tool results kept when a session's PERSISTED state is loaded.
+        // Long sessions otherwise accumulate every turn's tool results forever
+        // and re-serialize them into every planner step. 0 = unlimited
+        // (today's behavior byte-for-byte).
+        'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 0),
         'compaction' => [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows
