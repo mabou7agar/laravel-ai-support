@@ -85,7 +85,7 @@ class AiNativePromptBuilder
             'Context snapshot JSON:',
             json_encode($this->snapshotBuilder()->build($context, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Current runtime state JSON:',
-            json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            json_encode($this->stateForPrompt($state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Latest user message:',
             $message,
         ];
@@ -517,6 +517,25 @@ class AiNativePromptBuilder
      * @param array<int, array<string, mixed>> $messages
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * The state as rendered into the prompt. task_frame and the top-level
+     * recent_outcomes mirror are EXCLUDED: the context snapshot block already
+     * presents that exact data, curated (pending_confirmation, current_payload,
+     * recent_outcomes, already_completed) — sending the raw copies too billed
+     * the same content twice on every planner step (live measurement: ~62KB of
+     * task_frame duplicated beside a ~48KB snapshot derived from it). Runtime
+     * execution still sees the FULL $state; this only shapes the prompt text.
+     *
+     * @param array<string, mixed> $state
+     * @return array<string, mixed>
+     */
+    private function stateForPrompt(array $state): array
+    {
+        unset($state['task_frame'], $state['recent_outcomes']);
+
+        return $state;
+    }
+
     private function withoutLatestUserEcho(array $messages, string $message): array
     {
         $last = end($messages);
