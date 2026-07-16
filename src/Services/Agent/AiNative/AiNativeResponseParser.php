@@ -106,8 +106,16 @@ class AiNativeResponseParser
         $jsonStart = strpos($content, '{');
         $prefix = $jsonStart !== false ? substr($content, 0, $jsonStart) : $content;
 
-        // A tool-call cue somewhere in the prose lead-in.
-        if (preg_match('/\b(?:tool\s*_?\s*call|call\s+tool|invoke|calling|function\s+call|use\s+tool)\b/i', $prefix) !== 1) {
+        // A tool-call cue somewhere in the prose lead-in. Beyond the verbose
+        // cues, two terse narration formats observed live must match:
+        //   "**Tool: theme_builder_add_section**"        (bare "Tool:" label)
+        //   "_call theme_builder_regenerate_section"     (underscore prefix —
+        //    the \b in the verbose cue can never fire inside "_call" because
+        //    the underscore is a word character)
+        if (preg_match(
+            '/(?:\b(?:tool\s*_?\s*call|call\s+tool|invoke|calling|function\s+call|use\s+tool)\b|\btool\s*:|(?:^|[\s>*`\-])_call\b|\bcall\s*:)/im',
+            $prefix,
+        ) !== 1) {
             return null;
         }
 

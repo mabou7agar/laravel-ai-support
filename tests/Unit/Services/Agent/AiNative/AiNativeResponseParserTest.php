@@ -119,6 +119,38 @@ class AiNativeResponseParserTest extends UnitTestCase
         $this->assertSame(['family' => 'cta'], $plan['arguments']);
     }
 
+    public function test_bare_tool_label_narration_is_salvaged(): void
+    {
+        // Live repro: "**Tool: theme_builder_add_section**" — a bare "Tool:"
+        // label with no "call" word anywhere, dumped to chat as prose.
+        $plan = $this->parser->parse('**Tool: theme_builder_add_section**');
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_add_section', $plan['tool']);
+        $this->assertSame([], $plan['arguments']);
+    }
+
+    public function test_underscore_call_narration_is_salvaged(): void
+    {
+        // Live repro: "_call theme_builder_regenerate_section" — the verbose
+        // cue's \b can never fire inside "_call" (underscore is a word char).
+        $plan = $this->parser->parse('_call theme_builder_regenerate_section');
+
+        $this->assertSame('tool_call', $plan['action']);
+        $this->assertSame('theme_builder_regenerate_section', $plan['tool']);
+        $this->assertSame([], $plan['arguments']);
+    }
+
+    public function test_prose_mentioning_a_recall_stays_final(): void
+    {
+        // "recall" contains "call" but has no boundary before it; prose with a
+        // snake_case word must still not be mis-salvaged.
+        $content = 'Total recall of the hero_section settings is done.';
+        $plan = $this->parser->parse($content);
+
+        $this->assertSame('final', $plan['action']);
+    }
+
     public function test_prose_without_a_tool_cue_stays_a_final_message(): void
     {
         // A normal reply that merely mentions a snake_case word must not be
