@@ -67,30 +67,58 @@ class AiNativeStateStore
             $state['compacted_tool_results'] = (int) ($state['compacted_tool_results'] ?? 0) + $dropped;
         }
 
+        // task_frame.recent_outcomes is the REAL cross-turn accumulator (the
+        // top-level key is a small mirror): find_tools outcomes embed full tool
+        // JSON schemas per entry, and a long session dragged ~260KB of them
+        // into every planner step. Trim + prune it like tool_results — but
+        // NEVER touch task_frame.current_payload or pending_tool: those are
+        // FUNCTIONAL (a confirmed pending tool re-executes from its params).
+        if (is_array($state['task_frame']['recent_outcomes'] ?? null)) {
+            $outcomes = array_values($state['task_frame']['recent_outcomes']);
+            if ($maxResults > 0 && count($outcomes) > $maxResults) {
+                $outcomes = array_slice($outcomes, -$maxResults);
+            }
+            $state['task_frame']['recent_outcomes'] = $outcomes;
+        }
+
         if ($maxBytes > 0) {
             foreach (['tool_results', 'recent_outcomes'] as $key) {
                 if (! is_array($state[$key] ?? null)) {
                     continue;
                 }
-                foreach ($state[$key] as $i => $entry) {
-                    if (! is_array($entry)) {
-                        continue;
-                    }
-                    $encoded = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    if ($encoded === false || strlen($encoded) <= $maxBytes) {
-                        continue;
-                    }
-                    $pruned = $this->pruneOversized($entry);
-                    if (is_array($pruned)) {
-                        $pruned['_state_truncated'] = true;
-                        $pruned['_original_bytes'] = strlen($encoded);
-                        $state[$key][$i] = $pruned;
-                    }
-                }
+                $state[$key] = $this->pruneEntries($state[$key], $maxBytes);
+            }
+            if (is_array($state['task_frame']['recent_outcomes'] ?? null)) {
+                $state['task_frame']['recent_outcomes'] = $this->pruneEntries($state['task_frame']['recent_outcomes'], $maxBytes);
             }
         }
 
         return $state;
+    }
+
+    /**
+     * @param array<int, mixed> $entries
+     * @return array<int, mixed>
+     */
+    private function pruneEntries(array $entries, int $maxBytes): array
+    {
+        foreach ($entries as $i => $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $encoded = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($encoded === false || strlen($encoded) <= $maxBytes) {
+                continue;
+            }
+            $pruned = $this->pruneOversized($entry);
+            if (is_array($pruned)) {
+                $pruned['_state_truncated'] = true;
+                $pruned['_original_bytes'] = strlen($encoded);
+                $entries[$i] = $pruned;
+            }
+        }
+
+        return $entries;
     }
 
     private function pruneOversized(mixed $value, int $depth = 0): mixed

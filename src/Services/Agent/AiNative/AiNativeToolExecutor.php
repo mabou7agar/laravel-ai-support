@@ -31,7 +31,10 @@ class AiNativeToolExecutor
     {
         $state['tool_results'][] = [
             'tool' => $toolName,
-            'params' => $this->stateStore->redactedArray($params),
+            // Params are capped too: a generate_view call carries the full
+            // section HTML (and on regenerate, previous_html) — uncapped they
+            // re-ship per step exactly like oversized results did.
+            'params' => $this->capForState($this->stateStore->redactedArray($params)),
             'result' => $this->capForState($this->stateStore->redactedArray($result->toArray())),
         ];
 

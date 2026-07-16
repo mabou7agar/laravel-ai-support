@@ -51,6 +51,32 @@ class AiNativeStateHistoryCapTest extends UnitTestCase
         $this->assertSame('small', $state['recent_outcomes'][1]['summary']);
     }
 
+    public function test_task_frame_recent_outcomes_are_trimmed_and_pruned_but_payload_survives(): void
+    {
+        config()->set('ai-agent.ai_native.state_result_max_bytes', 2048);
+        config()->set('ai-agent.ai_native.state_history_max_results', 4);
+
+        $context = $this->contextWithState([
+            'task_frame' => [
+                'active_objective' => 'tools',
+                'current_payload' => ['html' => str_repeat('K', 9000)],
+                'recent_outcomes' => array_fill(0, 12, [
+                    'tool' => 'find_tools',
+                    'outcome' => 'found',
+                    'display' => ['tools' => array_fill(0, 8, ['schema' => str_repeat('s', 1200)])],
+                ]),
+            ],
+        ]);
+
+        $state = (new AiNativeStateStore())->state($context);
+
+        $outcomes = $state['task_frame']['recent_outcomes'];
+        $this->assertCount(4, $outcomes, 'trimmed to the newest N');
+        $this->assertTrue($outcomes[0]['_state_truncated'], 'oversized outcomes pruned');
+        // FUNCTIONAL working-draft data must never be touched.
+        $this->assertSame(9000, strlen($state['task_frame']['current_payload']['html']));
+    }
+
     /**
      * @param array<string, mixed> $aiNative
      */
