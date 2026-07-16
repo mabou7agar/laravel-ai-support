@@ -244,11 +244,20 @@ class AiNativeRuntime
                 }
             }
 
+            $this->notifyActivity($options, 'thinking', ['step' => $step]);
+
             $plan = $this->nextPlan($message, $context, $state, $options);
             $this->rememberPlanPayload($state, $plan, $options);
             $this->captureReasoning($state, $plan, $options);
             $this->capturePlanTimeline($state, $plan, $options);
             $action = strtolower(trim((string) ($plan['action'] ?? 'final')));
+
+            // Surface the plan's own one-sentence reasoning as the live
+            // "Thinking…" label the host can show while the step executes.
+            $reasoning = trim((string) ($plan['reasoning'] ?? ''));
+            if ($reasoning !== '') {
+                $this->notifyActivity($options, 'thinking', ['step' => $step, 'content' => $reasoning]);
+            }
 
             if ($action === 'ask_user') {
                 $outcome = $this->askUserHandler->handle($message, $context, $state, $options, $plan, $hadRecentContextBeforeTurn);
@@ -273,7 +282,9 @@ class AiNativeRuntime
             }
 
             if ($action === 'tool_call') {
+                $this->notifyActivity($options, 'tool_call', ['tool_name' => (string) ($plan['tool'] ?? '')]);
                 $outcome = $this->toolCallHandler->handle($message, $context, $state, $options, $plan);
+                $this->notifyActivity($options, 'tool_result', ['tool_name' => (string) ($plan['tool'] ?? '')]);
                 if ($outcome->response instanceof AgentResponse) {
                     return $outcome->response;
                 }
@@ -461,6 +472,31 @@ class AiNativeRuntime
         // OpenRouter forwards Anthropic-style block-level cache_control to
         // Anthropic models — same split, driver marks the system block.
         return $engine === 'openrouter' && str_contains(strtolower($model), 'claude');
+    }
+
+    /**
+     * Fail-soft live-activity hook: when the caller passes options['on_activity']
+     * (callable(string $type, array $payload): void), the runtime reports each
+     * planner step ('thinking', with the plan's own reasoning sentence when
+     * present) and each tool execution ('tool_call' before / 'tool_result'
+     * after, both carrying tool_name) — so a host chat can render Claude-style
+     * "Thinking… / Using tool…" indicators while the turn runs. Purely
+     * observational: a missing or throwing callback never affects the loop.
+     *
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $payload
+     */
+    private function notifyActivity(array $options, string $type, array $payload = []): void
+    {
+        $callback = $options['on_activity'] ?? null;
+        if (! is_callable($callback)) {
+            return;
+        }
+        try {
+            $callback($type, $payload);
+        } catch (\Throwable) {
+            // Observability must never break the agentic loop.
+        }
     }
 
     private function maxSteps(array $options): int
