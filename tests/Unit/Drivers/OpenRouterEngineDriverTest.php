@@ -108,6 +108,41 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
     }
 
+    public function test_generate_images_concurrently_returns_one_response_per_request_fail_soft(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        $body = static fn (string $tag): array => [
+            'id' => $tag,
+            'model' => 'google/gemini-2.5-flash-image',
+            'choices' => [['message' => ['content' => 'ok', 'images' => [['image_url' => ['url' => 'data:image/png;base64,' . base64_encode($tag)]]]]]],
+            'usage' => ['total_tokens' => 3],
+        ];
+        // Two succeed, one 500s — the batch must still return 3 responses in order.
+        Http::fakeSequence('https://openrouter.ai/api/v1/chat/completions')
+            ->push($body('a'), 200)
+            ->pushStatus(500)
+            ->push($body('c'), 200);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $mk = static fn (string $p): AIRequest => new AIRequest(
+            prompt: $p,
+            engine: EngineEnum::OPENROUTER,
+            model: 'google/gemini-2.5-flash-image',
+            parameters: ['aspect_ratio' => '1:1', 'timeout' => 15],
+        );
+
+        $responses = $driver->generateImagesConcurrently([$mk('one'), $mk('two'), $mk('three')]);
+
+        $this->assertCount(3, $responses, 'one response per input, in order');
+        $ok = array_values(array_filter($responses, static fn ($r) => $r->isSuccessful()));
+        $this->assertGreaterThanOrEqual(2, count($ok), 'the two good images succeed even though one failed');
+        // Three concurrent requests went out; none leaked a timeout into the payload.
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
+    }
+
     public function test_openrouter_generates_text_to_speech_audio(): void
     {
         Storage::fake('public');

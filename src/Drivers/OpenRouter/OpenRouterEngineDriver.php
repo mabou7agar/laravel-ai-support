@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Drivers\OpenRouter;
 
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use LaravelAIEngine\Drivers\BaseEngineDriver;
@@ -129,58 +130,159 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     public function generateImage(AIRequest $request): AIResponse
     {
         try {
-            $parameters = $request->getParameters();
-            $payload = $this->buildChatCompletionPayload($request, $this->buildMessages($request));
-            $payload['modalities'] = array_values((array) ($parameters['modalities'] ?? ['image', 'text']));
-            $payload['stream'] = false;
+            [$payload, $timeout] = $this->buildImagePayload($request);
+            $response = $this->postJson('/chat/completions', $payload, $timeout !== null ? ['timeout' => $timeout] : []);
 
-            if (isset($parameters['image_config']) && is_array($parameters['image_config'])) {
-                $payload['image_config'] = $parameters['image_config'];
-            } else {
-                $payload['image_config'] = array_filter([
-                    'aspect_ratio' => $parameters['aspect_ratio'] ?? null,
-                    'image_size' => $parameters['image_size'] ?? $parameters['size'] ?? null,
-                ], static fn ($value): bool => $value !== null && $value !== '');
-            }
-
-            if ($payload['image_config'] === []) {
-                unset($payload['image_config']);
-            }
-
-            $requestOptions = [];
-            if (isset($parameters['timeout']) && is_numeric($parameters['timeout'])) {
-                $requestOptions['timeout'] = max(1, (int) $parameters['timeout']);
-            }
-            $response = $this->postJson('/chat/completions', $payload, $requestOptions);
-
-            if (!$response->successful()) {
-                return AIResponse::error(
-                    $response->json()['error']['message'] ?? $response->body(),
-                    $request->getEngine(),
-                    $request->getModel()
-                );
-            }
-
-            $data = $response->json();
-            $message = $data['choices'][0]['message'] ?? [];
-            $files = $this->extractMessageImageFiles((array) ($message['images'] ?? []), $request);
-
-            return AIResponse::success(
-                $this->stringifyContent($message['content'] ?? ''),
-                $request->getEngine(),
-                $request->getModel(),
-                [
-                    'provider' => EngineEnum::OpenRouter->value,
-                    'model' => $data['model'] ?? $request->getModel()->value,
-                    'openrouter_id' => $data['id'] ?? null,
-                    'usage' => $data['usage'] ?? [],
-                    'image_count' => count($files),
-                ]
-            )->withFiles($files)
-             ->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+            return $this->imageResponseToAi($response, $request);
         } catch (\Exception $e) {
             return AIResponse::error($e->getMessage(), $request->getEngine(), $request->getModel());
         }
+    }
+
+    /**
+     * Generate MANY images CONCURRENTLY — one HTTP request each, fired in parallel
+     * via Http::pool — for callers filling several media slots at once (a photo
+     * gallery, a team grid) that would otherwise pay N serial round-trips. Returns
+     * one AIResponse per input request in the SAME order; a per-image failure
+     * becomes an error AIResponse (never throws), so one bad image can't sink the
+     * batch, and each request keeps its own bounded timeout.
+     *
+     * @param array<int, AIRequest> $requests
+     * @return array<int, AIResponse>
+     */
+    public function generateImagesConcurrently(array $requests): array
+    {
+        $requests = array_values($requests);
+        if ($requests === []) {
+            return [];
+        }
+        if (count($requests) === 1) {
+            return [$this->generateImage($requests[0])];
+        }
+
+        // Build every payload up front (a build failure is captured per-index and
+        // never enters the pool).
+        $prepared = [];
+        foreach ($requests as $i => $request) {
+            try {
+                [$payload, $timeout] = $this->buildImagePayload($request);
+                $prepared[$i] = ['payload' => $payload, 'timeout' => $timeout];
+            } catch (\Exception $e) {
+                $prepared[$i] = ['error' => $e->getMessage()];
+            }
+        }
+
+        $headers = $this->getHeaders();
+        $baseTimeout = (int) ($this->config['timeout'] ?? config('ai-engine.engines.openrouter.timeout', 60));
+        $url = $this->baseUrl . '/chat/completions';
+
+        $responses = Http::pool(function (Pool $pool) use ($prepared, $headers, $baseTimeout, $url): array {
+            $pending = [];
+            foreach ($prepared as $i => $p) {
+                if (isset($p['error'])) {
+                    continue; // payload build failed — resolved to an error below
+                }
+                $timeout = is_int($p['timeout'] ?? null) ? $p['timeout'] : $baseTimeout;
+                $pending[] = $pool->as((string) $i)
+                    ->withHeaders($headers)
+                    ->timeout(max(1, $timeout))
+                    ->post($url, $p['payload']);
+            }
+
+            return $pending;
+        });
+
+        $out = [];
+        foreach ($requests as $i => $request) {
+            if (isset($prepared[$i]['error'])) {
+                $out[$i] = AIResponse::error($prepared[$i]['error'], $request->getEngine(), $request->getModel());
+                continue;
+            }
+
+            $response = $responses[(string) $i] ?? null;
+            if ($response instanceof \Throwable) {
+                $out[$i] = AIResponse::error($response->getMessage(), $request->getEngine(), $request->getModel());
+                continue;
+            }
+            if (! $response instanceof Response) {
+                $out[$i] = AIResponse::error('No response for concurrent image #' . $i, $request->getEngine(), $request->getModel());
+                continue;
+            }
+
+            try {
+                $out[$i] = $this->imageResponseToAi($response, $request);
+            } catch (\Exception $e) {
+                $out[$i] = AIResponse::error($e->getMessage(), $request->getEngine(), $request->getModel());
+            }
+        }
+
+        return array_values($out);
+    }
+
+    /**
+     * Build the chat-completions image payload for one request + resolve its
+     * per-request timeout (null = the engine default). Shared by generateImage and
+     * generateImagesConcurrently so the single and batch paths never drift.
+     *
+     * @return array{0: array<string, mixed>, 1: int|null}
+     */
+    private function buildImagePayload(AIRequest $request): array
+    {
+        $parameters = $request->getParameters();
+        $payload = $this->buildChatCompletionPayload($request, $this->buildMessages($request));
+        $payload['modalities'] = array_values((array) ($parameters['modalities'] ?? ['image', 'text']));
+        $payload['stream'] = false;
+
+        if (isset($parameters['image_config']) && is_array($parameters['image_config'])) {
+            $payload['image_config'] = $parameters['image_config'];
+        } else {
+            $payload['image_config'] = array_filter([
+                'aspect_ratio' => $parameters['aspect_ratio'] ?? null,
+                'image_size' => $parameters['image_size'] ?? $parameters['size'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== '');
+        }
+        if ($payload['image_config'] === []) {
+            unset($payload['image_config']);
+        }
+
+        $timeout = isset($parameters['timeout']) && is_numeric($parameters['timeout'])
+            ? max(1, (int) $parameters['timeout'])
+            : null;
+
+        return [$payload, $timeout];
+    }
+
+    /**
+     * Turn a chat-completions image HTTP response into an AIResponse (files +
+     * metadata + usage). Shared by the single and concurrent image paths.
+     */
+    private function imageResponseToAi(Response $response, AIRequest $request): AIResponse
+    {
+        if (!$response->successful()) {
+            return AIResponse::error(
+                $response->json()['error']['message'] ?? $response->body(),
+                $request->getEngine(),
+                $request->getModel()
+            );
+        }
+
+        $data = $response->json();
+        $message = $data['choices'][0]['message'] ?? [];
+        $files = $this->extractMessageImageFiles((array) ($message['images'] ?? []), $request);
+
+        return AIResponse::success(
+            $this->stringifyContent($message['content'] ?? ''),
+            $request->getEngine(),
+            $request->getModel(),
+            [
+                'provider' => EngineEnum::OpenRouter->value,
+                'model' => $data['model'] ?? $request->getModel()->value,
+                'openrouter_id' => $data['id'] ?? null,
+                'usage' => $data['usage'] ?? [],
+                'image_count' => count($files),
+            ]
+        )->withFiles($files)
+         ->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
     }
 
     public function generateAudio(AIRequest $request): AIResponse
