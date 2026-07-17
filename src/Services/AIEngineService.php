@@ -561,6 +561,50 @@ class AIEngineService
     }
 
     /**
+     * Generate several images CONCURRENTLY when the resolved driver supports it
+     * (e.g. the OpenRouter driver fires them in parallel via Http::pool), else fall
+     * back to sequential generateImage. Returns one AIResponse per request, in the
+     * same order. For callers that fill many media slots at once (a photo gallery,
+     * a team grid) and would otherwise pay N serial round-trips. No failover — one
+     * bad image resolves to an error AIResponse, never sinking the batch.
+     *
+     * @param array<int, AIRequest> $requests
+     * @return array<int, AIResponse>
+     */
+    public function generateImagesConcurrently(array $requests): array
+    {
+        $requests = array_values($requests);
+        if ($requests === []) {
+            return [];
+        }
+        if (count($requests) === 1) {
+            return [$this->generateImage($requests[0])];
+        }
+
+        // The concurrent path posts the whole batch through ONE driver, so it only
+        // applies when every request targets the same engine (the normal case — a
+        // build fills a section's slots with one image engine). A mixed batch falls
+        // back to sequential so each request routes to its own driver.
+        $engine = $requests[0]->engine;
+        $sameEngine = array_reduce(
+            $requests,
+            static fn (bool $carry, AIRequest $request): bool => $carry && $request->engine === $engine,
+            true
+        );
+
+        if ($sameEngine) {
+            $driver = $this->getDriver($this->requestRouteResolver->resolve($requests[0])->engine);
+            if (method_exists($driver, 'generateImagesConcurrently')) {
+                return $driver->generateImagesConcurrently($requests);
+            }
+        }
+
+        // Sequential fallback (a driver with no pool path — e.g. OpenAI — or a
+        // mixed-engine batch).
+        return array_map(fn (AIRequest $request): AIResponse => $this->generateImage($request), $requests);
+    }
+
+    /**
      * Generate video content using the specified request.
      */
     public function generateVideo(AIRequest $request): AIResponse
