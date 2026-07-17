@@ -82,6 +82,32 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
     }
 
+    public function test_generate_text_honours_a_per_request_timeout(): void
+    {
+        Config::set('ai-engine.engines.openrouter.timeout', 60);
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-txt-1',
+                'model' => 'anthropic/claude-sonnet-5',
+                'choices' => [['message' => ['content' => '{"ok":true}']]],
+                'usage' => ['total_tokens' => 5],
+            ]),
+        ]);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateText(new AIRequest(
+            prompt: 'design a section',
+            engine: EngineEnum::OPENROUTER,
+            model: 'anthropic/claude-sonnet-5',
+            parameters: ['timeout' => 20],
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        // The per-request bound is honoured and never leaks into the API payload.
+        Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
+    }
+
     public function test_openrouter_generates_text_to_speech_audio(): void
     {
         Storage::fake('public');

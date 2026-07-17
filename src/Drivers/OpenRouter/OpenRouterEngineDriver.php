@@ -83,7 +83,16 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
             $messages = $this->buildMessages($request);
             $payload = $this->buildChatCompletionPayload($request, $messages);
-            $response = $this->postJson('/chat/completions', $payload);
+
+            // A caller may bound a SINGLE text generation with parameters['timeout']
+            // (e.g. an optional, heavy design call that must fail fast to a fallback
+            // rather than hang the base engine timeout). Never leaks into the payload.
+            $requestOptions = [];
+            $parameters = $request->getParameters();
+            if (isset($parameters['timeout']) && is_numeric($parameters['timeout'])) {
+                $requestOptions['timeout'] = max(1, (int) $parameters['timeout']);
+            }
+            $response = $this->postJson('/chat/completions', $payload, $requestOptions);
 
             if (!$response->successful()) {
                 $error = $response->json()['error']['message'] ?? $response->body();
