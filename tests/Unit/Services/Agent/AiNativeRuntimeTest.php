@@ -3026,6 +3026,83 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(3, $toolLog['lookup_customer']);
     }
 
+    public function test_single_shot_tool_repeat_finalizes_instead_of_re_executing(): void
+    {
+        // Live-measured pathology (theme-builder host): a staging tool returned
+        // success ("preview ready — task COMPLETE") and the planner re-planned
+        // the SAME tool anyway, burning the whole step budget on ~7s model
+        // rounds and staging a duplicate preview per repeat (one 48s turn made
+        // 5 identical calls). When the host declares a tool single-shot via
+        // options.auto_finalize_tools, one success IS the outcome: a repeat
+        // finalizes the turn with the host's closing message.
+        config()->set('ai-agent.ai_native.max_steps', 5);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Staging the change.',
+            ],
+            [
+                // The repeat the guard must intercept — note the DIFFERENT
+                // arguments: the real-world repeats varied cosmetically, so an
+                // exact-signature check would not have caught them.
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed Ali'],
+                'message' => 'Staging the change again.',
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Stage it', new UnifiedActionContext('ai-native-single-shot-repeat', 77), [
+            'auto_finalize_tools' => ['lookup_customer'],
+            'auto_finalize_message' => 'Prepared the preview — review and apply it.',
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertFalse($response->needsUserInput);
+        $this->assertSame('Prepared the preview — review and apply it.', $response->message);
+        // Executed ONCE: the second plan short-circuited before execution, so
+        // no duplicate side effect (in the host: no duplicate preview row).
+        $this->assertCount(1, $toolLog['lookup_customer']);
+    }
+
+    public function test_repeat_guard_ignores_tools_the_host_did_not_declare_single_shot(): void
+    {
+        // The guard is scoped to the host's auto_finalize_tools list: without
+        // it, repeating a call is legitimate (re-check / poll / progress
+        // loops), so the runtime must never infer "already done" on its own.
+        config()->set('ai-agent.ai_native.max_steps', 5);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking (1).',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Ahmed'],
+                'message' => 'Checking (2).',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'Checked twice on purpose.',
+                'data' => [],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Check Ahmed twice', new UnifiedActionContext('ai-native-repeat-unguarded', 77));
+
+        $this->assertSame('Checked twice on purpose.', $response->message);
+        $this->assertCount(2, $toolLog['lookup_customer'], 'un-declared tools keep their repeat behavior');
+    }
+
     public function test_budget_mode_off_keeps_existing_step_cap(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 1);

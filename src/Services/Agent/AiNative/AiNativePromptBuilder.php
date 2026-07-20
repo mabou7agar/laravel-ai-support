@@ -564,11 +564,18 @@ class AiNativePromptBuilder
             ));
         }
 
+        $stripFence = $this->stripTurnContextFromHistory();
+
         return array_values(array_map(
-            static function (array $message): array {
+            function (array $message) use ($stripFence): array {
+                $content = (string) ($message['content'] ?? '');
+                if ($stripFence && ($message['role'] ?? null) === 'user') {
+                    $content = $this->withoutTurnContextFence($content);
+                }
+
                 $document = [
                     'role' => (string) ($message['role'] ?? ''),
-                    'content' => (string) ($message['content'] ?? ''),
+                    'content' => $content,
                 ];
 
                 if (isset($message['timestamp'])) {
@@ -583,6 +590,40 @@ class AiNativePromptBuilder
             },
             array_slice($messages, -12)
         ));
+    }
+
+    private function stripTurnContextFromHistory(): bool
+    {
+        return (bool) config('ai-agent.ai_native.history_strip_turn_context', true);
+    }
+
+    /**
+     * A host may dispatch each turn as a TURN-CONTEXT preamble (page state,
+     * preview state, per-turn rules) fenced off from the real request by a
+     * "User request…:" marker. The processor records that FULL dispatched
+     * message into conversationHistory, so on the NEXT turn the history's user
+     * entry replays a stale multi-KB preamble (stale page map, stale preview
+     * state) beside the fresh one — pure prompt waste that can also mislead the
+     * planner. At render time keep only what follows the LAST marker; the
+     * marker must be preceded by earlier content (a real preamble) so a bare
+     * user message that happens to start with "User request:" is untouched.
+     * Kill switch: ai-agent.ai_native.history_strip_turn_context (default true).
+     */
+    private function withoutTurnContextFence(string $content): string
+    {
+        if (preg_match_all('/\n\s*User request(?:\s*\([^)\n]{0,80}\))?\s*:\s*/u', $content, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return $content;
+        }
+
+        $occurrences = $matches[0] ?? [];
+        if ($occurrences === []) {
+            return $content;
+        }
+
+        [$marker, $offset] = $occurrences[count($occurrences) - 1];
+        $request = trim(substr($content, (int) $offset + strlen((string) $marker)));
+
+        return $request !== '' ? $request : $content;
     }
 
     /**

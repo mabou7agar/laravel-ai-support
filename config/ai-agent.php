@@ -211,6 +211,24 @@ return [
         // and re-serialize them into every planner step. 0 = unlimited
         // (today's behavior byte-for-byte).
         'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 0),
+        // Render-time compaction of the context snapshot's recent_outcomes:
+        // byte-identical entries collapse to one + {"repeats":N}, and each
+        // entry's 'display' strings are capped (~200 chars). Prompt-only — the
+        // persisted state is untouched. Kill switch; default ON.
+        'snapshot_compact_outcomes' => (bool) env('AI_AGENT_AI_NATIVE_SNAPSHOT_COMPACT_OUTCOMES', true),
+        // Strip a host's TURN-CONTEXT preamble from REPLAYED user history at
+        // prompt render: a user entry containing a "User request…:" fence
+        // marker keeps only the text after the marker, so a prior turn's stale
+        // page map / preview state is not re-billed (and cannot mislead the
+        // planner) on every later turn. Kill switch; default ON.
+        'history_strip_turn_context' => (bool) env('AI_AGENT_AI_NATIVE_HISTORY_STRIP_TURN_CONTEXT', true),
+        // Absolute wall-clock budget for ONE turn's planner/tool round-trips.
+        // A synchronous HTTP turn whose SUM of sequential calls exceeds PHP's
+        // max_execution_time dies as an uncatchable FatalError mid-Guzzle; the
+        // loop checks this deadline between steps and returns a typed failure
+        // instead. Unset (null) = derive from max_execution_time minus a 20s
+        // margin (0/CLI = unlimited). Per-run override: options.turn_deadline_seconds.
+        'turn_deadline_seconds' => env('AI_AGENT_AI_NATIVE_TURN_DEADLINE_SECONDS'),
         'compaction' => [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows

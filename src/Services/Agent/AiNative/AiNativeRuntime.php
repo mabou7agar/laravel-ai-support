@@ -149,6 +149,15 @@ class AiNativeRuntime
         // belong to THIS turn. In-memory only; the state-store allowlist
         // drops it cross-turn.
         $state['outcomes_at_turn_start'] = $outcomesAtTurnStart;
+        // Explicit per-turn outcome counter. recent_outcomes is CAPPED at 12
+        // (AgentTaskStateService::recordToolResult array_slice -12), so in a
+        // long session the cap trims from the FRONT mid-turn and any
+        // outcomes_at_turn_start-based slice under- or over-counts. This
+        // counter is incremented in the tool_call branch as outcomes are
+        // recorded; like the marker above it is in-memory only (the state-store
+        // allowlist drops it cross-turn).
+        $state['turn_outcome_count'] = 0;
+        unset($state['last_turn_outcome']);
         if ($this->exposeReasoning($options)) {
             // Per-turn rationale accumulator. The state store allowlist drops this
             // cross-turn, which is intentional: reasoning_trace lives only for the
@@ -189,7 +198,44 @@ class AiNativeRuntime
 
         $this->cancelStaleSuggestedContinuation($message, $context, $state);
 
+        // TURN DEADLINE: a synchronous HTTP-request turn whose sequential
+        // planner/tool round-trips cumulatively exceed PHP's max_execution_time
+        // dies as an uncatchable FatalError mid-Guzzle (live repro: a
+        // generate_view invention turn fataled at ~180s, leaving the client
+        // hanging with no terminal). Per-call HTTP timeouts cannot bound the
+        // SUM, so the loop checks an absolute wall-clock deadline (derived from
+        // max_execution_time minus a safety margin, or options/config override)
+        // and returns a typed, relayable failure instead of fataling.
+        $turnDeadline = $this->turnDeadlineTimestamp($options);
+
+        // Repeat-guard ledger: names of HOST-DECLARED SINGLE-SHOT tools
+        // (options.auto_finalize_tools) that already SUCCEEDED this turn.
+        // Live-measured pathology: after such a staging tool returned success
+        // ("preview ready — task COMPLETE"), the planner sometimes re-planned
+        // the same call anyway — with cosmetically varying arguments (id only /
+        // type only / both), so an exact-signature check would not catch it —
+        // burning the whole step budget on ~7s model rounds and staging
+        // duplicate previews (5× theme_builder_reorder_remove_sections in one
+        // 48s turn). For a tool the host declared single-shot, ONE successful
+        // call IS the turn's outcome by contract, so a repeat means the work is
+        // done: finalize instead of re-executing.
+        //
+        // Deliberately scoped to that host-declared list: repeating an
+        // identical call is legitimate in general (re-check/poll/progress
+        // loops — see test_budget_mode_raises_loop_ceiling_when_enabled, which
+        // drives three identical lookups on purpose), so the runtime must not
+        // infer "already done" from a repeat by itself.
+        $turnSucceededTools = [];
+
         for ($step = 0; $step < $this->maxSteps($options); $step++) {
+            if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
+                $this->stateStore->put($context, $state);
+
+                return $this->responses->final($context, $state, $this->runtimeText(
+                    'ai-engine::runtime.responses.turn_deadline_exceeded',
+                    'This request is taking longer than a single turn allows. The work done so far is saved — ask me to continue, or try a smaller request.',
+                ), ['error_code' => 'turn_deadline_exceeded', 'deadline_exceeded' => true]);
+            }
             $this->compactStateForPlanner($state, $context, $options);
 
             $suggestedOutcome = $this->suggestedToolContinuation->run(
@@ -282,14 +328,59 @@ class AiNativeRuntime
             }
 
             if ($action === 'tool_call') {
+                $planTool = trim((string) ($plan['tool'] ?? $plan['tool_name'] ?? ''));
+                $singleShotTools = array_map(
+                    static fn (mixed $tool): string => trim((string) $tool),
+                    (array) ($options['auto_finalize_tools'] ?? []),
+                );
+                if ($planTool !== '' && isset($turnSucceededTools[$planTool]) && in_array($planTool, $singleShotTools, true)) {
+                    $closing = trim((string) ($options['auto_finalize_message'] ?? ''));
+                    if ($closing === '') {
+                        $closing = $this->runtimeText(
+                            'ai-engine::runtime.responses.completed_without_summary',
+                            'Done — the requested action completed successfully.',
+                        );
+                    }
+                    $this->stateStore->put($context, $state);
+
+                    return $this->responses->final($context, $state, $closing, ['repeated_completed_call' => true]);
+                }
                 $this->notifyActivity($options, 'tool_call', ['tool_name' => (string) ($plan['tool'] ?? '')]);
+                // Cap-proof per-turn outcome tracking: compare the outcome list
+                // around the handler call. Below the 12-cap a length increase is
+                // the signal; AT the cap the length is constant, so the changed
+                // TAIL element is (a push at cap shifts the front off).
+                $outcomesBefore = (array) ($state['recent_outcomes'] ?? []);
                 $outcome = $this->toolCallHandler->handle($message, $context, $state, $options, $plan);
+                $outcomesAfter = (array) ($state['recent_outcomes'] ?? []);
+                $lastAfter = $outcomesAfter === [] ? null : $outcomesAfter[array_key_last($outcomesAfter)];
+                $lastBefore = $outcomesBefore === [] ? null : $outcomesBefore[array_key_last($outcomesBefore)];
+                if ($lastAfter !== null && (count($outcomesAfter) > count($outcomesBefore) || $lastAfter !== $lastBefore)) {
+                    $state['turn_outcome_count'] = (int) ($state['turn_outcome_count'] ?? 0) + 1;
+                    $state['last_turn_outcome'] = $lastAfter;
+                    // Feed the repeat-guard: only a SUCCESSFUL call is "done work"
+                    // a repeat of which can be safely short-circuited; failed
+                    // calls stay retryable (the model may fix its arguments).
+                    if (($lastAfter['success'] ?? null) === true && $planTool !== '') {
+                        $turnSucceededTools[$planTool] = true;
+                    }
+                }
                 $this->notifyActivity($options, 'tool_result', ['tool_name' => (string) ($plan['tool'] ?? '')]);
                 if ($outcome->response instanceof AgentResponse) {
                     return $outcome->response;
                 }
 
                 if ($outcome->continueLoop) {
+                    // Host opt-in fast path (options.auto_finalize_single_tool):
+                    // when the host classified this turn as a simple edit whose
+                    // outcome IS one staged write, the extra planner round-trip
+                    // exists only to phrase a closing sentence — skip it and
+                    // return a host-templated final instead (never silent).
+                    $autoFinal = $this->autoFinalizeAfterSingleWrite($context, $state, $options, $plan);
+                    if ($autoFinal instanceof AgentResponse) {
+                        return $autoFinal;
+                    }
+
                     continue;
                 }
             }
@@ -326,9 +417,15 @@ class AiNativeRuntime
         // tool call failed validation after an earlier tool succeeded (the
         // completed work must win over the validator error). Sub-agent runs
         // keep their own richer tool_result_fallback salvage.
+        // THIS turn's outcomes via the explicit per-turn counter (tail slice) —
+        // the outcomes_at_turn_start offset goes stale once the 12-cap trims
+        // recent_outcomes from the front mid-turn (long sessions).
         $turnOutcomes = ($state['task_frame']['status'] ?? null) === 'completed' || $validationErrors !== []
-            ? array_slice((array) ($state['recent_outcomes'] ?? []), $outcomesAtTurnStart)
+            ? array_slice((array) ($state['recent_outcomes'] ?? []), -max(0, (int) ($state['turn_outcome_count'] ?? 0)))
             : [];
+        if ((int) ($state['turn_outcome_count'] ?? 0) === 0) {
+            $turnOutcomes = [];
+        }
         if ($validationErrors !== []) {
             $failedTool = (string) ($lastValidation['tool'] ?? '');
             $turnOutcomes = array_values(array_filter($turnOutcomes, static fn (mixed $outcome): bool => is_array($outcome) && (string) ($outcome['tool'] ?? '') !== $failedTool));
@@ -365,6 +462,137 @@ class AiNativeRuntime
         }
 
         return $this->responses->needsUserInput($context, $state, $this->runtimeText('ai-engine::runtime.responses.need_more_information', 'I need more information to continue.'));
+    }
+
+    /**
+     * Auto-finalize a single-write turn (host opt-in, prompt-size fast path).
+     *
+     * When the HOST classified the turn as a simple edit (not a build) it may
+     * pass options.auto_finalize_single_tool=true: after the FIRST successful
+     * write/staging tool call of the turn, the remaining planner step only
+     * phrases a closing message — a full model round-trip re-sending the whole
+     * prompt. Skip it and return a final response with the host's templated
+     * (already localized) closing text (options.auto_finalize_message; a
+     * generic fallback keeps the turn from ever ending silently).
+     *
+     * Guards — returns null (planner continues) unless ALL hold:
+     *  - the option is enabled;
+     *  - EXACTLY ONE outcome was recorded this turn, per the EXPLICIT per-turn
+     *    counter (a lookup-then-edit sequence keeps planning). The counter —
+     *    not an outcomes_at_turn_start slice — because recent_outcomes is
+     *    capped at 12 and the cap trims from the front mid-turn in long
+     *    sessions, making slice-based counts wrong;
+     *  - that outcome succeeded and needs no user input;
+     *  - it is a WRITE-shaped outcome (created/updated/deleted/completed/sent —
+     *    'found' lookups never auto-finalize);
+     *  - the triggering PLAN did not declare remaining work: a plan carrying a
+     *    multi-entry "steps" list is the model announcing a compound edit
+     *    ("make it darker AND bigger") — finalizing after the first write would
+     *    silently truncate it, so we keep planning;
+     *  - the task frame reports NO pending intent: the write completed the
+     *    active objective (task_frame.status === 'completed'). A 'working'
+     *    frame means the objective the model seeded differs from what this
+     *    write satisfied — more steps are coming;
+     *  - when the host passed an options.auto_finalize_tools allowlist, the
+     *    tool is on it (lets hosts exclude read-shaped tools that report
+     *    'completed').
+     * Residual risk (documented): a compound edit where the model neither
+     * declares steps nor seeds an objective beyond the first write can still
+     * finalize early — the host flag stays dev-ON / prod-OFF while that space
+     * is observed.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $plan
+     */
+    private function autoFinalizeAfterSingleWrite(UnifiedActionContext $context, array &$state, array $options, array $plan = []): ?AgentResponse
+    {
+        if (empty($options['auto_finalize_single_tool'])) {
+            return null;
+        }
+
+        if ((int) ($state['turn_outcome_count'] ?? 0) !== 1 || !is_array($state['last_turn_outcome'] ?? null)) {
+            return null;
+        }
+
+        $outcome = $state['last_turn_outcome'];
+        if (($outcome['success'] ?? false) !== true || ($outcome['needs_user_input'] ?? false) === true) {
+            return null;
+        }
+
+        // Plan-declared remaining work → never truncate a compound edit.
+        $declaredSteps = array_values(array_filter(
+            array_map(static fn (mixed $step): string => is_string($step) ? trim($step) : '', (array) ($plan['steps'] ?? [])),
+            static fn (string $step): bool => $step !== ''
+        ));
+        if (count($declaredSteps) > 1) {
+            return null;
+        }
+
+        // Pending intent → the write did not complete the active objective.
+        if (($state['task_frame']['status'] ?? null) !== 'completed') {
+            return null;
+        }
+        if (!in_array((string) ($outcome['outcome'] ?? ''), ['created', 'updated', 'deleted', 'completed', 'sent'], true)) {
+            return null;
+        }
+
+        $allowedTools = array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($options['auto_finalize_tools'] ?? [])
+        )));
+        if ($allowedTools !== [] && !in_array((string) ($outcome['tool'] ?? ''), $allowedTools, true)) {
+            return null;
+        }
+
+        $closing = trim((string) ($options['auto_finalize_message'] ?? ''));
+        if ($closing === '') {
+            $closing = $this->runtimeText('ai-engine::runtime.responses.completed_without_summary', 'Done — the requested action completed successfully.');
+        }
+
+        $this->stateStore->put($context, $state);
+
+        return $this->responses->final($context, $state, $closing, [
+            'last_tool_outcome' => $outcome,
+            'auto_finalized' => true,
+        ]);
+    }
+
+    /**
+     * Absolute wall-clock deadline for this turn, or null (unlimited). Sources
+     * in order: options['turn_deadline_seconds'], config
+     * ai-agent.ai_native.turn_deadline_seconds, then max_execution_time minus a
+     * 20s safety margin (0/CLI = unlimited). The margin leaves room to build
+     * and send the typed failure before PHP's own limit fires.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function turnDeadlineTimestamp(array $options): ?float
+    {
+        $seconds = null;
+        if (isset($options['turn_deadline_seconds']) && is_numeric($options['turn_deadline_seconds'])) {
+            $seconds = (float) $options['turn_deadline_seconds'];
+        } else {
+            try {
+                $configured = config('ai-agent.ai_native.turn_deadline_seconds');
+                if (is_numeric($configured)) {
+                    $seconds = (float) $configured;
+                }
+            } catch (\Throwable) {
+                $seconds = null;
+            }
+        }
+        if ($seconds === null) {
+            $limit = (int) ini_get('max_execution_time');
+            if ($limit > 25) {
+                $seconds = (float) ($limit - 20);
+            }
+        }
+        if ($seconds === null || $seconds <= 0) {
+            return null;
+        }
+
+        return microtime(true) + $seconds;
     }
 
     /**

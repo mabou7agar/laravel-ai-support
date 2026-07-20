@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.14] — 2026-07-20
+
+### Added
+
+- **`auto_finalize_single_tool` runtime option (AiNative)** — when the HOST classifies a turn as one whose outcome is a single staged write, `AiNativeRuntime` returns a final response with the host's templated closing text (`auto_finalize_message`) after the first successful write instead of spending another full planner round-trip just to phrase a sentence. Guarded: exactly one outcome this turn (via an explicit per-turn counter), the outcome succeeded and is write-shaped, the plan declared no further `steps`, the task frame reports `completed`, and — when supplied — the tool is on the `auto_finalize_tools` allowlist.
+- **Single-shot tool repeat guard (AiNative)** — a tool the host declared single-shot via `auto_finalize_tools` that is re-planned after already succeeding this turn now finalizes the turn instead of re-executing. Measured host pathology: a staging tool returned "preview ready — task COMPLETE" and the planner re-called it up to 5× with cosmetically varying arguments (so an exact-argument check would not catch it), burning the whole step budget on ~7s model rounds and creating a duplicate preview row per repeat — a one-op edit turn took 48s. Deliberately scoped to the host-declared list: repeating an identical call is legitimate in general (re-check/poll/progress loops). Covered by `AiNativeRuntimeTest::test_single_shot_tool_repeat_finalizes_instead_of_re_executing` and `::test_repeat_guard_ignores_tools_the_host_did_not_declare_single_shot`.
+- **Turn deadline (AiNative)** — `ai-agent.ai_native.turn_deadline_seconds` (or per-run `options.turn_deadline_seconds`) bounds the SUM of a turn's sequential planner/tool round-trips. A synchronous HTTP turn exceeding PHP's `max_execution_time` previously died as an uncatchable FatalError mid-Guzzle, leaving the client hanging with no terminal event; the loop now checks an absolute wall-clock deadline between steps and returns a typed, relayable failure (`error_code: turn_deadline_exceeded`). Unset = derive from `max_execution_time` minus a 20s margin (0/CLI = unlimited).
+
+### Changed
+
+- **Prompt-size: snapshot outcome compaction** — `ai-agent.ai_native.snapshot_compact_outcomes` (default ON) collapses byte-identical `recent_outcomes` entries in the rendered context snapshot to one entry plus `{"repeats":N}` and caps each entry's `display` strings (~200 chars). Render-time only; the persisted state is untouched.
+- **Prompt-size: replayed-history turn-context stripping** — `ai-agent.ai_native.history_strip_turn_context` (default ON) keeps only the text after a host's `User request…:` fence marker in REPLAYED user history, so a prior turn's stale context block is not re-billed on every later turn (and cannot mislead the planner).
+
+### Fixed
+
+- **Cap-proof per-turn outcome accounting** — `recent_outcomes` is capped at 12, so in long sessions the cap trims from the front mid-turn and any `outcomes_at_turn_start`-based slice mis-counts. The runtime now maintains an explicit `turn_outcome_count` / `last_turn_outcome` pair (in-memory, dropped cross-turn by the state-store allowlist), used by both the auto-finalize guard and the loop-exhaustion salvage.
+
 ## [2.9.3] — 2026-06-10
 
 ### Fixed
