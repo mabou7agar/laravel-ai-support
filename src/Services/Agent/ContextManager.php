@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Models\AIAgentRun;
+use LaravelAIEngine\Repositories\AgentContextRepository;
 
 class ContextManager
 {
-    public function __construct(protected ?ConversationContextCompactor $compactor = null)
-    {
+    public function __construct(
+        protected ?ConversationContextCompactor $compactor = null,
+        protected ?AgentContextRepository $contexts = null
+    ) {
         if ($this->compactor === null) {
             try {
                 $this->compactor = app()->bound(ConversationContextCompactor::class)
@@ -22,17 +24,20 @@ class ContextManager
                 $this->compactor = new ConversationContextCompactor();
             }
         }
+
+        $this->contexts ??= new AgentContextRepository();
     }
 
-    public function getOrCreate(string $sessionId, $userId): UnifiedActionContext
+    public function getOrCreate(string $sessionId, $userId, ?string $contextScope = null): UnifiedActionContext
     {
-        $context = UnifiedActionContext::load($sessionId, $userId);
+        $context = $this->contexts->find($sessionId, $userId, $contextScope);
         
         if (!$context) {
-            $context = $this->restoreFromAgentRuns($sessionId, $userId)
+            $context = ($contextScope === null ? $this->restoreFromAgentRuns($sessionId, $userId) : null)
                 ?? new UnifiedActionContext(
                     sessionId: $sessionId,
-                    userId: $userId
+                    userId: $userId,
+                    contextScope: $contextScope
                 );
 
             Log::channel('ai-engine')->info('New agent context created', [
@@ -49,7 +54,9 @@ class ContextManager
                 'runtime_state_keys' => array_keys($context->runtimeState),
             ]);
 
-            $this->restoreMissingDurableState($context, $sessionId, $userId);
+            if ($contextScope === null) {
+                $this->restoreMissingDurableState($context, $sessionId, $userId);
+            }
         }
 
         $this->compactor->compact($context);
@@ -64,7 +71,7 @@ class ContextManager
     public function save(UnifiedActionContext $context, array $options = []): void
     {
         $this->compactor->compact($context, $options);
-        $context->persist();
+        $this->contexts->save($context);
         
         Log::channel('ai-engine')->info('Agent context saved to cache', [
             'session_id' => $context->sessionId,
@@ -74,10 +81,9 @@ class ContextManager
         ]);
     }
 
-    public function clear(string $sessionId, mixed $userId = null): void
+    public function clear(string $sessionId, mixed $userId = null, ?string $contextScope = null): void
     {
-        Cache::forget(UnifiedActionContext::cacheKey($sessionId, $userId));
-        Cache::forget(UnifiedActionContext::legacyCacheKey($sessionId));
+        $this->contexts->forget($sessionId, $userId, $contextScope);
         
         Log::channel('ai-engine')->info('Agent context cleared', [
             'session_id' => $sessionId,
@@ -85,14 +91,14 @@ class ContextManager
         ]);
     }
 
-    public function exists(string $sessionId, mixed $userId = null): bool
+    public function exists(string $sessionId, mixed $userId = null, ?string $contextScope = null): bool
     {
-        return UnifiedActionContext::load($sessionId, $userId) instanceof UnifiedActionContext;
+        return $this->contexts->exists($sessionId, $userId, $contextScope);
     }
     
-    public function load(string $sessionId, mixed $userId = null): ?UnifiedActionContext
+    public function load(string $sessionId, mixed $userId = null, ?string $contextScope = null): ?UnifiedActionContext
     {
-        return UnifiedActionContext::load($sessionId, $userId);
+        return $this->contexts->find($sessionId, $userId, $contextScope);
     }
 
     protected function restoreFromAgentRuns(string $sessionId, mixed $userId): ?UnifiedActionContext

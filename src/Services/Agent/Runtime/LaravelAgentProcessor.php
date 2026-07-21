@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Services\Agent\AgentResponseFinalizer;
 use LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime;
 use LaravelAIEngine\Services\Agent\ContextManager;
+use LaravelAIEngine\DTOs\ConversationContextOptions;
+use LaravelAIEngine\Services\Agent\ConversationContextSynchronizer;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Contracts\Federation\NodeSessionContract;
 use LaravelAIEngine\DTOs\RoutingTrace;
@@ -28,12 +30,14 @@ class LaravelAgentProcessor
         protected AgentResponseFinalizer $responseFinalizer,
         protected ?NodeSessionContract $nodeSession = null,
         protected ?AgentExecutionDispatcher $executionDispatcher = null,
-        protected ?AiNativeRuntime $aiNativeRuntime = null
+        protected ?AiNativeRuntime $aiNativeRuntime = null,
+        protected ?ConversationContextSynchronizer $conversationContextSynchronizer = null
     ) {
         $this->executionDispatcher ??= app(AgentExecutionDispatcher::class);
         $this->aiNativeRuntime ??= app()->bound(AiNativeRuntime::class)
             ? app(AiNativeRuntime::class)
             : null;
+        $this->conversationContextSynchronizer ??= new ConversationContextSynchronizer();
     }
 
     public function process(
@@ -48,13 +52,20 @@ class LaravelAgentProcessor
             'message' => substr($message, 0, 100),
         ]);
 
+        $conversationContext = ConversationContextOptions::fromArray($options);
+
         // Idempotency guard: when the client supplies an explicit idempotency_key, an
         // intentional retry of the same logical request must return the prior response
         // verbatim rather than being silently dropped (or re-executed). The cached
         // response is returned as-is and the retry is NOT treated as a new turn.
         $idempotencyKey = $this->idempotencyKey($options);
         if ($idempotencyKey !== null) {
-            $cached = Cache::get($this->idempotencyCacheKey($idempotencyKey, $sessionId));
+            $cached = Cache::get($this->idempotencyCacheKey(
+                $idempotencyKey,
+                $sessionId,
+                $userId,
+                $conversationContext->scope
+            ));
             if (is_array($cached)) {
                 Log::channel('ai-engine')->debug('Returning idempotent replay of prior response', [
                     'session_id' => $sessionId,
@@ -65,7 +76,9 @@ class LaravelAgentProcessor
             }
         }
 
-        $context = $this->contextManager->getOrCreate($sessionId, $userId);
+        $context = $conversationContext->scope === null
+            ? $this->contextManager->getOrCreate($sessionId, $userId)
+            : $this->contextManager->getOrCreate($sessionId, $userId, $conversationContext->scope);
         $this->hydrateConversationHistory($context, $options);
 
         // Thread caller-supplied run metadata into the tool-visible context.
@@ -100,6 +113,8 @@ class LaravelAgentProcessor
             return $this->rememberIdempotentResponse(
                 $idempotencyKey,
                 $sessionId,
+                $userId,
+                $conversationContext->scope,
                 $this->dispatchProcess($message, $context, $options)
             );
         }
@@ -254,55 +269,7 @@ class LaravelAgentProcessor
      */
     protected function hydrateConversationHistory(UnifiedActionContext $context, array $options): void
     {
-        $history = $options['conversation_history'] ?? [];
-
-        // No fresh history supplied: keep whatever the context already carries (if any)
-        // so re-entrant reroutes that omit conversation_history are non-destructive.
-        if (!is_array($history) || $history === []) {
-            return;
-        }
-
-        // Validate roles, normalise null content to '' and cap at the compactor limit.
-        $maxMessages = max(2, (int) config('ai-agent.context_compaction.max_messages', 12));
-
-        $filtered = array_values(array_filter(
-            $history,
-            static fn (mixed $message): bool => is_array($message)
-                && in_array($message['role'] ?? null, ['system', 'user', 'assistant', 'tool'], true)
-                && array_key_exists('content', $message)
-        ));
-
-        // Normalise null/array content to string so downstream code never sees a null.
-        $filtered = array_map(static function (array $message): array {
-            if ($message['content'] === null) {
-                $message['content'] = '';
-            } elseif (is_array($message['content'])) {
-                // Multipart / vision content: extract text parts, preserve the rest.
-                $text = implode(' ', array_filter(array_map(
-                    static fn (mixed $part): string => is_array($part) && ($part['type'] ?? '') === 'text'
-                        ? trim((string) ($part['text'] ?? ''))
-                        : (is_string($part) ? trim($part) : ''),
-                    $message['content']
-                )));
-                $message['content'] = $text;
-            }
-
-            return $message;
-        }, $filtered);
-
-        // If every supplied entry was invalid, do not clobber any existing context
-        // history with an empty array — leave the prior history intact.
-        if ($filtered === []) {
-            return;
-        }
-
-        // Hard-cap the replayed history to avoid unbounded context growth.
-        // Preserve the most-recent messages (tail of the array) so context is current.
-        if (count($filtered) > $maxMessages) {
-            $filtered = array_slice($filtered, -$maxMessages);
-        }
-
-        $context->conversationHistory = $filtered;
+        $this->conversationContextSynchronizer->synchronize($context, $options);
     }
 
     protected function searchRag(
@@ -442,9 +409,25 @@ class LaravelAgentProcessor
         return $key === '' ? null : $key;
     }
 
-    protected function idempotencyCacheKey(string $key, string $sessionId): string
+    protected function idempotencyCacheKey(
+        string $key,
+        string $sessionId,
+        mixed $userId = null,
+        ?string $contextScope = null
+    ): string
     {
-        return 'ai-agent:processor:idempotency:' . sha1($sessionId . '|' . $key);
+        // Preserve the historical unscoped cache key exactly. Scoped callers
+        // opt into the hardened identity that also separates users and tenants.
+        if (trim((string) $contextScope) === '') {
+            return 'ai-agent:processor:idempotency:' . sha1($sessionId . '|' . $key);
+        }
+
+        return 'ai-agent:processor:idempotency:' . sha1(json_encode([
+            'session_id' => $sessionId,
+            'user_id' => $userId === null || $userId === '' ? 'guest' : (string) $userId,
+            'scope_hash' => hash('sha256', trim((string) $contextScope)),
+            'idempotency_key' => $key,
+        ], JSON_THROW_ON_ERROR));
     }
 
     protected function idempotencyTtl(): int
@@ -458,10 +441,12 @@ class LaravelAgentProcessor
     protected function rememberIdempotentResponse(
         string $key,
         string $sessionId,
+        mixed $userId,
+        ?string $contextScope,
         AgentResponse $response
     ): AgentResponse {
         Cache::put(
-            $this->idempotencyCacheKey($key, $sessionId),
+            $this->idempotencyCacheKey($key, $sessionId, $userId, $contextScope),
             $response->toArray(),
             now()->addSeconds($this->idempotencyTtl())
         );

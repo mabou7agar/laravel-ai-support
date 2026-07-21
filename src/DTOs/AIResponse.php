@@ -543,7 +543,7 @@ class AIResponse implements \JsonSerializable
             return $this->tokensUsed;
         }
 
-        return $this->usage['tokens'] ?? 0;
+        return (int) ($this->usage['tokens'] ?? $this->usage['total_tokens'] ?? 0);
     }
 
     /**

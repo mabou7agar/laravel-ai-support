@@ -15,6 +15,66 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class OpenRouterEngineDriverTest extends UnitTestCase
 {
+    public function test_generate_text_normalizes_prompt_cache_usage(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-cache-hit',
+                'model' => 'anthropic/claude-sonnet-5',
+                'choices' => [['message' => ['content' => 'ok']]],
+                'usage' => [
+                    'prompt_tokens' => 100,
+                    'completion_tokens' => 10,
+                    'total_tokens' => 110,
+                    'prompt_tokens_details' => [
+                        'cached_tokens' => 80,
+                        'cache_write_tokens' => 20,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = (new OpenRouterEngineDriver(['api_key' => 'or-key']))->generateText(new AIRequest(
+            prompt: 'continue the task',
+            engine: EngineEnum::OPENROUTER,
+            model: 'anthropic/claude-sonnet-5',
+        ));
+
+        $this->assertSame([
+            'prompt_tokens' => 100,
+            'completion_tokens' => 10,
+            'total_tokens' => 110,
+            'cached_tokens' => 80,
+            'cache_creation_tokens' => 20,
+        ], $response->getUsage());
+        $this->assertSame(110, $response->getTokensUsed());
+    }
+
+    public function test_generate_text_normalizes_absent_cache_usage_to_zero(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-cache-cold',
+                'model' => 'openai/gpt-4.1-mini',
+                'choices' => [['message' => ['content' => 'ok']]],
+                'usage' => [
+                    'prompt_tokens' => 12,
+                    'completion_tokens' => 3,
+                    'total_tokens' => 15,
+                ],
+            ]),
+        ]);
+
+        $response = (new OpenRouterEngineDriver(['api_key' => 'or-key']))->generateText(new AIRequest(
+            prompt: 'hello',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-4.1-mini',
+        ));
+
+        $this->assertSame(0, $response->getUsage()['cached_tokens']);
+        $this->assertSame(0, $response->getUsage()['cache_creation_tokens']);
+    }
+
     public function test_openrouter_generates_image_output_from_chat_modalities(): void
     {
         Storage::fake('public');

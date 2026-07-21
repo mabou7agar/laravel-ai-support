@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.15] — 2026-07-22
+
+### Added
+
+- **Server-owned incremental conversation context** — opt-in `context_mode=server_delta` keeps bounded conversation and agent state on the server, ignores client-supplied history replacement, and treats the current message as the only request delta. Legacy client replay remains the default.
+- **Tenant/workspace context scopes** — opt-in `context_scope` isolates context and idempotency cache keys by a hashed host-owned scope in addition to session and user. Scoped contexts never fall back to unscoped cache or durable-run state.
+- **Agent context repository** — cache persistence now flows through a reusable repository while the existing `UnifiedActionContext` static APIs remain backward compatible.
+
+### Fixed
+
+- **OpenRouter prompt-cache telemetry** — synchronous text responses now expose normalized `prompt_tokens`, `completion_tokens`, `total_tokens`, `cached_tokens`, and `cache_creation_tokens` through `AIResponse::getUsage()`.
+
 ## [2.11.14] — 2026-07-20
 
 ### Added

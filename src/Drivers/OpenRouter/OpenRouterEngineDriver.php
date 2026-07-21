@@ -120,6 +120,19 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                 ]
             )->withFunctionCall($functionCall);
 
+            if ($usage = $this->extractDetailedUsage($data, 'openai')) {
+                // OpenRouter follows the OpenAI usage envelope even when the
+                // routed provider is Anthropic. Surface cache reads through the
+                // same normalized AIResponse contract as the direct drivers.
+                $usage['cache_creation_tokens'] = (int) (
+                    $data['usage']['prompt_tokens_details']['cache_write_tokens']
+                    ?? $data['usage']['cache_creation_input_tokens']
+                    ?? $data['usage']['cache_write_tokens']
+                    ?? 0
+                );
+                $aiResponse = $aiResponse->withDetailedUsage($usage);
+            }
+
             return $files === [] ? $aiResponse : $aiResponse->withFiles($files);
 
         } catch (\Exception $e) {

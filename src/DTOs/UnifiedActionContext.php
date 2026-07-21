@@ -23,7 +23,8 @@ class UnifiedActionContext
         public array $metadata = [],
         public ?string $currentFlow = null,
         public ?string $currentStep = null,
-        public array $runtimeState = []
+        public array $runtimeState = [],
+        public ?string $contextScope = null
     ) {
     }
 
@@ -311,6 +312,7 @@ class UnifiedActionContext
             'current_step' => $this->currentStep,
             'runtime_state' => $this->stripClosures($this->runtimeState),
             'flow_stack' => $this->stripClosures($this->flowStack),
+            'context_scope' => $this->contextScope,
         ];
     }
 
@@ -358,7 +360,10 @@ class UnifiedActionContext
             metadata: $data['metadata'] ?? [],
             currentFlow: $data['current_flow'] ?? null,
             currentStep: $data['current_step'] ?? null,
-            runtimeState: $data['runtime_state'] ?? []
+            runtimeState: $data['runtime_state'] ?? [],
+            contextScope: isset($data['context_scope']) && is_string($data['context_scope'])
+                ? $data['context_scope']
+                : null
         );
 
         $context->flowStack = $data['flow_stack'] ?? [];
@@ -369,17 +374,17 @@ class UnifiedActionContext
     public function persist(): void
     {
         Cache::put(
-            self::cacheKey($this->sessionId, $this->userId),
+            self::cacheKey($this->sessionId, $this->userId, $this->contextScope),
             $this->toArray(),
             now()->addHours(24)
         );
     }
 
-    public static function load(string $sessionId, $userId): ?self
+    public static function load(string $sessionId, $userId, ?string $contextScope = null): ?self
     {
-        $data = Cache::get(self::cacheKey($sessionId, $userId));
+        $data = Cache::get(self::cacheKey($sessionId, $userId, $contextScope));
 
-        if (!$data) {
+        if (!$data && trim((string) $contextScope) === '') {
             $legacy = Cache::get(self::legacyCacheKey($sessionId));
             $data = is_array($legacy) && self::sameUser($legacy['user_id'] ?? null, $userId)
                 ? $legacy
@@ -390,15 +395,24 @@ class UnifiedActionContext
             return null;
         }
 
-        return self::fromArray($data);
+        $context = self::fromArray($data);
+        $context->contextScope = trim((string) $contextScope) !== '' ? trim((string) $contextScope) : null;
+
+        return $context;
     }
 
-    public static function cacheKey(string $sessionId, mixed $userId): string
+    public static function cacheKey(string $sessionId, mixed $userId, ?string $contextScope = null): string
     {
-        return 'agent_context:' . sha1(json_encode([
+        $identity = [
             'session_id' => $sessionId,
             'user_id' => self::userKey($userId),
-        ], JSON_THROW_ON_ERROR));
+        ];
+
+        if (trim((string) $contextScope) !== '') {
+            $identity['scope_hash'] = hash('sha256', trim((string) $contextScope));
+        }
+
+        return 'agent_context:' . sha1(json_encode($identity, JSON_THROW_ON_ERROR));
     }
 
     public static function legacyCacheKey(string $sessionId): string

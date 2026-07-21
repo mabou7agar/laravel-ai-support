@@ -9,7 +9,8 @@ class AgentRuntimeServiceRegistrar
     public static function register($app): void
     {
         $app->singleton(\LaravelAIEngine\Services\Agent\ContextManager::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ContextManager(
-            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class)
+            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class),
+            $app->make(\LaravelAIEngine\Repositories\AgentContextRepository::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\SelectedEntityContextService::class, fn () => new \LaravelAIEngine\Services\Agent\SelectedEntityContextService());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentPlanner::class, fn () => new \LaravelAIEngine\Services\Agent\AgentPlanner());
@@ -56,7 +57,8 @@ class AgentRuntimeServiceRegistrar
                 ? $app->make(\LaravelAIEngine\Contracts\Federation\NodeSessionContract::class)
                 : null,
             $app->make(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime::class)
+            $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime::class),
+            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextSynchronizer::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime(
             $app->make(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor::class)
