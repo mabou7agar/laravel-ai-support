@@ -306,51 +306,26 @@ class QdrantDriver implements VectorDriverInterface
                 return [];
             }
             
-            // Check if it's a 400 error (bad request - usually type mismatch in filter)
-            if ($e->getCode() === 400 || str_contains($e->getMessage(), "400 Bad Request")) {
-                $errorMessage = $e->getMessage();
-                
-                Log::warning('Qdrant search failed - attempting auto-fix', [
+            // SECURITY: a filtered query is an authorization boundary. Never
+            // recover from a bad filter/index by retrying without the filter:
+            // that turns an availability problem into cross-scope disclosure.
+            // Index repair belongs to an explicit operational workflow; search
+            // remains read-only and fails closed for every provider error.
+            if (!empty($filters)) {
+                Log::warning('Qdrant filtered search failed closed', [
                     'collection' => $collection,
-                    'filters' => $filters,
-                    'error' => substr($errorMessage, 0, 300),
+                    'filter_keys' => array_values(array_map('strval', array_keys($filters))),
+                    'status' => (int) $e->getCode(),
+                    'exception' => $e::class,
                 ]);
-                
-                // Check if this is an index type mismatch that we can fix
-                if (!empty($filters) && !Cache::has("qdrant_autofix_attempted_{$collection}")) {
-                    // Mark that we've attempted auto-fix to prevent infinite loops
-                    Cache::put("qdrant_autofix_attempted_{$collection}", true, 60); // 1 minute
-                    
-                    // Try to auto-fix index types
-                    Log::info('Attempting to auto-fix index types', ['collection' => $collection]);
-                    $fixed = $this->autoFixIndexTypes($collection);
-                    
-                    if (!empty($fixed)) {
-                        Log::info('Auto-fixed indexes, retrying search', [
-                            'collection' => $collection,
-                            'fixed_fields' => $fixed,
-                        ]);
-                        
-                        // Clear the auto-fix cache and retry
-                        Cache::forget("qdrant_autofix_attempted_{$collection}");
-                        return $this->search($collection, $vector, $limit, $threshold, $filters);
-                    }
-                    
-                    // If auto-fix didn't help, try search without filters
-                    Log::info('Auto-fix did not resolve issue, retrying without filters', ['collection' => $collection]);
-                    Cache::forget("qdrant_autofix_attempted_{$collection}");
-                    return $this->search($collection, $vector, $limit, $threshold, []);
-                }
-                
-                // Clear the cache if we're here
-                Cache::forget("qdrant_autofix_attempted_{$collection}");
-                
+
                 return [];
             }
-            
+
             Log::error('Qdrant search failed', [
                 'collection' => $collection,
-                'error' => $e->getMessage(),
+                'status' => (int) $e->getCode(),
+                'exception' => $e::class,
             ]);
             return [];
         }

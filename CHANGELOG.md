@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.17] — 2026-07-22
+
+### Security
+
+- **Filtered Qdrant searches now fail closed** — a provider/index error can no longer trigger an unfiltered retry. Filtered retrieval returns no results and logs only filter keys, never filter values; unfiltered search behavior remains unchanged.
+
 ## [2.11.15] — 2026-07-22
 
 ### Added
