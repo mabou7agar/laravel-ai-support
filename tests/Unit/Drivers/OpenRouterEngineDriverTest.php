@@ -168,6 +168,35 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
     }
 
+    public function test_generate_text_exposes_only_sanitized_provider_refusal_state(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'id' => 'or-refusal-1',
+                'model' => 'openai/gpt-4o',
+                'choices' => [[
+                    'finish_reason' => 'stop',
+                    'message' => [
+                        'content' => null,
+                        'refusal' => 'private provider refusal wording',
+                    ],
+                ]],
+                'usage' => ['total_tokens' => 5],
+            ]),
+        ]);
+
+        $response = (new OpenRouterEngineDriver(['api_key' => 'or-key']))->generateText(new AIRequest(
+            prompt: 'analyze image',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-4o',
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertTrue($response->getMetadata()['provider_refusal']);
+        $this->assertSame('stop', $response->getFinishReason());
+        $this->assertStringNotContainsString('private provider refusal wording', json_encode($response, JSON_THROW_ON_ERROR));
+    }
+
     public function test_generate_images_concurrently_returns_one_response_per_request_fail_soft(): void
     {
         Storage::fake('public');

@@ -103,6 +103,8 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             $data = $response->json();
             $message = $data['choices'][0]['message'] ?? [];
             $content = $this->stringifyContent($message['content'] ?? '');
+            $providerRefusal = is_string($message['refusal'] ?? null)
+                && trim((string) $message['refusal']) !== '';
             $files = $this->extractMessageImageFiles((array) ($message['images'] ?? []), $request);
             $toolCalls = $this->extractToolCalls($message);
             $functionCall = $this->firstFunctionCall($toolCalls, $message);
@@ -117,8 +119,13 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                     'openrouter_id' => $data['id'] ?? null,
                     'provider' => $data['provider'] ?? null,
                     'tool_calls' => $toolCalls,
+                    // Deliberately expose only the refusal state, never provider text.
+                    'provider_refusal' => $providerRefusal,
                 ]
-            )->withFunctionCall($functionCall);
+            )->withFunctionCall($functionCall)
+             ->withFinishReason(isset($data['choices'][0]['finish_reason'])
+                 ? (string) $data['choices'][0]['finish_reason']
+                 : null);
 
             if ($usage = $this->extractDetailedUsage($data, 'openai')) {
                 // OpenRouter follows the OpenAI usage envelope even when the
