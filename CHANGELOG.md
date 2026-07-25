@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.21] — 2026-07-26
+
+### Added
+
+- **Runtime-feedback activity telemetry** — the fail-soft `on_activity`
+  callback now receives `runtime_feedback` checkpoints whenever a model plan is
+  rejected and replanned. Events include the step, action, reason, required
+  tools, and a content-safe feedback-message size/fingerprint, allowing hosts to
+  explain the decision between model calls without logging feedback text.
+
 ## [2.11.20] — 2026-07-26
 
 ### Added

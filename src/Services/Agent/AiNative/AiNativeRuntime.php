@@ -306,7 +306,9 @@ class AiNativeRuntime
             }
 
             if ($action === 'ask_user') {
+                $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
                 $outcome = $this->askUserHandler->handle($message, $context, $state, $options, $plan, $hadRecentContextBeforeTurn);
+                $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, $action);
                 if ($outcome->response instanceof AgentResponse) {
                     return $outcome->response;
                 }
@@ -317,7 +319,9 @@ class AiNativeRuntime
             }
 
             if ($this->parallelEnabled($options) && $this->hasParallelToolCalls($plan)) {
+                $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
                 $outcome = $this->parallelHandler->handle($message, $context, $state, $options, $plan);
+                $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, 'parallel_tool_calls');
                 if ($outcome->response instanceof AgentResponse) {
                     return $outcome->response;
                 }
@@ -351,7 +355,9 @@ class AiNativeRuntime
                 // the signal; AT the cap the length is constant, so the changed
                 // TAIL element is (a push at cap shifts the front off).
                 $outcomesBefore = (array) ($state['recent_outcomes'] ?? []);
+                $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
                 $outcome = $this->toolCallHandler->handle($message, $context, $state, $options, $plan);
+                $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, $action);
                 $outcomesAfter = (array) ($state['recent_outcomes'] ?? []);
                 $lastAfter = $outcomesAfter === [] ? null : $outcomesAfter[array_key_last($outcomesAfter)];
                 $lastBefore = $outcomesBefore === [] ? null : $outcomesBefore[array_key_last($outcomesBefore)];
@@ -385,7 +391,9 @@ class AiNativeRuntime
                 }
             }
 
+            $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
             $outcome = $this->finalHandler->handle($message, $context, $state, $options, $plan);
+            $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, 'final');
             if ($outcome->response instanceof AgentResponse) {
                 return $outcome->response;
             }
@@ -831,6 +839,52 @@ class AiNativeRuntime
             $callback($type, $payload);
         } catch (\Throwable) {
             // Observability must never break the agentic loop.
+        }
+    }
+
+    /**
+     * Emit newly appended feedback as content-safe activity checkpoints.
+     *
+     * Runtime feedback explains why a model plan was rejected and replanned.
+     * The full feedback remains in runtime state for the next planner step;
+     * activity exposes only structured routing fields and a message
+     * size/fingerprint because feedback text may contain user or tool content.
+     *
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $state
+     */
+    private function notifyNewRuntimeFeedback(
+        array $options,
+        array $state,
+        int $previousCount,
+        int $step,
+        string $action,
+    ): void {
+        $start = max(0, $previousCount);
+        $feedbackEntries = array_slice((array) ($state['runtime_feedback'] ?? []), $start);
+
+        foreach ($feedbackEntries as $offset => $feedback) {
+            if (! is_array($feedback)) {
+                continue;
+            }
+
+            $message = trim((string) ($feedback['message'] ?? ''));
+            $this->notifyActivity($options, 'runtime_feedback', [
+                'step' => $step,
+                'action' => $action,
+                'feedback_index' => $start + $offset,
+                'reason' => trim((string) ($feedback['reason'] ?? '')),
+                'required_tools' => array_values(array_filter(
+                    array_map(
+                        static fn (mixed $tool): string => trim((string) $tool),
+                        (array) ($feedback['required_tools'] ?? []),
+                    ),
+                    static fn (string $tool): bool => $tool !== '',
+                )),
+                'tool' => trim((string) ($feedback['tool'] ?? '')),
+                'message_bytes' => strlen($message),
+                'message_fingerprint' => substr(hash('sha256', $message), 0, 16),
+            ]);
         }
     }
 

@@ -80,6 +80,38 @@ class AiNativeActivityCallbackTest extends UnitTestCase
         $this->assertSame('Plain answer.', $response->message);
     }
 
+    public function test_on_activity_reports_content_safe_runtime_feedback_before_replanning(): void
+    {
+        $activity = [];
+        $runtime = $this->runtime([
+            ['action' => 'final', 'message' => 'The dashboard is ready.'],
+            ['action' => 'tool_call', 'tool' => 'lookup_customer', 'arguments' => ['query' => 'Acme']],
+            ['action' => 'final', 'message' => 'Done.'],
+        ]);
+
+        $response = $runtime->process('Build the customer dashboard', new UnifiedActionContext('activity-feedback'), [
+            'required_tool_evidence' => ['lookup_customer'],
+            'on_activity' => function (string $type, array $payload) use (&$activity): void {
+                $activity[] = [$type, $payload];
+            },
+        ]);
+
+        $this->assertTrue($response->success);
+        $feedback = array_values(array_filter(
+            $activity,
+            static fn (array $entry): bool => $entry[0] === 'runtime_feedback',
+        ));
+
+        $this->assertCount(1, $feedback);
+        $this->assertSame('final_without_required_tool_evidence', $feedback[0][1]['reason'] ?? null);
+        $this->assertSame(['lookup_customer'], $feedback[0][1]['required_tools'] ?? null);
+        $this->assertSame(0, $feedback[0][1]['step'] ?? null);
+        $this->assertSame('final', $feedback[0][1]['action'] ?? null);
+        $this->assertGreaterThan(0, $feedback[0][1]['message_bytes'] ?? 0);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{16}$/', (string) ($feedback[0][1]['message_fingerprint'] ?? ''));
+        $this->assertArrayNotHasKey('message', $feedback[0][1]);
+    }
+
     public function test_model_error_activity_is_content_free_and_correlated_to_the_step(): void
     {
         $activity = [];
