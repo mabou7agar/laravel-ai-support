@@ -137,7 +137,8 @@ class AIResponse implements \JsonSerializable
             actions: $this->actions,
             error: $this->error,
             success: $this->success,
-            conversationId: $this->conversationId
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -162,7 +163,8 @@ class AIResponse implements \JsonSerializable
             actions: $this->actions,
             error: $this->error,
             success: $this->success,
-            conversationId: $this->conversationId
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -187,7 +189,8 @@ class AIResponse implements \JsonSerializable
             actions: $this->actions,
             error: $this->error,
             success: $this->success,
-            conversationId: $conversationId
+            conversationId: $conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -211,7 +214,9 @@ class AIResponse implements \JsonSerializable
             files: $this->files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -235,7 +240,9 @@ class AIResponse implements \JsonSerializable
             files: $files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -260,7 +267,8 @@ class AIResponse implements \JsonSerializable
             actions: $actions,
             error: $this->error,
             success: $this->success,
-            conversationId: $this->conversationId
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -284,7 +292,9 @@ class AIResponse implements \JsonSerializable
             files: $this->files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 
@@ -308,7 +318,9 @@ class AIResponse implements \JsonSerializable
             files: $this->files,
             actions: $this->actions,
             error: $this->error,
-            success: $this->success
+            success: $this->success,
+            conversationId: $this->conversationId,
+            functionCall: $this->functionCall
         );
     }
 

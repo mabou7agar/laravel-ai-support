@@ -292,7 +292,7 @@ class AiNativeRuntime
 
             $this->notifyActivity($options, 'thinking', ['step' => $step]);
 
-            $plan = $this->nextPlan($message, $context, $state, $options);
+            $plan = $this->nextPlan($message, $context, $state, $options, $step);
             $this->rememberPlanPayload($state, $plan, $options);
             $this->captureReasoning($state, $plan, $options);
             $this->capturePlanTimeline($state, $plan, $options);
@@ -599,13 +599,23 @@ class AiNativeRuntime
      * @param array<string, mixed> $state
      * @return array<string, mixed>
      */
-    private function nextPlan(string $message, UnifiedActionContext $context, array $state, array $options): array
+    private function nextPlan(
+        string $message,
+        UnifiedActionContext $context,
+        array $state,
+        array $options,
+        int $step = 0,
+    ): array
     {
         $engine = $options['engine'] ?? config('ai-engine.default', 'openai');
         $model = $options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini'));
         $maxTokens = (int) ($options['max_tokens'] ?? config('ai-agent.ai_native.max_tokens', 1200));
         $temperature = (float) ($options['temperature'] ?? config('ai-agent.ai_native.temperature', 0.1));
         $redactedState = $this->stateStore->redactedState($state);
+        $prompt = '';
+        $systemPrompt = '';
+        $bodyPrompt = '';
+        $startedAt = microtime(true);
 
         try {
             if ($this->supportsSystemPromptCaching($engine, (string) $model)) {
@@ -615,19 +625,24 @@ class AiNativeRuntime
                 // cache_control: ephemeral. `system . "\n\n" . body` equals build() byte-for-byte,
                 // so the model sees the same content — only the role boundary changes.
                 $parts = $this->promptBuilder->buildParts($message, $context, $redactedState, $options);
+                $systemPrompt = $parts['system'];
+                $bodyPrompt = $parts['body'];
+                $prompt = $systemPrompt !== '' ? $systemPrompt . "\n\n" . $bodyPrompt : $bodyPrompt;
                 $request = (new AIRequest(
-                    prompt: $parts['body'],
+                    prompt: $bodyPrompt,
                     engine: $engine,
                     model: $model,
                     maxTokens: $maxTokens,
                     temperature: $temperature,
                     metadata: ['context' => 'ai_native_runtime']
-                ))->withSystemPrompt($parts['system']);
+                ))->withSystemPrompt($systemPrompt);
             } else {
                 // OpenAI (default) and others already cache the longest common prompt prefix
                 // automatically; keep the single-message prompt unchanged.
+                $prompt = $this->promptBuilder->build($message, $context, $redactedState, $options);
+                $bodyPrompt = $prompt;
                 $request = new AIRequest(
-                    prompt: $this->promptBuilder->build($message, $context, $redactedState, $options),
+                    prompt: $prompt,
                     engine: $engine,
                     model: $model,
                     maxTokens: $maxTokens,
@@ -636,19 +651,111 @@ class AiNativeRuntime
                 );
             }
 
+            $this->notifyActivity($options, 'model_request', [
+                'step' => $step,
+                'engine' => (string) $engine,
+                'model' => (string) $model,
+                'max_tokens' => $maxTokens,
+                'temperature' => $temperature,
+                'prompt' => $this->promptDiagnostics($prompt, $systemPrompt, $bodyPrompt, $context, $options),
+            ]);
+
             $response = $this->ai->generate($request);
         } catch (Throwable $exception) {
+            $this->notifyActivity($options, 'model_error', [
+                'step' => $step,
+                'engine' => (string) $engine,
+                'model' => (string) $model,
+                'duration_ms' => round((microtime(true) - $startedAt) * 1000, 2),
+                'exception' => $exception::class,
+                'error_bytes' => strlen($exception->getMessage()),
+                'error_fingerprint' => substr(hash('sha256', $exception::class . '|' . $exception->getMessage()), 0, 16),
+            ]);
+
             return [
                 'action' => 'ask_user',
                 'message' => $exception->getMessage() !== '' ? $exception->getMessage() : $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.'),
             ];
         }
 
+        $this->notifyActivity($options, 'model_response', [
+            'step' => $step,
+            'engine' => $response->getEngine()->value,
+            'model' => $response->getModel()->value,
+            'success' => $response->isSuccessful(),
+            'duration_ms' => round((microtime(true) - $startedAt) * 1000, 2),
+            'provider_latency' => $response->getLatency(),
+            'request_id' => $response->getRequestId(),
+            'usage' => $response->getUsage() ?? [],
+            'cached' => $response->getCached(),
+            'finish_reason' => $response->getFinishReason(),
+            'response_bytes' => strlen($response->getContent()),
+        ]);
+
         if (!$response->isSuccessful()) {
             return ['action' => 'ask_user', 'message' => $response->getError() ?? $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.')];
         }
 
         return $this->parser->parse($response->getContent());
+    }
+
+    /**
+     * Content-free prompt telemetry. Byte counts and a short fingerprint make
+     * prompt growth/cache fragmentation diagnosable without copying the prompt
+     * itself into logs.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function promptDiagnostics(
+        string $prompt,
+        string $systemPrompt,
+        string $bodyPrompt,
+        UnifiedActionContext $context,
+        array $options,
+    ): array {
+        $markers = [
+            'skills' => 'Available skills JSON:',
+            'tools' => 'Available tools JSON',
+            'conversation' => 'Recent conversation JSON:',
+            'snapshot' => 'Context snapshot JSON:',
+            'runtime_state' => 'Current runtime state JSON:',
+            'latest_message' => 'Latest user message:',
+        ];
+        $positions = [];
+        foreach ($markers as $name => $marker) {
+            $position = strpos($prompt, $marker);
+            if ($position !== false) {
+                $positions[$name] = $position;
+            }
+        }
+        asort($positions);
+
+        $spans = [];
+        $orderedNames = array_keys($positions);
+        foreach ($orderedNames as $index => $name) {
+            $start = $positions[$name];
+            $end = isset($orderedNames[$index + 1])
+                ? $positions[$orderedNames[$index + 1]]
+                : strlen($prompt);
+            $spans[$name] = max(0, $end - $start);
+        }
+
+        $firstDynamicPosition = $positions['skills'] ?? strlen($prompt);
+
+        return [
+            'total_bytes' => strlen($prompt),
+            'estimated_tokens' => (int) ceil(strlen($prompt) / 4),
+            'cacheable_system_bytes' => strlen($systemPrompt),
+            'dynamic_body_bytes' => strlen($bodyPrompt),
+            'static_rules_bytes' => max(0, $firstDynamicPosition),
+            'document_span_bytes' => $spans,
+            'conversation_message_count' => count($context->conversationHistory),
+            'tool_selection_strategy' => (string) config('ai-agent.ai_native.tool_selection.strategy', 'all'),
+            'tool_disclosure' => (string) ($options['tool_selection']['disclosure'] ?? config('ai-agent.ai_native.tool_selection.disclosure', 'full')),
+            'full_schema_tool_count' => count((array) ($options['tool_selection']['disclosure_full_tools'] ?? [])),
+            'prompt_fingerprint' => substr(hash('sha256', $prompt), 0, 16),
+        ];
     }
 
     /**
@@ -706,9 +813,9 @@ class AiNativeRuntime
      * Fail-soft live-activity hook: when the caller passes options['on_activity']
      * (callable(string $type, array $payload): void), the runtime reports each
      * planner step ('thinking', with the plan's own reasoning sentence when
-     * present) and each tool execution ('tool_call' before / 'tool_result'
-     * after, both carrying tool_name) — so a host chat can render Claude-style
-     * "Thinking… / Using tool…" indicators while the turn runs. Purely
+     * present), model request/response/error telemetry, and each tool execution
+     * ('tool_call' before / 'tool_result' after, both carrying tool_name) — so a
+     * host can render activity and persist a complete content-safe trace. Purely
      * observational: a missing or throwing callback never affects the loop.
      *
      * @param array<string, mixed> $options

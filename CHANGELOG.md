@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.17] — 2026-07-26
+
+### Added
+
+- **AI-native provider telemetry events** — the existing fail-soft
+  `on_activity` callback now receives content-free `model_request`,
+  `model_response`, and `model_error` events for every planner step. Request
+  telemetry includes prompt byte spans, estimated tokens, cacheable/dynamic
+  sizes, tool-disclosure mode, and a short prompt fingerprint; response
+  telemetry includes actual engine/model, request ID, latency, finish reason,
+  usage/cache counters, and response size. Error events expose only exception
+  class, byte length, and a fingerprint—not provider error text.
+
+### Fixed
+
+- **Immutable `AIResponse` enrichment preserves tool calls** — chaining
+  `withFinishReason()`, `withDetailedUsage()`, `withUsage()`, request/conversation
+  IDs, cache marking, files, or actions no longer drops an already captured
+  provider function/tool call. This restores OpenRouter chat tool calls after
+  finish-reason and usage normalization.
+
 ## [2.11.15] — 2026-07-22
 
 ### Added

@@ -209,4 +209,41 @@ class AIResponseTest extends TestCase
         $this->assertTrue($response->success);
         $this->assertNull($response->error);
     }
+
+    public function test_immutable_enrichment_preserves_function_call_and_conversation_id()
+    {
+        $functionCall = [
+            'id' => 'call-1',
+            'name' => 'lookup_invoice',
+            'arguments' => ['invoice_id' => 'INV-100'],
+        ];
+
+        $response = AIResponse::success(
+            content: '',
+            engine: EngineEnum::OPENAI,
+            model: EntityEnum::GPT_4O
+        )
+            ->withFunctionCall($functionCall)
+            ->withConversationId('conversation-1');
+
+        $enrichments = [
+            'usage' => fn (AIResponse $current): AIResponse => $current->withUsage(10, 0.1, 0.2),
+            'request ID' => fn (AIResponse $current): AIResponse => $current->withRequestId('request-1'),
+            'conversation ID' => fn (AIResponse $current): AIResponse => $current->withConversationId('conversation-2'),
+            'cache status' => fn (AIResponse $current): AIResponse => $current->markAsCached(),
+            'files' => fn (AIResponse $current): AIResponse => $current->withFiles(['image.png']),
+            'actions' => fn (AIResponse $current): AIResponse => $current->withActions([]),
+            'finish reason' => fn (AIResponse $current): AIResponse => $current->withFinishReason('tool_calls'),
+            'detailed usage' => fn (AIResponse $current): AIResponse => $current->withDetailedUsage(['total_tokens' => 10]),
+            'metadata' => fn (AIResponse $current): AIResponse => $current->withMetadata(['provider' => 'openrouter']),
+            'content' => fn (AIResponse $current): AIResponse => $current->withContent('updated'),
+        ];
+
+        foreach ($enrichments as $name => $enrich) {
+            $enriched = $enrich($response);
+
+            $this->assertSame($functionCall, $enriched->getFunctionCall(), "{$name} dropped the function call");
+            $this->assertNotNull($enriched->getConversationId(), "{$name} dropped the conversation ID");
+        }
+    }
 }
