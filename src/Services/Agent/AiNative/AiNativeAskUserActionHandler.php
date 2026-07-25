@@ -51,6 +51,20 @@ class AiNativeAskUserActionHandler
             return AiNativeActionOutcome::continueLoop();
         }
 
+        if (($options['require_tool_evidence_before_ask'] ?? false) === true
+            && $this->skillPolicy->needsHostRequiredToolEvidence($state, $options)
+        ) {
+            $requiredTools = $this->skillPolicy->hostRequiredToolEvidence($options);
+            $state['runtime_feedback'][] = [
+                'reason' => 'ask_before_required_tool_evidence',
+                'message' => 'The host has already supplied enough structure for this proactive action and requires tool evidence before asking optional content, audience, goal, tone, or style questions. Call the best matching listed tool now with sensible defaults from the available context. Ask only after a real tool attempt proves that a structurally required value is unavailable.',
+                'required_tools' => $requiredTools,
+            ];
+            $this->stateStore->put($context, $state);
+
+            return AiNativeActionOutcome::continueLoop();
+        }
+
         if ($this->confirmationHandler instanceof AiNativeAskUserConfirmationHandler) {
             $outcome = $this->confirmationHandler->handle($context, $state, $options, $plan);
             if ($outcome instanceof AiNativeActionOutcome) {

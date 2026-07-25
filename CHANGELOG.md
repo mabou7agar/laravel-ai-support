@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.20] — 2026-07-26
+
+### Added
+
+- **Host-required current-turn tool evidence** — AI-native callers may pass
+  `required_tool_evidence` with a tool-name allowlist. A final response is
+  rejected until one listed tool succeeds in the current turn, so stale tool
+  history or unsupported success prose cannot make an action request appear
+  complete.
+- **Optional-question guard** — callers may additionally set
+  `require_tool_evidence_before_ask` to make the planner attempt the required
+  action before asking non-structural preference questions. Both guards return
+  structured runtime feedback and remain opt-in for backward compatibility.
+
 ## [2.11.17] — 2026-07-26
 
 ### Added

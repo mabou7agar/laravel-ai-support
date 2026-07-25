@@ -33,9 +33,15 @@ class AiNativeFinalActionHandler
         }
 
         if ($this->skillPolicy->needsToolEvidenceBeforeFinal($message, $state, $options, $plan)) {
+            $requiredTools = $this->skillPolicy->hostRequiredToolEvidence($options);
             $state['runtime_feedback'][] = [
-                'reason' => 'final_without_tool_evidence',
-                'message' => 'The previous plan tried to finish an action request without tool evidence. Call a relevant tool or ask the user for missing data.',
+                'reason' => $requiredTools === []
+                    ? 'final_without_tool_evidence'
+                    : 'final_without_required_tool_evidence',
+                'message' => $requiredTools === []
+                    ? 'The previous plan tried to finish an action request without tool evidence. Call a relevant tool or ask the user for missing data.'
+                    : 'The host requires a successful outcome from one of the listed tools before this action turn can finish. Call the best matching tool now with sensible defaults from the available context; ask the user only when a structurally required value is genuinely missing.',
+                'required_tools' => $requiredTools,
             ];
             $this->stateStore->put($context, $state);
 

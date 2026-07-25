@@ -171,6 +171,10 @@ class AiNativeSkillPolicy
      */
     public function needsToolEvidenceBeforeFinal(string $message, array $state, array $options, array $plan): bool
     {
+        if ($this->needsHostRequiredToolEvidence($state, $options)) {
+            return true;
+        }
+
         if (!empty($state['tool_results']) || is_array($state['pending_tool'] ?? null)) {
             return false;
         }
@@ -180,6 +184,59 @@ class AiNativeSkillPolicy
         }
 
         return $this->matcher->messageMatchesSkill($message, $options);
+    }
+
+    /**
+     * Hosts may declare that a turn is not complete until one of a small set of
+     * outcome tools succeeds. This is intentionally generic: the runtime does
+     * not infer a workflow or choose a tool, it only rejects unsupported prose
+     * completion and lets the model re-plan with structured feedback.
+     *
+     * Evidence is scoped to the current turn. A successful matching tool from a
+     * previous turn must not let a later action request finish without acting.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    public function needsHostRequiredToolEvidence(array $state, array $options): bool
+    {
+        $requiredTools = $this->hostRequiredToolEvidence($options);
+        if ($requiredTools === []) {
+            return false;
+        }
+
+        $turnOutcomeCount = max(0, (int) ($state['turn_outcome_count'] ?? 0));
+        if ($turnOutcomeCount === 0) {
+            return true;
+        }
+
+        $turnOutcomes = array_slice((array) ($state['recent_outcomes'] ?? []), -$turnOutcomeCount);
+        foreach ($turnOutcomes as $outcome) {
+            if (!is_array($outcome) || ($outcome['success'] ?? false) !== true) {
+                continue;
+            }
+
+            if (in_array((string) ($outcome['tool'] ?? ''), $requiredTools, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<int, string>
+     */
+    public function hostRequiredToolEvidence(array $options): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(
+                static fn (mixed $tool): string => trim((string) $tool),
+                (array) ($options['required_tool_evidence'] ?? []),
+            ),
+            static fn (string $tool): bool => $tool !== '',
+        )));
     }
 
     /**

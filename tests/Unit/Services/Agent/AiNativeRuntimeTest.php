@@ -1603,6 +1603,92 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertSame('final_without_tool_evidence', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
     }
 
+    public function test_host_can_require_current_turn_tool_evidence_before_final(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 3);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'final',
+                'message' => 'The dashboard is ready.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Vision brief'],
+                'message' => 'Preparing the requested outcome.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'The requested outcome is ready.',
+            ],
+        ], $toolLog);
+
+        $context = new UnifiedActionContext('ai-native-host-required-evidence', 77, metadata: [
+            'ai_native' => [
+                // A matching result from an earlier turn must not satisfy this
+                // turn's host-declared outcome contract.
+                'tool_results' => [[
+                    'tool' => 'lookup_customer',
+                    'params' => ['query' => 'Old request'],
+                    'result' => ['success' => true, 'data' => ['found' => true]],
+                ]],
+                'recent_outcomes' => [[
+                    'tool' => 'lookup_customer',
+                    'success' => true,
+                ]],
+            ],
+        ]);
+
+        $response = $runtime->process('Make the vision dashboard', $context, [
+            'required_tool_evidence' => ['lookup_customer'],
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('The requested outcome is ready.', $response->message);
+        $this->assertSame('Vision brief', $toolLog['lookup_customer'][0]['query']);
+        $this->assertSame('final_without_required_tool_evidence', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
+        $this->assertSame(['lookup_customer'], $context->metadata['ai_native']['runtime_feedback'][0]['required_tools']);
+    }
+
+    public function test_host_can_require_proactive_tool_attempt_before_optional_questions(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 3);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'ask_user',
+                'message' => 'What tone should the dashboard use?',
+                'required_inputs' => ['tone'],
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Vision brief'],
+                'message' => 'Preparing the requested outcome.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'The requested outcome is ready.',
+            ],
+        ], $toolLog);
+
+        $context = new UnifiedActionContext('ai-native-host-evidence-before-ask', 77);
+        $response = $runtime->process('Make the vision dashboard', $context, [
+            'proactive' => true,
+            'required_tool_evidence' => ['lookup_customer'],
+            'require_tool_evidence_before_ask' => true,
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('The requested outcome is ready.', $response->message);
+        $this->assertSame('Vision brief', $toolLog['lookup_customer'][0]['query']);
+        $this->assertSame('ask_before_required_tool_evidence', $context->metadata['ai_native']['runtime_feedback'][0]['reason']);
+        $this->assertSame(['lookup_customer'], $context->metadata['ai_native']['runtime_feedback'][0]['required_tools']);
+    }
+
     public function test_skill_final_payload_cannot_bypass_required_final_tool_when_ai_returns_final(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 3);
