@@ -68,8 +68,8 @@ class DesignSystemResolverTest extends UnitTestCase
 
         $design = $resolver->resolve('Our vision, mission, and values page for an engineering company');
 
-        $this->assertNotSame('Spatial Computing OS / App', $design->category);
-        $this->assertNotSame('Spatial UI (VisionOS)', $design->style['name']);
+        $this->assertSame('General', $design->category);
+        $this->assertNotContains($design->style['name'], ['Spatial UI (VisionOS)', 'Vibrant & Block-based']);
     }
 
     public function test_explicit_visionos_spatial_brief_still_resolves_spatial_ui(): void
@@ -77,6 +77,16 @@ class DesignSystemResolverTest extends UnitTestCase
         $resolver = app(DesignSystemResolver::class);
 
         $design = $resolver->resolve('VisionOS spatial computing immersive app');
+
+        $this->assertSame('Spatial Computing OS / App', $design->category);
+        $this->assertSame('Spatial UI (VisionOS)', $design->style['name']);
+    }
+
+    public function test_natural_apple_vision_pro_phrase_still_resolves_spatial_ui(): void
+    {
+        $resolver = app(DesignSystemResolver::class);
+
+        $design = $resolver->resolve('Design an Apple Vision Pro app');
 
         $this->assertSame('Spatial Computing OS / App', $design->category);
         $this->assertSame('Spatial UI (VisionOS)', $design->style['name']);

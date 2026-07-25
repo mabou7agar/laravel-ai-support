@@ -16,6 +16,31 @@ use LaravelAIEngine\DTOs\DesignSystem;
  */
 class DesignSystemResolver
 {
+    /**
+     * Brief nouns that describe a page-writing request, not the customer's
+     * product category. A single overlap on one of these must never select a
+     * domain row (for example "our vision page" => VisionOS or Link-in-Bio).
+     *
+     * @var array<int, string>
+     */
+    private const LOW_SIGNAL_PRODUCT_TERMS = [
+        'app',
+        'application',
+        'business',
+        'company',
+        'mission',
+        'page',
+        'platform',
+        'product',
+        'service',
+        'site',
+        'system',
+        'tool',
+        'values',
+        'vision',
+        'website',
+    ];
+
     /** @var array<int, array<string, string>>|null */
     private ?array $reasoning = null;
 
@@ -28,22 +53,26 @@ class DesignSystemResolver
         $query = trim($query);
 
         // 1. Product category.
-        $productMatches = $this->knowledge->search('product', $query, 1);
-        $category = $productMatches[0]['Product Type'] ?? 'General';
+        $productMatches = $this->knowledge->search('product', implode(' ', $this->evidenceTokens($query)), 5);
+        $product = $this->selectGroundedProduct($query, $productMatches);
+        $category = $product['Product Type'] ?? 'General';
 
         // 2. Reasoning rules for the category.
         $reasoning = $this->applyReasoning($category);
         $stylePriority = $reasoning['style_priority'];
 
         // 3. Domain searches, biasing the style search with priority hints.
+        $groundedQuery = $category !== 'General'
+            ? $query
+            : 'minimalism flat design';
         $styleQuery = $stylePriority !== []
-            ? trim($query . ' ' . implode(' ', array_slice($stylePriority, 0, 2)))
-            : $query;
+            ? trim($groundedQuery . ' ' . implode(' ', array_slice($stylePriority, 0, 2)))
+            : $groundedQuery;
 
         $styleResults = $this->knowledge->search('style', $styleQuery, 3);
-        $colorResults = $this->knowledge->search('color', $query, 2);
-        $typographyResults = $this->knowledge->search('typography', $query, 2);
-        $landingResults = $this->knowledge->search('landing', $query, 2);
+        $colorResults = $this->knowledge->search('color', $groundedQuery, 2);
+        $typographyResults = $this->knowledge->search('typography', $groundedQuery, 2);
+        $landingResults = $this->knowledge->search('landing', $groundedQuery, 2);
 
         // 4. Best matches.
         $bestStyle = $this->selectBestStyle($styleResults, $stylePriority);
@@ -101,6 +130,69 @@ class DesignSystemResolver
             decisionRules: $reasoning['decision_rules'],
             severity: $reasoning['severity'],
         );
+    }
+
+    /**
+     * Select the first BM25 candidate supported by at least one meaningful
+     * domain token. Query bigrams/trigrams are included so natural phrases
+     * such as "Apple Vision Pro" match compact dataset terms like
+     * "applevision" / "visionpro" without making bare "vision" decisive.
+     *
+     * @param array<int, array<string, string>> $matches
+     * @return array<string, string>
+     */
+    private function selectGroundedProduct(string $query, array $matches): array
+    {
+        $querySignals = array_diff($this->evidenceTokens($query), self::LOW_SIGNAL_PRODUCT_TERMS);
+        if ($querySignals === []) {
+            return [];
+        }
+
+        foreach ($matches as $match) {
+            $candidate = implode(' ', [
+                (string) ($match['Product Type'] ?? ''),
+                (string) ($match['Keywords'] ?? ''),
+            ]);
+            $candidateSignals = array_diff($this->evidenceTokens($candidate), self::LOW_SIGNAL_PRODUCT_TERMS);
+            if (array_intersect($querySignals, $candidateSignals) !== []) {
+                return $match;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function evidenceTokens(string $text): array
+    {
+        $tokens = $this->tokens($text);
+        $evidence = $tokens;
+        $count = count($tokens);
+        for ($index = 0; $index < $count - 1; $index++) {
+            $evidence[] = $tokens[$index] . $tokens[$index + 1];
+            if ($index < $count - 2) {
+                $evidence[] = $tokens[$index] . $tokens[$index + 1] . $tokens[$index + 2];
+            }
+        }
+
+        return array_values(array_unique($evidence));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function tokens(string $text): array
+    {
+        $text = mb_strtolower($text);
+        $text = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $text) ?? $text;
+        $tokens = preg_split('/\s+/u', trim($text)) ?: [];
+
+        return array_values(array_unique(array_filter(
+            $tokens,
+            static fn (string $token): bool => mb_strlen($token) > 2,
+        )));
     }
 
     /**
