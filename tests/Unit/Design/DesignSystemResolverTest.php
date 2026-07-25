@@ -61,4 +61,24 @@ class DesignSystemResolverTest extends UnitTestCase
         $this->assertNotSame($saas->colors['primary'], $ecommerce->colors['primary']);
         $this->assertMatchesRegularExpression('/^#[0-9A-Fa-f]{6}$/', $ecommerce->colors['primary']);
     }
+
+    public function test_business_vision_copy_does_not_resolve_as_visionos(): void
+    {
+        $resolver = app(DesignSystemResolver::class);
+
+        $design = $resolver->resolve('Our vision, mission, and values page for an engineering company');
+
+        $this->assertNotSame('Spatial Computing OS / App', $design->category);
+        $this->assertNotSame('Spatial UI (VisionOS)', $design->style['name']);
+    }
+
+    public function test_explicit_visionos_spatial_brief_still_resolves_spatial_ui(): void
+    {
+        $resolver = app(DesignSystemResolver::class);
+
+        $design = $resolver->resolve('VisionOS spatial computing immersive app');
+
+        $this->assertSame('Spatial Computing OS / App', $design->category);
+        $this->assertSame('Spatial UI (VisionOS)', $design->style['name']);
+    }
 }
