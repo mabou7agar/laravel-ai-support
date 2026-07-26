@@ -519,12 +519,34 @@ class AiNativeRuntime
             return null;
         }
 
-        if ((int) ($state['turn_outcome_count'] ?? 0) !== 1 || !is_array($state['last_turn_outcome'] ?? null)) {
+        if (!is_array($state['last_turn_outcome'] ?? null)) {
             return null;
         }
 
         $outcome = $state['last_turn_outcome'];
         if (($outcome['success'] ?? false) !== true || ($outcome['needs_user_input'] ?? false) === true) {
+            return null;
+        }
+
+        $allowedTools = array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($options['auto_finalize_tools'] ?? [])
+        )));
+
+        // Some host workflows define a successful allowlisted tool call as the
+        // complete turn boundary. This is stronger than the heuristic fast path
+        // below: read/inspect calls may precede the terminal mutation, and the
+        // model's task frame may still say "working" even though the tool already
+        // produced the requested preview. Hosts must opt in explicitly and supply
+        // a non-empty allowlist, so ordinary multi-tool workflows are unchanged.
+        if (!empty($options['auto_finalize_on_tool_success'])
+            && $allowedTools !== []
+            && in_array((string) ($outcome['tool'] ?? ''), $allowedTools, true)
+        ) {
+            return $this->finalizeSuccessfulToolOutcome($context, $state, $options, $outcome);
+        }
+
+        if ((int) ($state['turn_outcome_count'] ?? 0) !== 1) {
             return null;
         }
 
@@ -545,14 +567,24 @@ class AiNativeRuntime
             return null;
         }
 
-        $allowedTools = array_values(array_filter(array_map(
-            static fn (mixed $tool): string => trim((string) $tool),
-            (array) ($options['auto_finalize_tools'] ?? [])
-        )));
         if ($allowedTools !== [] && !in_array((string) ($outcome['tool'] ?? ''), $allowedTools, true)) {
             return null;
         }
 
+        return $this->finalizeSuccessfulToolOutcome($context, $state, $options, $outcome);
+    }
+
+    /**
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $outcome
+     */
+    private function finalizeSuccessfulToolOutcome(
+        UnifiedActionContext $context,
+        array &$state,
+        array $options,
+        array $outcome,
+    ): AgentResponse {
         $closing = trim((string) ($options['auto_finalize_message'] ?? ''));
         if ($closing === '') {
             $closing = $this->runtimeText('ai-engine::runtime.responses.completed_without_summary', 'Done — the requested action completed successfully.');

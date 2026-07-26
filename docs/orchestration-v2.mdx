@@ -35,6 +35,21 @@ AI_AGENT_AI_NATIVE_SKILLS=true
 
 Expose concrete application tools, such as `find_customer`, `create_customer`, `find_product`, and `create_invoice`. The old action-draft workflow tools are no longer registered by the package.
 
+### Host-defined terminal tools
+
+Some application flows define the first successful call to a particular tool as the complete turn boundary—for example, a UI that requests exactly one generated preview. Opt in per request with an explicit allowlist:
+
+```php
+$response = $runtime->process($message, $sessionId, $userId, [
+    'auto_finalize_single_tool' => true,
+    'auto_finalize_on_tool_success' => true,
+    'auto_finalize_tools' => ['generate_preview'],
+    'auto_finalize_message' => 'Preview ready for review.',
+]);
+```
+
+The runtime may execute read/inspection tools first. It finalizes immediately only after a successful allowlisted tool, even if the planner reports additional steps or its task frame still says `working`. Failed calls remain retryable. Always keep the allowlist narrow; without this opt-in, normal multi-tool and repeated lookup workflows are unchanged.
+
 ## Runtime Contract
 
 Custom runtimes implement `LaravelAIEngine\Contracts\AgentRuntimeContract`.

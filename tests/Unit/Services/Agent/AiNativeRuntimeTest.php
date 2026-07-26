@@ -3155,6 +3155,43 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(1, $toolLog['lookup_customer']);
     }
 
+    public function test_host_can_finalize_immediately_after_first_successful_allowlisted_tool(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 5);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_product',
+                'arguments' => ['query' => 'Engineering'],
+                'message' => 'Inspecting the current section.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Generated preview'],
+                'message' => 'Generating the one requested preview.',
+                'steps' => [
+                    'Generate the preview.',
+                    'Generate it again.',
+                ],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Create one preview', new UnifiedActionContext('ai-native-finalize-on-success', 77), [
+            'auto_finalize_single_tool' => true,
+            'auto_finalize_on_tool_success' => true,
+            'auto_finalize_tools' => ['lookup_customer'],
+            'auto_finalize_message' => 'Prepared one preview.',
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('Prepared one preview.', $response->message);
+        $this->assertCount(1, $toolLog['lookup_product']);
+        $this->assertCount(1, $toolLog['lookup_customer']);
+    }
+
     public function test_repeat_guard_ignores_tools_the_host_did_not_declare_single_shot(): void
     {
         // The guard is scoped to the host's auto_finalize_tools list: without
