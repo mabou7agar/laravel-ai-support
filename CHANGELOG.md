@@ -92,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider function/tool call. This restores OpenRouter chat tool calls after
   finish-reason and usage normalization.
 
+### Security
+
+- **Filtered Qdrant searches now fail closed** — a provider/index error can no longer trigger an unfiltered retry. Filtered retrieval returns no results and logs only filter keys, never filter values; unfiltered search behavior remains unchanged.
+
 ## [2.11.15] — 2026-07-22
 
 ### Added
