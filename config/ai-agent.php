@@ -813,6 +813,11 @@ return [
         'ttl_seconds' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_TTL', 3600),
         'max_tokens' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_MAX_TOKENS', 900),
         'temperature' => (float) env('AI_AGENT_STRUCTURED_COLLECTION_TEMPERATURE', 0.1),
+        // Native tools are opt-in to preserve existing prompt-JSON behavior.
+        // The required scope reduces provider schema size while retaining
+        // previously collected fields so users can still correct them.
+        'transport' => env('AI_AGENT_STRUCTURED_COLLECTION_TRANSPORT', 'prompt_json'),
+        'native_field_scope' => env('AI_AGENT_STRUCTURED_COLLECTION_NATIVE_FIELD_SCOPE', 'all'),
         'callback_timeout' => (int) env('AI_AGENT_STRUCTURED_COLLECTION_CALLBACK_TIMEOUT', 10),
         'preview' => [
             'enabled' => (bool) env('AI_AGENT_STRUCTURED_COLLECTION_PREVIEW_ENABLED', false),

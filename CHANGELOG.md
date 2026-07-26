@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.28] — 2026-07-26
+
+### Added
+
+- **Native structured-collection transport** — callers may set
+  `structured_collection_transport` to `native_tools` to force one typed
+  `structured_collection_turn` function call instead of relying on text JSON.
+  The existing `prompt_json` path remains the default, and native gateways
+  returning a JSON text body still parse without a second billable request.
+  Native schemas strip provider-incompatible presentation/format keywords while
+  retaining format guidance, and may be scoped to required and collected fields
+  with `structured_collection_native_field_scope=required`.
+
 ## [2.11.27] — 2026-07-26
 
 ### Added

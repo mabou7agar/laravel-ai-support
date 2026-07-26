@@ -223,6 +223,114 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $this->assertSame(['topology'], $response->metadata['collection']['missing_fields']);
     }
 
+    public function test_native_tool_transport_collects_all_fields_from_function_arguments(): void
+    {
+        $definition = StructuredCollectionDefinition::make('business_setup')
+            ->addText('business_name', required: true)
+            ->addText('business_about', required: true)
+            ->addPhone('phone', required: true)
+            ->addText('tagline');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->with(Mockery::on(function (AIRequest $request): bool {
+                $function = $request->getFunctions()[0] ?? [];
+
+                return ($function['name'] ?? null) === 'structured_collection_turn'
+                    && ($function['parameters']['properties']['business_name']['type'] ?? null) === 'string'
+                    && ! isset($function['parameters']['properties']['phone']['format'])
+                    && ($function['parameters']['properties']['phone']['description'] ?? null) === 'Expected format: phone.'
+                    && ($function['parameters']['properties']['__assistant_message']['type'] ?? null) === 'string'
+                    && !isset($function['parameters']['properties']['tagline'])
+                    && !str_contains($request->getPrompt(), '"tagline"')
+                    && $request->getFunctionCall() === 'required'
+                    && ($request->getMetadata()['structured_collection_transport'] ?? null) === 'native_tools';
+            }))
+            ->andReturn(
+                AIResponse::success('', 'openrouter', 'stepfun/step-3.5-flash')
+                    ->withFunctionCall([
+                        'name' => 'structured_collection_turn',
+                        'arguments' => [
+                            'business_name' => 'ابتسامة',
+                            'business_about' => 'عيادة أسنان',
+                            'phone' => '+201000000000',
+                            '__remove_fields' => [],
+                            '__user_confirmed' => false,
+                            '__user_cancelled' => false,
+                            '__ready_for_confirmation' => true,
+                            '__assistant_message' => 'هل تؤكد البيانات؟',
+                            '__language' => 'ar',
+                        ],
+                    ])
+            );
+        $service = new StructuredCollectionSessionService(
+            $ai,
+            new StructuredCollectionCallbackService(),
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
+        );
+
+        $response = $service->handle('عيادة أسنان اسمها ابتسامة', 'native-collection', null, [
+            'collection' => $definition->toArray(),
+            'engine' => 'openrouter',
+            'model' => 'stepfun/step-3.5-flash',
+            'structured_collection_transport' => 'native_tools',
+            'structured_collection_native_field_scope' => 'required',
+        ]);
+
+        $this->assertNotNull($response);
+        $this->assertSame('awaiting_confirmation', $response->metadata['collection']['status']);
+        $this->assertSame('ابتسامة', $response->metadata['collection']['data']['business_name']);
+        $this->assertSame('عيادة أسنان', $response->metadata['collection']['data']['business_about']);
+        $this->assertSame('+201000000000', $response->metadata['collection']['data']['phone']);
+        $this->assertSame('ar', $response->metadata['collection']['language']);
+    }
+
+    public function test_native_tool_transport_recomputes_the_missing_question_in_the_detected_language(): void
+    {
+        $definition = StructuredCollectionDefinition::make('business_setup')
+            ->addText('business_name', required: true)
+            ->addText('business_about', required: true, description: 'وصف النشاط');
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(
+                AIResponse::success('', 'openrouter', 'mistralai/mistral-small-3.2-24b-instruct')
+                    ->withFunctionCall([
+                        'name' => 'structured_collection_turn',
+                        'arguments' => [
+                            'business_name' => 'ابتسامة',
+                            '__remove_fields' => [],
+                            '__user_confirmed' => false,
+                            '__user_cancelled' => false,
+                            '__ready_for_confirmation' => true,
+                            '__assistant_message' => 'هل تؤكد البيانات؟',
+                            '__language' => 'ar',
+                        ],
+                    ])
+            );
+        $service = new StructuredCollectionSessionService(
+            $ai,
+            new StructuredCollectionCallbackService(),
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
+        );
+
+        $response = $service->handle('اسم النشاط ابتسامة', 'native-missing-question', null, [
+            'collection' => $definition->toArray(),
+            'engine' => 'openrouter',
+            'model' => 'mistralai/mistral-small-3.2-24b-instruct',
+            'structured_collection_transport' => 'native_tools',
+        ]);
+
+        $this->assertNotNull($response);
+        $this->assertSame('collecting', $response->metadata['collection']['status']);
+        $this->assertSame(['business_about'], $response->metadata['collection']['missing_fields']);
+        $this->assertSame('يرجى تقديم وصف النشاط.', $response->getContent());
+    }
+
     public function test_confirmation_turn_does_not_use_ai_message_that_asks_for_optional_fields(): void
     {
         $definition = StructuredCollectionDefinition::make('training_request')
