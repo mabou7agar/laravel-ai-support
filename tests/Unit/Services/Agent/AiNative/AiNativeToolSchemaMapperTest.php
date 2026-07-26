@@ -18,6 +18,10 @@ class AiNativeToolSchemaMapperTest extends UnitTestCase
                 'query' => ['type' => 'string', 'required' => true],
                 'limit' => ['type' => 'integer', 'required' => false],
                 'context' => ['type' => 'mixed', 'required' => false],
+                'value' => [
+                    'type' => ['string', 'number', 'boolean', 'object', 'array', 'null'],
+                    'required' => true,
+                ],
             ],
         ]]);
 
@@ -25,8 +29,12 @@ class AiNativeToolSchemaMapperTest extends UnitTestCase
 
         $this->assertSame('lookup_customer', $lookup['name']);
         $this->assertSame('object', $lookup['parameters']['type']);
-        $this->assertSame(['query'], $lookup['parameters']['required']);
+        $this->assertSame(['query', 'value'], $lookup['parameters']['required']);
         $this->assertSame('string', $lookup['parameters']['properties']['query']['type']);
+        $this->assertSame(
+            ['string', 'number', 'boolean', 'object', 'array', 'null'],
+            $lookup['parameters']['properties']['value']['type'],
+        );
         $this->assertArrayNotHasKey('required', $lookup['parameters']['properties']['query']);
         $this->assertArrayNotHasKey('type', $lookup['parameters']['properties']['context']);
         $this->assertSame(AiNativeToolSchemaMapper::FINAL_TOOL, $definitions[1]['name']);

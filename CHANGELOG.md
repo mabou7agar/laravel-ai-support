@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.26] — 2026-07-26
+
+### Fixed
+
+- **Native-tool union schemas** — JSON Schema `type` arrays such as
+  `['string', 'number', 'boolean', 'null']` are normalized without scalar
+  coercion, allowing host tools with nullable or multi-type parameters to be
+  sent through provider-native function calling.
+
 ## [2.11.25] — 2026-07-26
 
 ### Added

@@ -78,8 +78,28 @@ class AiNativeToolSchemaMapper
      */
     private function normalizeSchema(array $schema): array
     {
-        $type = strtolower((string) ($schema['type'] ?? ''));
-        if ($type === 'mixed' || $type === 'any') {
+        $type = $schema['type'] ?? null;
+        if (is_array($type)) {
+            $types = array_values(array_unique(array_filter(array_map(
+                static fn (mixed $value): string => is_string($value)
+                    ? strtolower(trim($value))
+                    : '',
+                $type,
+            ))));
+
+            if ($types === [] || in_array('mixed', $types, true) || in_array('any', $types, true)) {
+                unset($schema['type']);
+            } else {
+                $schema['type'] = $types;
+            }
+        } elseif (is_string($type)) {
+            $type = strtolower(trim($type));
+            if ($type === '' || $type === 'mixed' || $type === 'any') {
+                unset($schema['type']);
+            } else {
+                $schema['type'] = $type;
+            }
+        } elseif ($type !== null) {
             unset($schema['type']);
         }
 
