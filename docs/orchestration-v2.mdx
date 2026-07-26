@@ -35,6 +35,59 @@ AI_AGENT_AI_NATIVE_SKILLS=true
 
 Expose concrete application tools, such as `find_customer`, `create_customer`, `find_product`, and `create_invoice`. The old action-draft workflow tools are no longer registered by the package.
 
+### Planner transport
+
+The AI-native planner supports two structured transports:
+
+- `prompt_json` keeps the legacy text-only JSON contract and remains the default for backward compatibility.
+- `native_tools` converts registered `AgentTool` parameter definitions to provider JSON Schema and sends them as native functions. The reserved `agent_runtime_final` and `agent_runtime_ask_user` control functions represent terminal and user-input plans.
+- `auto` selects native tools only when the synchronized model registry or an explicit host override reports tool support.
+
+```env
+AI_AGENT_AI_NATIVE_PLANNER_TRANSPORT=auto
+AI_AGENT_AI_NATIVE_TOOL_CHOICE=required
+AI_AGENT_AI_NATIVE_TOOL_FALLBACK=true
+```
+
+The same values can be selected per request:
+
+```php
+$response = $runtime->process($message, $context, [
+    'planner_transport' => 'native_tools',
+    'native_tool_choice' => 'required',
+    'max_tokens' => 5000,
+    'planner_provider_options' => [
+        'reasoning' => [
+            'max_tokens' => 1200,
+            'exclude' => true,
+        ],
+    ],
+]);
+```
+
+`native_tools` is provider-neutral; drivers map the function definitions to their provider payload. If the provider rejects a native-tool request, the runtime retries that planner step once with `prompt_json` by default. Set `planner_transport_fallback` to `false` per request, or `AI_AGENT_AI_NATIVE_TOOL_FALLBACK=false` globally, to fail closed.
+
+Run the model catalog sync before enabling `auto` so current `supported_parameters` are available. For a newly qualified model that is not in the local registry yet, configure a generic capability override:
+
+```php
+'ai_native' => [
+    'model_capabilities' => [
+        'openrouter' => [
+            'vendor/reasoning-flash' => [
+                'supported_parameters' => [
+                    'tools',
+                    'tool_choice',
+                    'reasoning',
+                    'max_tokens',
+                ],
+            ],
+        ],
+    ],
+],
+```
+
+Tool selection and progressive disclosure still apply. In progressive mode, only tools carrying a full parameter schema are sent as native functions; summary-only tools remain discoverable through `find_tools`.
+
 ### Host-defined terminal tools
 
 Some application flows define the first successful call to a particular tool as the complete turn boundary—for example, a UI that requests exactly one generated preview. Opt in per request with an explicit allowlist:

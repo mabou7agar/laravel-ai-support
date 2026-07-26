@@ -646,6 +646,34 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         $this->assertSame('call_123', $response->getMetadata()['tool_calls'][0]['id'] ?? null);
     }
 
+    public function test_openrouter_accepts_required_string_tool_choice(): void
+    {
+        Http::fake([
+            'https://openrouter.ai/api/v1/chat/completions' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => ''],
+                    'finish_reason' => 'tool_calls',
+                ]],
+            ]),
+        ]);
+
+        $request = (new AIRequest(
+            prompt: 'Select one tool.',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-4o-mini'
+        ))->withFunctions([
+            [
+                'name' => 'finish',
+                'description' => 'Finish.',
+                'parameters' => ['type' => 'object', 'properties' => []],
+            ],
+        ], 'required');
+
+        (new OpenRouterEngineDriver(['api_key' => 'or-key']))->generateText($request);
+
+        Http::assertSent(fn ($request): bool => ($request->data()['tool_choice'] ?? null) === 'required');
+    }
+
     public function test_openrouter_generates_chat_audio_output_from_streaming_chunks(): void
     {
         Storage::fake('public');

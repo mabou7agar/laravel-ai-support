@@ -173,7 +173,10 @@ class AIModelCapabilityDetector
         $name = strtolower($modelData['name'] ?? '');
         $id = strtolower($modelData['id'] ?? '');
         $modality = strtolower((string) ($modelData['architecture']['modality'] ?? ''));
-        $supportedParameters = array_values((array) ($modelData['supported_parameters'] ?? []));
+        $supportedParameters = array_values(array_unique(array_map(
+            static fn (mixed $parameter): string => strtolower(trim((string) $parameter)),
+            (array) ($modelData['supported_parameters'] ?? [])
+        )));
         $haystack = trim($name . ' ' . $id . ' ' . $modality . ' ' . strtolower(implode(' ', $supportedParameters)));
 
         if (str_contains($haystack, 'vision') || str_contains($modality, 'image->text') || str_contains($modality, 'image')) {
@@ -205,8 +208,20 @@ class AIModelCapabilityDetector
             $capabilities[] = 'coding';
         }
 
-        if (str_contains($modality, 'text') || in_array('tools', $supportedParameters, true) || in_array('tool_choice', $supportedParameters, true)) {
+        if (in_array('tools', $supportedParameters, true) || in_array('tool_choice', $supportedParameters, true)) {
             $capabilities[] = 'function_calling';
+        }
+
+        if (in_array('response_format', $supportedParameters, true)
+            || in_array('structured_outputs', $supportedParameters, true)
+            || in_array('json_schema', $supportedParameters, true)) {
+            $capabilities[] = 'json_mode';
+        }
+
+        if (in_array('reasoning', $supportedParameters, true)
+            || in_array('include_reasoning', $supportedParameters, true)
+            || str_contains($haystack, 'reasoning')) {
+            $capabilities[] = 'reasoning';
         }
 
         return array_values(array_unique($capabilities));

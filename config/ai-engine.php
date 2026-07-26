@@ -94,6 +94,12 @@ return array_replace_recursive($defaults, [
             // price on cache reads). Ignored for non-Anthropic models.
             'prompt_caching' => (bool) env('OPENROUTER_PROMPT_CACHING', true),
             'default_model' => env('OPENROUTER_DEFAULT_MODEL', data_get($defaults, 'engines.openrouter.default_model')),
+            'catalog_sync' => [
+                'update_existing' => (bool) env(
+                    'OPENROUTER_CATALOG_UPDATE_EXISTING',
+                    data_get($defaults, 'engines.openrouter.catalog_sync.update_existing', true)
+                ),
+            ],
             'cost_optimization' => [
                 'enabled' => env('OPENROUTER_COST_OPTIMIZATION_ENABLED', data_get($defaults, 'engines.openrouter.cost_optimization.enabled', false)),
                 'mode' => env('OPENROUTER_COST_OPTIMIZATION_MODE', data_get($defaults, 'engines.openrouter.cost_optimization.mode', 'free_first')),

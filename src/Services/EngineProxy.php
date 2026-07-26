@@ -167,7 +167,7 @@ class EngineProxy
         return $this;
     }
 
-    public function withFunctionCall(?array $functionCall): self
+    public function withFunctionCall(array|string|null $functionCall): self
     {
         $this->options['function_call'] = $functionCall;
 
@@ -440,7 +440,9 @@ class EngineProxy
             seed: isset($options['seed']) ? (int) $options['seed'] : null,
             metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
             functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
-            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
+            functionCall: is_array($options['function_call'] ?? null) || is_string($options['function_call'] ?? null)
+                ? $options['function_call']
+                : null
         );
     }
 

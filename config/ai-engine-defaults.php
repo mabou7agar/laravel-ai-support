@@ -946,6 +946,12 @@ return [
             'default_model' => env('OPENROUTER_DEFAULT_MODEL', 'meta-llama/llama-3.1-8b-instruct:free'),
             'transforms' => [],
             'route' => null,
+            'catalog_sync' => [
+                // Refresh provider-owned capabilities, pricing, limits, and raw
+                // metadata for existing records. Host labels and activation
+                // choices remain untouched.
+                'update_existing' => true,
+            ],
             'cost_optimization' => [
                 'enabled' => false,
                 'mode' => 'free_first',

@@ -28,7 +28,7 @@ class AIRequest
     private ?int $seed;
     private array $metadata;
     private array $functions;
-    private ?array $functionCall;
+    private array|string|null $functionCall;
 
     public function __construct(
         string $prompt,
@@ -47,7 +47,7 @@ class AIRequest
         ?int $seed = null,
         array $metadata = [],
         array $functions = [],
-        ?array $functionCall = null
+        array|string|null $functionCall = null
     ) {
         $this->prompt = $prompt;
         $engineExplicit = $engine !== null;
@@ -181,7 +181,7 @@ class AIRequest
         return $this->functions;
     }
 
-    public function getFunctionCall(): ?array
+    public function getFunctionCall(): array|string|null
     {
         return $this->functionCall;
     }
@@ -592,7 +592,7 @@ class AIRequest
     /**
      * Set functions for function calling
      */
-    public function withFunctions(array $functions, ?array $functionCall = null): self
+    public function withFunctions(array $functions, array|string|null $functionCall = null): self
     {
         return new self(
             $this->prompt,

@@ -65,6 +65,10 @@ class AgentCoreServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class),
             $app->make(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class)
         ));
+        $app->singleton(\LaravelAIEngine\Services\Agent\AiNative\AiNativeToolSchemaMapper::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AiNative\PromptJsonPlannerTransport::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AiNative\NativeToolPlannerTransport::class);
+        $app->singleton(\LaravelAIEngine\Services\Agent\AiNative\AiNativePlannerTransportResolver::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class),
@@ -72,7 +76,8 @@ class AgentCoreServiceRegistrar
             $app->make(\LaravelAIEngine\Services\Agent\IntentSignalService::class),
             $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativePromptBuilder::class),
             $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativeResponseParser::class),
-            $app->make(\LaravelAIEngine\Services\Agent\AiNative\ToolResultAuthorityService::class)
+            $app->make(\LaravelAIEngine\Services\Agent\AiNative\ToolResultAuthorityService::class),
+            plannerTransportResolver: $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativePlannerTransportResolver::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentIntentUnderstandingService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentIntentUnderstandingService(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),

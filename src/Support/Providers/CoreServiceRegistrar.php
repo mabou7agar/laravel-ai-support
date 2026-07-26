@@ -40,6 +40,7 @@ class CoreServiceRegistrar
 
         $app->singleton(CreditManager::class, fn ($app) => new CreditManager($app));
         $app->singleton(\LaravelAIEngine\Services\AIModelCapabilityDetector::class);
+        $app->singleton(\LaravelAIEngine\Services\ModelCapabilityProfileResolver::class);
         $app->singleton(\LaravelAIEngine\Services\AIModelRecommendationService::class);
         $app->singleton(AIMediaManager::class, fn () => new AIMediaManager());
         $app->singleton(CacheManager::class, fn ($app) => new CacheManager($app));

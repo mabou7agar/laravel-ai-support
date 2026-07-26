@@ -543,7 +543,9 @@ class UnifiedEngineManager
             temperature: isset($options['temperature']) ? (float) $options['temperature'] : null,
             metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
             functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
-            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
+            functionCall: is_array($options['function_call'] ?? null) || is_string($options['function_call'] ?? null)
+                ? $options['function_call']
+                : null
         );
     }
 
@@ -566,7 +568,9 @@ class UnifiedEngineManager
             seed: isset($options['seed']) ? (int) $options['seed'] : null,
             metadata: is_array($options['metadata'] ?? null) ? $options['metadata'] : [],
             functions: is_array($options['functions'] ?? null) ? $options['functions'] : [],
-            functionCall: is_array($options['function_call'] ?? null) ? $options['function_call'] : null
+            functionCall: is_array($options['function_call'] ?? null) || is_string($options['function_call'] ?? null)
+                ? $options['function_call']
+                : null
         );
     }
 

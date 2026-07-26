@@ -123,4 +123,50 @@ class AIModelRegistryOpenAISyncTest extends TestCase
                 && $request->header('Authorization')[0] === 'Key test-fal-key';
         });
     }
+
+    public function test_openrouter_sync_refreshes_provider_owned_capabilities_for_existing_models(): void
+    {
+        Config::set('ai-engine.engines.openrouter.catalog_sync.update_existing', true);
+
+        AIModel::query()->create([
+            'provider' => 'openrouter',
+            'model_id' => 'vendor/reasoning-flash',
+            'name' => 'Host Custom Name',
+            'capabilities' => ['chat'],
+            'supports_function_calling' => false,
+            'supports_json_mode' => true,
+            'is_active' => false,
+        ]);
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/models' => Http::response([
+                'data' => [[
+                    'id' => 'vendor/reasoning-flash',
+                    'name' => 'Provider Name',
+                    'description' => 'Provider description.',
+                    'architecture' => ['modality' => 'text->text'],
+                    'supported_parameters' => ['tools', 'tool_choice', 'reasoning', 'max_tokens'],
+                    'context_length' => 262144,
+                    'top_provider' => ['max_completion_tokens' => 65536],
+                    'pricing' => ['prompt' => '0.0000001', 'completion' => '0.0000003'],
+                ]],
+            ]),
+        ]);
+
+        $result = app(AIModelRegistry::class)->syncOpenRouterModels();
+        $model = AIModel::query()->where('model_id', 'vendor/reasoning-flash')->firstOrFail();
+
+        $this->assertSame(1, $result['updated']);
+        $this->assertSame('Host Custom Name', $model->name);
+        $this->assertFalse($model->is_active);
+        $this->assertTrue($model->supports_function_calling);
+        $this->assertFalse($model->supports_json_mode);
+        $this->assertContains('reasoning', $model->capabilities);
+        $this->assertSame(262144, $model->context_window['input']);
+        $this->assertSame(65536, $model->context_window['output']);
+        $this->assertSame(
+            ['tools', 'tool_choice', 'reasoning', 'max_tokens'],
+            $model->metadata['supported_parameters']
+        );
+    }
 }

@@ -38,6 +38,38 @@ class AIModelCapabilityDetectorTest extends UnitTestCase
         ]));
     }
 
+    public function test_openrouter_capabilities_follow_supported_parameters_instead_of_text_modality(): void
+    {
+        $detector = new AIModelCapabilityDetector();
+
+        $textOnly = $detector->detectOpenRouterCapabilities([
+            'id' => 'vendor/text-only',
+            'name' => 'Text Only',
+            'architecture' => ['modality' => 'text->text'],
+            'supported_parameters' => ['temperature', 'max_tokens'],
+        ]);
+
+        $stepLike = $detector->detectOpenRouterCapabilities([
+            'id' => 'vendor/reasoning-tools',
+            'name' => 'Reasoning Tools',
+            'architecture' => ['modality' => 'text->text'],
+            'supported_parameters' => ['tools', 'tool_choice', 'reasoning', 'max_tokens'],
+        ]);
+
+        $structured = $detector->detectOpenRouterCapabilities([
+            'id' => 'vendor/structured',
+            'name' => 'Structured',
+            'architecture' => ['modality' => 'text->text'],
+            'supported_parameters' => ['response_format'],
+        ]);
+
+        $this->assertNotContains('function_calling', $textOnly);
+        $this->assertContains('function_calling', $stepLike);
+        $this->assertContains('reasoning', $stepLike);
+        $this->assertNotContains('json_mode', $stepLike);
+        $this->assertContains('json_mode', $structured);
+    }
+
     public function test_formats_names_and_versions(): void
     {
         $detector = new AIModelCapabilityDetector();

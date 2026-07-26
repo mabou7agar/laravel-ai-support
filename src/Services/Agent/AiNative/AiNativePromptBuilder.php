@@ -36,6 +36,12 @@ class AiNativePromptBuilder
         // must not have the model auto-chain apply/execute/final tools after
         // a staging tool succeeds — that skips the human.
         $requireHumanApprovals = (bool) ($options['require_human_approvals'] ?? false);
+        $nativeToolTransport = ($options['_planner_transport'] ?? null) === 'native_tools';
+        $nativeParallelTools = $nativeToolTransport && (
+            array_key_exists('parallel_tools', $options)
+                ? (bool) $options['parallel_tools']
+                : (bool) config('ai-agent.ai_native.parallel_tools', false)
+        );
 
         $lines = [
             'AI_NATIVE_AGENT_RUNTIME',
@@ -64,11 +70,17 @@ class AiNativePromptBuilder
             'When a skill has a confirming final tool and the payload is ready, call that final tool. Laravel will pause for confirmation before executing it.',
             'Never invent database IDs, prices, file IDs, or foreign keys. Use IDs only when a previous tool result returned them.',
             'If the user asks to create, update, delete, send, generate, search, or inspect application data, do not return final until a relevant tool result supports the answer or you ask for missing input.',
-            'Return JSON only. No markdown.',
-            'Allowed JSON shapes:',
-            '{"action":"tool_call","tool":"tool_name","arguments":{},"message":"short progress text"}',
-            '{"action":"ask_user","message":"question to user","required_inputs":[],"data":{}}',
-            '{"action":"final","message":"answer to user","data":{}}',
+            $nativeToolTransport
+                ? ($nativeParallelTools
+                    ? 'Native tool transport is active. Return the next step by calling one declared control function, or one or more independent application functions. Use agent_runtime_final for a final answer and agent_runtime_ask_user when user input is required. Never combine a control function with an application function. Do not write the plan as text JSON.'
+                    : 'Native tool transport is active. Return the next step by calling exactly one declared function. Use agent_runtime_final for a final answer and agent_runtime_ask_user when user input is required. Do not write the plan as text JSON.')
+                : 'Return JSON only. No markdown.',
+            ...($nativeToolTransport ? [] : [
+                'Allowed JSON shapes:',
+                '{"action":"tool_call","tool":"tool_name","arguments":{},"message":"short progress text"}',
+                '{"action":"ask_user","message":"question to user","required_inputs":[],"data":{}}',
+                '{"action":"final","message":"answer to user","data":{}}',
+            ]),
             'Available skills JSON:',
             $this->encodeStaticDocuments($this->skillDocuments(), $options),
             $this->progressiveDisclosure($options)
@@ -90,7 +102,7 @@ class AiNativePromptBuilder
             $message,
         ];
 
-        if ($this->exposeReasoning($options)) {
+        if ($this->exposeReasoning($options) && !$nativeToolTransport) {
             // Insert the reasoning instruction right before the "Return JSON only."
             // line so it sits alongside the JSON-shape guidance. Fall back to an
             // append if that anchor line is ever renamed.
@@ -103,7 +115,7 @@ class AiNativePromptBuilder
             }
         }
 
-        if ($this->planTimelineEnabled($options)) {
+        if ($this->planTimelineEnabled($options) && !$nativeToolTransport) {
             // Insert the plan-steps instruction right before the "Return JSON only."
             // line, falling back to an append if that anchor is ever renamed.
             $anchor = array_search('Return JSON only. No markdown.', $lines, true);
@@ -168,10 +180,10 @@ class AiNativePromptBuilder
         // low-temperature planner: it mirrors the "Allowed JSON shapes" examples
         // (which omit these fields) so the model actually emits them every turn.
         $exampleFields = [];
-        if ($this->exposeReasoning($options)) {
+        if ($this->exposeReasoning($options) && !$nativeToolTransport) {
             $exampleFields[] = '"reasoning":"I need to look up the customer before creating the invoice"';
         }
-        if ($this->planTimelineEnabled($options)) {
+        if ($this->planTimelineEnabled($options) && !$nativeToolTransport) {
             $exampleFields[] = '"steps":["Find the customer","Find the products","Create the invoice"]';
         }
         if ($exampleFields !== []) {
@@ -412,6 +424,24 @@ class AiNativePromptBuilder
         return array_values(array_map(
             static fn ($tool): array => $tool->toArray(),
             $tools
+        ));
+    }
+
+    /**
+     * Return the exact full-schema tool roster eligible for native function
+     * calling. Under progressive disclosure, summary-only tools remain deferred
+     * and find_tools is exposed as the recovery path.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     * @return array<int, array<string, mixed>>
+     */
+    public function nativeToolDocuments(string $message, array $state, array $options = []): array
+    {
+        return array_values(array_filter(
+            $this->toolDocuments($message, $state, $options),
+            static fn (array $definition): bool => isset($definition['parameters'])
+                && is_array($definition['parameters'])
         ));
     }
 

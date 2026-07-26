@@ -566,50 +566,32 @@ class AIModelRegistry
             $models = $response->json('data', []);
             $synced = [];
             $newModels = [];
+            $updatedModels = [];
 
             foreach ($models as $modelData) {
                 $modelId = $modelData['id'];
 
                 $existing = AIModel::where('model_id', $modelId)->first();
+                $attributes = $this->openRouterCatalogAttributes($modelData);
 
                 if (!$existing) {
-                    // Extract pricing
-                    $pricing = null;
-                    if (isset($modelData['pricing'])) {
-                        $pricing = [
-                            'input' => (float) ($modelData['pricing']['prompt'] ?? 0),
-                            'output' => (float) ($modelData['pricing']['completion'] ?? 0),
-                        ];
-                    }
-
-                    // Extract context window
-                    $contextWindow = null;
-                    if (isset($modelData['context_length'])) {
-                        $contextWindow = [
-                            'input' => (int) $modelData['context_length'],
-                            'output' => (int) ($modelData['top_provider']['max_completion_tokens'] ?? 4096),
-                        ];
-                    }
-
                     $model = AIModel::create([
                         'provider' => 'openrouter',
                         'model_id' => $modelId,
                         'name' => $modelData['name'] ?? $this->formatModelName($modelId),
                         'description' => $modelData['description'] ?? 'OpenRouter model',
-                        'capabilities' => $this->detectOpenRouterCapabilities($modelData),
-                        'context_window' => $contextWindow,
-                        'pricing' => $pricing,
-                        'supports_streaming' => true,
-                        'supports_vision' => str_contains(strtolower($modelData['name'] ?? ''), 'vision')
-                            || str_contains(strtolower($modelId), 'vision'),
-                        'supports_function_calling' => isset($modelData['architecture']['modality'])
-                            && str_contains($modelData['architecture']['modality'], 'text'),
                         'is_active' => true,
                         'released_at' => now(),
-                        'metadata' => $modelData,
-                    ]);
+                    ] + $attributes);
+                    $model->clearCache();
 
                     $newModels[] = $modelId;
+                } elseif ((bool) config('ai-engine.engines.openrouter.catalog_sync.update_existing', true)) {
+                    // Refresh provider-owned technical fields while preserving host
+                    // labels, descriptions, release state, and activation choices.
+                    $existing->update($attributes);
+                    $existing->clearCache();
+                    $updatedModels[] = $modelId;
                 }
 
                 $synced[] = $modelId;
@@ -620,6 +602,8 @@ class AIModelRegistry
                 'total' => count($synced),
                 'new' => count($newModels),
                 'new_models' => $newModels,
+                'updated' => count($updatedModels),
+                'updated_models' => $updatedModels,
             ];
 
         } catch (\Exception $e) {
@@ -629,6 +613,46 @@ class AIModelRegistry
 
             return ['error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Provider-owned fields that are safe to refresh during catalog sync.
+     *
+     * @param array<string, mixed> $modelData
+     * @return array<string, mixed>
+     */
+    protected function openRouterCatalogAttributes(array $modelData): array
+    {
+        $capabilities = $this->detectOpenRouterCapabilities($modelData);
+        $supportedParameters = array_values(array_unique(array_map(
+            static fn (mixed $parameter): string => strtolower(trim((string) $parameter)),
+            (array) ($modelData['supported_parameters'] ?? [])
+        )));
+        $pricing = isset($modelData['pricing'])
+            ? [
+                'input' => (float) ($modelData['pricing']['prompt'] ?? 0),
+                'output' => (float) ($modelData['pricing']['completion'] ?? 0),
+            ]
+            : null;
+        $contextWindow = isset($modelData['context_length'])
+            ? [
+                'input' => (int) $modelData['context_length'],
+                'output' => (int) ($modelData['top_provider']['max_completion_tokens'] ?? 4096),
+            ]
+            : null;
+
+        return [
+            'capabilities' => $capabilities,
+            'context_window' => $contextWindow,
+            'pricing' => $pricing,
+            'supports_streaming' => true,
+            'supports_vision' => in_array('vision', $capabilities, true),
+            'supports_function_calling' => in_array('function_calling', $capabilities, true),
+            'supports_json_mode' => in_array('json_mode', $capabilities, true)
+                || in_array('response_format', $supportedParameters, true)
+                || in_array('structured_outputs', $supportedParameters, true),
+            'metadata' => $modelData,
+        ];
     }
 
     /**

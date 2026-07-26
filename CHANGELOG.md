@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.25] — 2026-07-26
+
+### Added
+
+- **Capability-aware AI-native planner transports** — the runtime now supports
+  the backward-compatible `prompt_json` transport, provider-native
+  `native_tools`, and capability-driven `auto` selection. Native planning
+  exposes registered application tools plus structured final-answer and
+  user-input control functions.
+- **Provider-neutral model capability profiles** — synchronized catalog
+  metadata and host overrides now describe native tools, tool choice,
+  structured output, and reasoning support without model-specific runtime
+  branches.
+- **Native-tool telemetry and fail-soft fallback** — planner activity includes
+  requested/effective transport and capability source. A rejected native-tool
+  request can retry once through the legacy prompt contract.
+
+### Changed
+
+- **OpenRouter catalog refresh** — sync now refreshes provider-owned
+  capabilities, pricing, context limits, and metadata for existing records
+  while preserving host labels and activation choices.
+- **Function-call selection DTO support** — `AIRequest` accepts string choices
+  such as `auto` and `required` in addition to explicit function selectors.
+
+### Fixed
+
+- **OpenRouter capability detection** — text-only models are no longer
+  classified as function-calling unless their supported parameters advertise
+  tools. JSON-mode and reasoning capabilities are detected independently.
+
 ## [2.11.22] — 2026-07-26
 
 ### Added

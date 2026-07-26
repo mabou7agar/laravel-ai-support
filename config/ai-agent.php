@@ -243,6 +243,27 @@ return [
         ],
         'max_tokens' => (int) env('AI_AGENT_AI_NATIVE_MAX_TOKENS', 1200),
         'temperature' => (float) env('AI_AGENT_AI_NATIVE_TEMPERATURE', 0.1),
+        'planner_transport' => [
+            // prompt_json: legacy text JSON planner contract (default / BC).
+            // native_tools: expose application tools as provider-native functions.
+            // auto: use synchronized/overridden model capabilities to choose.
+            'mode' => env('AI_AGENT_AI_NATIVE_PLANNER_TRANSPORT', 'prompt_json'),
+            // OpenAI-compatible providers accept auto, none, required, or a
+            // provider-specific function selector object.
+            'native_tool_choice' => env('AI_AGENT_AI_NATIVE_TOOL_CHOICE', 'auto'),
+            // If a provider rejects native tools, retry that planner step once
+            // with the legacy prompt contract.
+            'fallback_to_prompt' => (bool) env('AI_AGENT_AI_NATIVE_TOOL_FALLBACK', true),
+            // Generic provider payload merged into planner requests. Example:
+            // ['reasoning' => ['max_tokens' => 1200, 'exclude' => true]]
+            'provider_options' => [],
+        ],
+        // Optional host overrides for models not yet present in the synchronized
+        // registry. Shape:
+        // ['openrouter' => ['vendor/model' => [
+        //     'supported_parameters' => ['tools', 'tool_choice', 'reasoning'],
+        // ]]]
+        'model_capabilities' => [],
         // Surface planner reasoning: when ON, the planner prompt asks the model to
         // include an optional "reasoning":"<one short sentence>" field in its JSON
         // plan, which is accumulated per turn into AgentResponse

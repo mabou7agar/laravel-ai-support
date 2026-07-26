@@ -8,6 +8,8 @@ use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\Agent\ConversationContextCompactor;
@@ -15,6 +17,8 @@ use LaravelAIEngine\Services\Agent\IntentSignalService;
 use LaravelAIEngine\Services\Agent\Tools\AgentTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\Services\AIEngineService;
+use LaravelAIEngine\Services\AIModelCapabilityDetector;
+use LaravelAIEngine\Services\ModelCapabilityProfileResolver;
 use Throwable;
 
 class AiNativeRuntime
@@ -40,6 +44,7 @@ class AiNativeRuntime
     private AiNativePendingConfirmationHandler $pendingConfirmationHandler;
     private AiNativeConfirmationIntent $confirmationIntent;
     private AiNativeParallelToolCallHandler $parallelHandler;
+    private AiNativePlannerTransportResolver $plannerTransportResolver;
     private ?ConversationContextCompactor $compactor;
 
     public function __construct(
@@ -66,7 +71,8 @@ class AiNativeRuntime
         ?AiNativePendingConfirmationHandler $pendingConfirmationHandler = null,
         ?AiNativeAskUserConfirmationHandler $askUserConfirmationHandler = null,
         ?ConversationContextCompactor $compactor = null,
-        ?AiNativeParallelToolCallHandler $parallelHandler = null
+        ?AiNativeParallelToolCallHandler $parallelHandler = null,
+        ?AiNativePlannerTransportResolver $plannerTransportResolver = null
     ) {
         $this->compactor = $compactor;
         $this->promptBuilder = $promptBuilder ?? new AiNativePromptBuilder($tools, $skills);
@@ -135,6 +141,15 @@ class AiNativeRuntime
             $this->toolCallHandler,
             $this->stateStore,
             $this->responses
+        );
+        $this->plannerTransportResolver = $plannerTransportResolver ?? new AiNativePlannerTransportResolver(
+            new PromptJsonPlannerTransport($this->parser),
+            new NativeToolPlannerTransport(
+                $this->promptBuilder,
+                new AiNativeToolSchemaMapper(),
+                $this->parser
+            ),
+            new ModelCapabilityProfileResolver(new AIModelCapabilityDetector())
         );
     }
 
@@ -652,6 +667,14 @@ class AiNativeRuntime
         $maxTokens = (int) ($options['max_tokens'] ?? config('ai-agent.ai_native.max_tokens', 1200));
         $temperature = (float) ($options['temperature'] ?? config('ai-agent.ai_native.temperature', 0.1));
         $redactedState = $this->stateStore->redactedState($state);
+        $engineKey = $engine instanceof EngineEnum ? $engine->value : (string) $engine;
+        $modelKey = $model instanceof EntityEnum ? $model->value : (string) $model;
+        $selection = $this->plannerTransportResolver->resolve($engineKey, $modelKey, $options);
+        $transport = $selection->transport;
+        $transportOptions = array_replace($options, [
+            '_planner_transport' => $transport->name(),
+            '_planner_supports_tool_choice' => $selection->profile?->supportsToolChoice(),
+        ]);
         $prompt = '';
         $systemPrompt = '';
         $bodyPrompt = '';
@@ -664,7 +687,7 @@ class AiNativeRuntime
                 // stays in the user message. The Anthropic driver marks the system block
                 // cache_control: ephemeral. `system . "\n\n" . body` equals build() byte-for-byte,
                 // so the model sees the same content — only the role boundary changes.
-                $parts = $this->promptBuilder->buildParts($message, $context, $redactedState, $options);
+                $parts = $this->promptBuilder->buildParts($message, $context, $redactedState, $transportOptions);
                 $systemPrompt = $parts['system'];
                 $bodyPrompt = $parts['body'];
                 $prompt = $systemPrompt !== '' ? $systemPrompt . "\n\n" . $bodyPrompt : $bodyPrompt;
@@ -679,7 +702,7 @@ class AiNativeRuntime
             } else {
                 // OpenAI (default) and others already cache the longest common prompt prefix
                 // automatically; keep the single-message prompt unchanged.
-                $prompt = $this->promptBuilder->build($message, $context, $redactedState, $options);
+                $prompt = $this->promptBuilder->build($message, $context, $redactedState, $transportOptions);
                 $bodyPrompt = $prompt;
                 $request = new AIRequest(
                     prompt: $prompt,
@@ -691,12 +714,22 @@ class AiNativeRuntime
                 );
             }
 
+            $request = $transport->prepare($request, $message, $redactedState, $transportOptions);
+            $providerOptions = (array) (
+                $options['planner_provider_options']
+                ?? config('ai-agent.ai_native.planner_transport.provider_options', [])
+            );
+            if ($providerOptions !== []) {
+                $request = $request->withProviderOptions($providerOptions, $engineKey);
+            }
+
             $this->notifyActivity($options, 'model_request', [
                 'step' => $step,
                 'engine' => (string) $engine,
                 'model' => (string) $model,
                 'max_tokens' => $maxTokens,
                 'temperature' => $temperature,
+                'planner_transport' => $selection->telemetry(),
                 'prompt' => $this->promptDiagnostics($prompt, $systemPrompt, $bodyPrompt, $context, $options),
             ]);
 
@@ -710,7 +743,22 @@ class AiNativeRuntime
                 'exception' => $exception::class,
                 'error_bytes' => strlen($exception->getMessage()),
                 'error_fingerprint' => substr(hash('sha256', $exception::class . '|' . $exception->getMessage()), 0, 16),
+                'planner_transport' => $selection->telemetry(),
             ]);
+
+            if ($this->shouldFallbackPlannerTransport($selection, $options)) {
+                $this->notifyActivity($options, 'model_transport_fallback', [
+                    'step' => $step,
+                    'from' => 'native_tools',
+                    'to' => 'prompt_json',
+                    'reason' => 'provider_exception',
+                ]);
+
+                return $this->nextPlan($message, $context, $state, array_replace($options, [
+                    'planner_transport' => 'prompt_json',
+                    '_planner_transport_fallback_attempted' => true,
+                ]), $step);
+            }
 
             return [
                 'action' => 'ask_user',
@@ -730,13 +778,47 @@ class AiNativeRuntime
             'cached' => $response->getCached(),
             'finish_reason' => $response->getFinishReason(),
             'response_bytes' => strlen($response->getContent()),
+            'planner_transport' => $selection->telemetry(),
+            'native_function_call' => $response->getFunctionCall() !== null,
         ]);
 
         if (!$response->isSuccessful()) {
+            if ($this->shouldFallbackPlannerTransport($selection, $options)) {
+                $this->notifyActivity($options, 'model_transport_fallback', [
+                    'step' => $step,
+                    'from' => 'native_tools',
+                    'to' => 'prompt_json',
+                    'reason' => 'provider_error_response',
+                ]);
+
+                return $this->nextPlan($message, $context, $state, array_replace($options, [
+                    'planner_transport' => 'prompt_json',
+                    '_planner_transport_fallback_attempted' => true,
+                ]), $step);
+            }
+
             return ['action' => 'ask_user', 'message' => $response->getError() ?? $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.')];
         }
 
-        return $this->parser->parse($response->getContent());
+        return $transport->parse($response);
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function shouldFallbackPlannerTransport(
+        \LaravelAIEngine\DTOs\AiNativePlannerTransportSelection $selection,
+        array $options
+    ): bool {
+        if ($selection->transport->name() !== 'native_tools'
+            || (bool) ($options['_planner_transport_fallback_attempted'] ?? false)) {
+            return false;
+        }
+
+        return (bool) (
+            $options['planner_transport_fallback']
+            ?? config('ai-agent.ai_native.planner_transport.fallback_to_prompt', true)
+        );
     }
 
     /**
