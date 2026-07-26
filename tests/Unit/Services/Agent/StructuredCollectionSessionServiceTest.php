@@ -156,6 +156,73 @@ class StructuredCollectionSessionServiceTest extends UnitTestCase
         $this->assertSame('select', $response->metadata['collection']['fields'][0]['ui']);
     }
 
+    public function test_canonical_enum_controls_are_collected_without_ai(): void
+    {
+        $definition = StructuredCollectionDefinition::make('site_setup')
+            ->addSelect('topology', [
+                ['value' => 'recommended', 'label' => 'Recommend for me'],
+                ['value' => 'single_page', 'label' => 'One page'],
+            ], required: true)
+            ->addMultiSelect('selected_features', [
+                ['value' => 'none', 'label' => 'No additional content'],
+                ['value' => 'blog', 'label' => 'Blog'],
+            ], required: true);
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldNotReceive('generate');
+        $service = new StructuredCollectionSessionService(
+            $ai,
+            new StructuredCollectionCallbackService(),
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
+        );
+
+        $first = $service->handle('topology: recommended', 'canonical-controls', null, [
+            'collection' => $definition->toArray(),
+        ]);
+
+        $this->assertNotNull($first);
+        $this->assertSame('collecting', $first->metadata['collection']['status']);
+        $this->assertSame('recommended', $first->metadata['collection']['data']['topology']);
+        $this->assertSame(['selected_features'], $first->metadata['collection']['missing_fields']);
+
+        $second = $service->handle('selected_features: none', 'canonical-controls', null, []);
+
+        $this->assertNotNull($second);
+        $this->assertSame('awaiting_confirmation', $second->metadata['collection']['status']);
+        $this->assertSame(['none'], $second->metadata['collection']['data']['selected_features']);
+        $this->assertSame([], $second->metadata['collection']['missing_fields']);
+    }
+
+    public function test_invalid_schema_qualified_enum_value_falls_back_to_ai(): void
+    {
+        $definition = StructuredCollectionDefinition::make('site_setup')
+            ->addSelect('topology', ['recommended', 'single_page'], required: true);
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn(AIResponse::success(json_encode([
+                'data_patch' => [],
+                'assistant_message' => 'Choose a valid topology.',
+                'language' => 'en',
+            ], JSON_THROW_ON_ERROR), 'openai', 'gpt-4o-mini'));
+        $service = new StructuredCollectionSessionService(
+            $ai,
+            new StructuredCollectionCallbackService(),
+            new StructuredCollectionFieldPresenter(),
+            new StructuredCollectionPreviewRenderer()
+        );
+
+        $response = $service->handle('topology: unsupported', 'invalid-control', null, [
+            'collection' => $definition->toArray(),
+        ]);
+
+        $this->assertNotNull($response);
+        $this->assertSame([], $response->metadata['collection']['data']);
+        $this->assertSame(['topology'], $response->metadata['collection']['missing_fields']);
+    }
+
     public function test_confirmation_turn_does_not_use_ai_message_that_asks_for_optional_fields(): void
     {
         $definition = StructuredCollectionDefinition::make('training_request')

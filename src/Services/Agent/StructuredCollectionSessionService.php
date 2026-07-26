@@ -48,7 +48,12 @@ class StructuredCollectionSessionService
             $definition = StructuredCollectionDefinition::fromArray((array) ($state['definition'] ?? []));
         }
 
-        $turn = $this->askAI($message, $state, $definition, $options);
+        // UI controls can submit canonical schema values as `field: value`.
+        // These values need no probabilistic extraction: accepting them
+        // locally avoids a model call and prevents smaller models from
+        // returning a scalar for multiselect fields.
+        $turn = $this->deterministicEnumTurn($message, $definition)
+            ?? $this->askAI($message, $state, $definition, $options);
         $state = $this->applyTurn($state, $turn);
 
         if (!empty($turn['user_cancelled'])) {
@@ -218,6 +223,85 @@ PROMPT;
         $state['updated_at'] = now()->toIso8601String();
 
         return $state;
+    }
+
+    /**
+     * Resolve an exact schema-qualified enum response without invoking AI.
+     *
+     * Supported wire forms:
+     * - `field: canonical_value`
+     * - `field: value_one,value_two` for enum arrays
+     * - `field: ["value_one","value_two"]` for enum arrays
+     *
+     * Free text, labels, unknown fields, and invalid values deliberately fall
+     * through to the configured model, preserving existing behavior.
+     */
+    protected function deterministicEnumTurn(
+        string $message,
+        StructuredCollectionDefinition $definition
+    ): ?array {
+        if (!preg_match('/\A([A-Za-z][A-Za-z0-9_-]{0,127})\s*:\s*(.+?)\s*\z/us', trim($message), $matches)) {
+            return null;
+        }
+
+        $field = $matches[1];
+        $rawValue = trim($matches[2]);
+        $property = $definition->properties()[$field] ?? null;
+        if (!is_array($property) || $rawValue === '') {
+            return null;
+        }
+
+        $type = $property['type'] ?? null;
+        if ($type === 'array') {
+            $allowed = array_values(array_map('strval', (array) ($property['items']['enum'] ?? [])));
+            $values = $this->deterministicEnumArrayValues($rawValue, $allowed);
+
+            return $values === null ? null : ['data_patch' => [$field => $values]];
+        }
+
+        $allowed = array_values(array_map('strval', (array) ($property['enum'] ?? [])));
+        if ($allowed === [] || !in_array($rawValue, $allowed, true)) {
+            return null;
+        }
+
+        return ['data_patch' => [$field => $rawValue]];
+    }
+
+    /**
+     * @param list<string> $allowed
+     * @return list<string>|null
+     */
+    protected function deterministicEnumArrayValues(string $rawValue, array $allowed): ?array
+    {
+        if ($allowed === []) {
+            return null;
+        }
+        if (in_array($rawValue, $allowed, true)) {
+            return [$rawValue];
+        }
+
+        $decoded = json_decode($rawValue, true);
+        $values = is_array($decoded)
+            ? $decoded
+            : preg_split('/\s*,\s*/u', $rawValue, -1, PREG_SPLIT_NO_EMPTY);
+        if (!is_array($values) || $values === []) {
+            return null;
+        }
+
+        $normalized = [];
+        foreach ($values as $value) {
+            if (!is_scalar($value)) {
+                return null;
+            }
+            $value = trim((string) $value);
+            if ($value === '') {
+                return null;
+            }
+            $normalized[] = $value;
+        }
+        $values = array_values(array_unique($normalized));
+
+        return array_diff($values, $allowed) === [] ? $values : null;
     }
 
     protected function response(

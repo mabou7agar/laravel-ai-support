@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.27] — 2026-07-26
+
+### Added
+
+- **Deterministic structured-collection controls** — exact canonical enum
+  responses such as `topology: single_page` and multiselect responses such as
+  `features: blog,events` are applied from the declared schema without an AI
+  request. Unknown fields, labels, and invalid values continue through the
+  existing model extraction path for backward compatibility.
+
 ## [2.11.26] — 2026-07-26
 
 ### Fixed
