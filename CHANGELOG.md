@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.22] — 2026-07-26
+
+### Added
+
+- **Per-request prompt tool roster** — callers may pass
+  `tool_selection.exposed_tools` to bound the tools documented in one AI-native
+  planner prompt without changing the global selector. Progressive disclosure
+  still exposes `find_tools` as the recovery path for unexpected capabilities.
+
 ## [2.11.21] — 2026-07-26
 
 ### Added

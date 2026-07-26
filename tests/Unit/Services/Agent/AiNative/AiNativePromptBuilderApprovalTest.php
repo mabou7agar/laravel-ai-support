@@ -86,6 +86,49 @@ class AiNativePromptBuilderApprovalTest extends UnitTestCase
         $this->assertStringNotContainsString('UNIQUE_PARAM_MARKER', $prompt);
     }
 
+    public function test_per_request_exposed_tools_bounds_the_prompt_roster(): void
+    {
+        $paint = Mockery::mock(\LaravelAIEngine\Services\Agent\Tools\AgentTool::class);
+        $paint->shouldReceive('getName')->andReturn('paint_wall');
+        $paint->shouldReceive('getDescription')->andReturn('Paint a wall.');
+        $paint->shouldReceive('toArray')->andReturn([
+            'name' => 'paint_wall',
+            'description' => 'Paint a wall.',
+            'parameters' => [],
+        ]);
+
+        $invoice = Mockery::mock(\LaravelAIEngine\Services\Agent\Tools\AgentTool::class);
+        $invoice->shouldReceive('getName')->andReturn('create_invoice');
+        $invoice->shouldReceive('getDescription')->andReturn('Create an invoice.');
+        $invoice->shouldReceive('toArray')->andReturn([
+            'name' => 'create_invoice',
+            'description' => 'Create an invoice.',
+            'parameters' => [],
+        ]);
+
+        $tools = Mockery::mock(ToolRegistry::class);
+        $tools->shouldReceive('all')->andReturn([
+            'paint_wall' => $paint,
+            'create_invoice' => $invoice,
+        ]);
+        $tools->shouldReceive('has')->andReturn(false);
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+        $snapshots = Mockery::mock(AgentContextSnapshotBuilder::class);
+        $snapshots->shouldReceive('build')->andReturn([]);
+
+        $prompt = (new AiNativePromptBuilder($tools, $skills, $snapshots))->build(
+            'paint the wall',
+            new UnifiedActionContext(sessionId: 't'),
+            [],
+            ['tool_selection' => ['exposed_tools' => ['paint_wall']]],
+        );
+
+        $this->assertStringContainsString('paint_wall', $prompt);
+        $this->assertStringNotContainsString('create_invoice', $prompt);
+    }
+
     public function test_default_prompt_keeps_the_final_tool_auto_call_instruction(): void
     {
         $prompt = $this->build([]);

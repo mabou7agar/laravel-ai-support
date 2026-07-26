@@ -346,6 +346,12 @@ class AiNativePromptBuilder
             }
         }
 
+        // Hosts that already classified the turn may expose a bounded roster
+        // without changing the process-wide selector configuration. This is a
+        // prompt-only allowlist: progressive disclosure still adds find_tools
+        // as the recovery path for an unexpected capability.
+        $tools = $this->requestExposedTools($tools, $options);
+
         // A selector trims the exposed set per turn (e.g. to the active skill's tools) so
         // a large registry does not bloat the prompt. Defaults to "all" (no trimming).
         $tools = $this->toolSelector()->select($tools, $message, $state, $options);
@@ -383,6 +389,28 @@ class AiNativePromptBuilder
             static fn ($tool): array => $tool->toArray(),
             $tools
         ));
+    }
+
+    /**
+     * @param array<string, \LaravelAIEngine\Services\Agent\Tools\AgentTool> $tools
+     * @param array<string, mixed> $options
+     * @return array<string, \LaravelAIEngine\Services\Agent\Tools\AgentTool>
+     */
+    private function requestExposedTools(array $tools, array $options): array
+    {
+        if (! array_key_exists('exposed_tools', (array) ($options['tool_selection'] ?? []))) {
+            return $tools;
+        }
+
+        $allowed = array_flip(array_values(array_filter(array_map(
+            static fn (mixed $name): string => trim((string) $name),
+            (array) ($options['tool_selection']['exposed_tools'] ?? []),
+        ), static fn (string $name): bool => $name !== '')));
+
+        return array_filter(
+            $tools,
+            static fn ($tool): bool => isset($allowed[$tool->getName()]),
+        );
     }
 
     /**
