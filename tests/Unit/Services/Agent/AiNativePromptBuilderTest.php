@@ -28,8 +28,8 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $prompt = (new AiNativePromptBuilder($tools, $skills))
             ->build('Create invoice', new UnifiedActionContext('prompt-tools'), []);
 
-        $this->assertStringContainsString('"name": "find_customer"', $prompt);
-        $this->assertStringNotContainsString('"name": "run_skill"', $prompt);
+        $this->assertStringContainsString('"name":"find_customer"', $prompt);
+        $this->assertStringNotContainsString('"name":"run_skill"', $prompt);
     }
 
     public function test_prompt_includes_compact_context_snapshot(): void
@@ -175,9 +175,9 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $prompt = (new AiNativePromptBuilder($tools, $skills))
             ->build('create order for Noor', new UnifiedActionContext('prompt-skill-relations'), []);
 
-        $this->assertStringContainsString('"prompt": "Resolve the buyer before collecting order details."', $prompt);
+        $this->assertStringContainsString('"prompt":"Resolve the buyer before collecting order details."', $prompt);
         $this->assertStringContainsString('"relations"', $prompt);
-        $this->assertStringContainsString('"lookup_tool": "find_buyer"', $prompt);
+        $this->assertStringContainsString('"lookup_tool":"find_buyer"', $prompt);
     }
 
     public function test_prompt_guides_active_skills_to_prefer_declared_relation_tools_over_generic_helpers(): void
@@ -311,6 +311,24 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('Available tools JSON:', $parts['system']);
         $this->assertStringStartsWith('Recent conversation JSON:', $parts['body']);
         $this->assertStringContainsString('Look up Acme', $parts['body']);
+    }
+
+    public function test_static_tool_documents_are_compact_by_default_with_a_legacy_pretty_kill_switch(): void
+    {
+        $tools = new ToolRegistry();
+        $tools->register('find_customer', $this->tool('find_customer'));
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+        $builder = new AiNativePromptBuilder($tools, $skills);
+        $context = new UnifiedActionContext('prompt-static-json');
+
+        $compact = $builder->build('Find Acme', $context, []);
+        $pretty = $builder->build('Find Acme', $context, [], ['compact_prompt_json' => false]);
+
+        $this->assertStringContainsString('{"name":"find_customer"', $compact);
+        $this->assertStringNotContainsString('"name": "find_customer"', $compact);
+        $this->assertStringContainsString('"name": "find_customer"', $pretty);
+        $this->assertLessThan(strlen($pretty), strlen($compact));
     }
 
     public function test_latest_user_message_renders_once_when_history_echoes_it(): void

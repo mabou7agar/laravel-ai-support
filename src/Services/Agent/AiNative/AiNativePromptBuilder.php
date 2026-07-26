@@ -70,16 +70,16 @@ class AiNativePromptBuilder
             '{"action":"ask_user","message":"question to user","required_inputs":[],"data":{}}',
             '{"action":"final","message":"answer to user","data":{}}',
             'Available skills JSON:',
-            json_encode($this->skillDocuments(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            $this->encodeStaticDocuments($this->skillDocuments(), $options),
             $this->progressiveDisclosure($options)
                 ? 'Available tools JSON (a tool listed with a "parameters" field is ready to call directly; a tool shown as name + summary only must be loaded with find_tools to get its parameters before you use it):'
                 : 'Available tools JSON:',
-            json_encode($this->toolDocuments($message, $state, $options), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+            $this->encodeStaticDocuments($this->toolDocuments($message, $state, $options), $options),
             // Conversation, snapshot and runtime state are the UNCACHED per-step
             // body — compact encoding (no pretty-print) cuts their ~20-30%
-            // whitespace tax on every planner step. Skills/tools stay pretty:
-            // they live in the byte-stable CACHED prefix, where readability is
-            // effectively free.
+            // whitespace tax on every planner step. Skills/tools are compact by
+            // default too: prompt caching lowers repeated billing, but whitespace
+            // still consumes the context window and cache read/write tokens.
             'Recent conversation JSON:',
             json_encode($this->conversationDocuments($this->withoutLatestUserEcho($context->conversationHistory, $message), $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Context snapshot JSON:',
@@ -204,6 +204,30 @@ class AiNativePromptBuilder
         }
 
         return implode("\n\n", $lines);
+    }
+
+    /**
+     * Encode the stable skill/tool documents without pretty-print whitespace.
+     *
+     * Hosts may temporarily opt back into the legacy pretty representation with
+     * options.compact_prompt_json=false or the matching config kill switch. JSON
+     * semantics stay identical; only insignificant whitespace changes.
+     *
+     * @param array<int, array<string, mixed>> $documents
+     * @param array<string, mixed> $options
+     */
+    private function encodeStaticDocuments(array $documents, array $options): string
+    {
+        $compact = array_key_exists('compact_prompt_json', $options)
+            ? (bool) $options['compact_prompt_json']
+            : (bool) config('ai-agent.ai_native.compact_prompt_json', true);
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+
+        if (! $compact) {
+            $flags |= JSON_PRETTY_PRINT;
+        }
+
+        return (string) json_encode($documents, $flags);
     }
 
     /**

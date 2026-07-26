@@ -331,6 +331,11 @@ return [
         // (e.g. the theme builder's design-token / RTL / contrast guide) without setting
         // a global default for every agent.
         'system_guidance' => '',
+        // Compact the stable skills/tools JSON embedded in orchestration prompts.
+        // Prompt caching reduces repeat billing but pretty-print whitespace still
+        // consumes context and cache tokens. Set false as a legacy formatting
+        // kill switch; per-run options.compact_prompt_json takes precedence.
+        'compact_prompt_json' => (bool) env('AI_AGENT_AI_NATIVE_COMPACT_PROMPT_JSON', true),
         // Which registered tools are exposed to the planner each turn. Every tool's full
         // schema goes into the prompt, so a large registry inflates context.
         //   'all'          — expose every tool (default; no behaviour change)
