@@ -256,6 +256,21 @@ background or `input_fidelity`. Existing Gemini image models keep using chat
 completions. Set `image_api=chat` to force that legacy transport or
 `image_api=dedicated` to opt another compatible model into the Image API.
 
+Synchronize the live OpenRouter catalog and pricing table with:
+
+```bash
+php artisan ai:sync-models --provider=openrouter
+```
+
+The sync stores `input` and `output` as USD per 1K tokens for compatibility
+with `AIModel::estimateCost()`. The complete provider-native pricing object,
+including image output, audio, cache, web-search, discounts, and tier
+overrides, remains available under `pricing.provider`. Dedicated Image API
+models can be listed in
+`ai-engine.engines.openrouter.catalog_sync.additional_models`; GPT Image 2 is
+included by default because OpenRouter may omit it from the bulk `/models`
+response.
+
 Run the routed multimodal live smoke when changing OpenRouter support:
 
 ```bash

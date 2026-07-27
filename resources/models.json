@@ -1136,6 +1136,16 @@
         "credit_index": 6,
         "content_type": "image",
         "max_tokens": 400000,
+        "capabilities": ["image_generation", "image_editing", "vision"],
+        "context_window": {"input": 400000, "output": null},
+        "pricing": {
+            "unit": "usd_per_1k_tokens",
+            "input": 0.008,
+            "output": 0.03,
+            "image_low": 0.006,
+            "image_medium": 0.053,
+            "image_high": 0.211
+        },
         "supports_vision": true,
         "supports_streaming": true
     },
@@ -1626,6 +1636,23 @@
         "credit_index": 6,
         "content_type": "image",
         "max_tokens": 400000,
+        "capabilities": ["image_generation", "image_editing", "vision"],
+        "context_window": {"input": 400000, "output": null},
+        "pricing": {
+            "unit": "usd_per_1k_tokens",
+            "input": 0.008,
+            "output": 0.03,
+            "text_output": 0.008,
+            "image_output": 0.03,
+            "provider_unit": "provider_native_usd",
+            "provider": {
+                "prompt": 0.000008,
+                "completion": 0.000008,
+                "image_output": 0.00003,
+                "web_search": 0.01,
+                "input_cache_read": 0.000002
+            }
+        },
         "supports_vision": true,
         "supports_streaming": true
     },

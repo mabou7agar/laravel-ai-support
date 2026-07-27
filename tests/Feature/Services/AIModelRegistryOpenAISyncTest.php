@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use LaravelAIEngine\Models\AIModel;
 use LaravelAIEngine\Services\AIModelRegistry;
+use LaravelAIEngine\Services\Models\DynamicModelResolver;
 use LaravelAIEngine\Tests\TestCase;
 
 class AIModelRegistryOpenAISyncTest extends TestCase
@@ -173,5 +174,65 @@ class AIModelRegistryOpenAISyncTest extends TestCase
             ['tools', 'tool_choice', 'reasoning', 'max_tokens'],
             $model->metadata['supported_parameters']
         );
+        $this->assertSame(0.0001, $model->pricing['input']);
+        $this->assertSame(0.0003, $model->pricing['output']);
+        $this->assertSame(0.0000001, $model->pricing['provider']['prompt']);
+        app(DynamicModelResolver::class)->clearCache($model->model_id);
+        $this->assertEqualsWithDelta(
+            0.013333,
+            \LaravelAIEngine\Enums\EntityEnum::from($model->model_id)->creditIndex(),
+            0.000001,
+        );
+    }
+
+    public function test_openrouter_sync_discovers_dedicated_image_models_and_full_pricing(): void
+    {
+        Config::set('ai-engine.engines.openrouter.catalog_sync.additional_models', [
+            'openai/gpt-image-2',
+        ]);
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/models' => Http::response(['data' => []]),
+            'https://openrouter.ai/api/v1/models/openai/gpt-image-2/endpoints' => Http::response([
+                'data' => [
+                    'id' => 'openai/gpt-image-2',
+                    'name' => 'OpenAI: GPT Image 2',
+                    'description' => 'Dedicated image generation model.',
+                    'architecture' => [
+                        'modality' => 'text+image->image',
+                        'input_modalities' => ['text', 'image'],
+                        'output_modalities' => ['image'],
+                    ],
+                    'endpoints' => [[
+                        'provider_name' => 'OpenAI',
+                        'context_length' => 400000,
+                        'max_completion_tokens' => null,
+                        'supported_parameters' => ['quality', 'aspect_ratio', 'background'],
+                        'pricing' => [
+                            'prompt' => '0.000008',
+                            'completion' => '0.000008',
+                            'image_output' => '0.00003',
+                            'web_search' => '0.01',
+                            'input_cache_read' => '0.000002',
+                        ],
+                    ]],
+                ],
+            ]),
+        ]);
+
+        $result = app(AIModelRegistry::class)->syncOpenRouterModels();
+        $model = AIModel::query()->where('model_id', 'openai/gpt-image-2')->firstOrFail();
+
+        $this->assertSame(1, $result['total']);
+        $this->assertSame('openrouter', $model->provider);
+        $this->assertContains('image_generation', $model->capabilities);
+        $this->assertSame(400000, $model->context_window['input']);
+        $this->assertNull($model->context_window['output']);
+        $this->assertSame(0.008, $model->pricing['input']);
+        $this->assertSame(0.03, $model->pricing['output']);
+        $this->assertSame(0.008, $model->pricing['text_output']);
+        $this->assertSame(0.03, $model->pricing['image_output']);
+        $this->assertSame(0.00003, $model->pricing['provider']['image_output']);
+        $this->assertCount(1, $model->metadata['endpoints']);
     }
 }

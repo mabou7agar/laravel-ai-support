@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.30] — 2026-07-27
+
+### Fixed
+
+- **Complete OpenRouter catalog pricing** — `ai:sync-models` now stores
+  canonical input/output prices per 1K tokens while retaining every
+  provider-native pricing field and override in the model table.
+- **Dedicated image-model discovery** — configured models missing from
+  OpenRouter's bulk `/models` feed, including `openai/gpt-image-2`, are
+  hydrated from `/models/{id}/endpoints` and persisted by the same sync.
+- **Catalog seed fidelity** — `ai:models:seed` now imports optional
+  capabilities, context windows, pricing, descriptions, and structured-output
+  flags from `resources/models.json`.
+
 ## [2.11.29] — 2026-07-27
 
 ### Added

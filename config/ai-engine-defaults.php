@@ -952,6 +952,11 @@ return [
                 // metadata for existing records. Host labels and activation
                 // choices remain untouched.
                 'update_existing' => true,
+                // Dedicated Image API models can be absent from OpenRouter's
+                // bulk /models feed. These are hydrated from /models/{id}/endpoints.
+                'additional_models' => [
+                    'openai/gpt-image-2',
+                ],
             ],
             'cost_optimization' => [
                 'enabled' => false,

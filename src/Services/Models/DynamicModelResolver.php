@@ -112,7 +112,8 @@ class DynamicModelResolver
         if ($input && $output) {
             // Average of input and output, normalized to GPT-4o baseline
             $avgPrice = ($input + $output) / 2;
-            $gpt4oBaseline = 0.000015; // Approximate GPT-4o price
+            // ai_models stores canonical token prices per 1K tokens.
+            $gpt4oBaseline = 0.015; // Approximate GPT-4o per-1K baseline
             return $avgPrice / $gpt4oBaseline;
         }
 

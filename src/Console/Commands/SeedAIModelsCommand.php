@@ -46,9 +46,12 @@ class SeedAIModelsCommand extends Command
             $attributes = [
                 'provider' => $meta['engine'] ?? 'openai',
                 'name' => $meta['label'] ?? $modelId,
+                'description' => $meta['description'] ?? null,
                 'max_tokens' => $meta['max_tokens'] ?? null,
                 'supports_vision' => (bool) ($meta['supports_vision'] ?? false),
                 'supports_streaming' => (bool) ($meta['supports_streaming'] ?? true),
+                'supports_function_calling' => (bool) ($meta['supports_function_calling'] ?? false),
+                'supports_json_mode' => (bool) ($meta['supports_json_mode'] ?? false),
                 'is_active' => true,
                 'metadata' => [
                     'credit_index' => $meta['credit_index'] ?? 1.0,
@@ -57,6 +60,11 @@ class SeedAIModelsCommand extends Command
                     'seeded_from' => 'package-catalog',
                 ],
             ];
+            foreach (['capabilities', 'context_window', 'pricing'] as $structuredField) {
+                if (array_key_exists($structuredField, $meta)) {
+                    $attributes[$structuredField] = $meta[$structuredField];
+                }
+            }
 
             if ($existing) {
                 $existing->restore();

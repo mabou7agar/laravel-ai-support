@@ -100,6 +100,43 @@ class SyncAIModelsCommandTest extends TestCase
         $this->assertTrue($videoModel->supports_vision);
     }
 
+    public function test_sync_models_command_includes_dedicated_openrouter_image_models_and_pricing(): void
+    {
+        Config::set('ai-engine.engines.openrouter.catalog_sync.additional_models', [
+            'openai/gpt-image-2',
+        ]);
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/models' => Http::response(['data' => []]),
+            'https://openrouter.ai/api/v1/models/openai/gpt-image-2/endpoints' => Http::response([
+                'data' => [
+                    'id' => 'openai/gpt-image-2',
+                    'name' => 'OpenAI: GPT Image 2',
+                    'architecture' => ['modality' => 'text+image->image'],
+                    'endpoints' => [[
+                        'context_length' => 400000,
+                        'supported_parameters' => ['quality', 'aspect_ratio'],
+                        'pricing' => [
+                            'prompt' => '0.000008',
+                            'completion' => '0.000008',
+                            'image_output' => '0.00003',
+                        ],
+                    ]],
+                ],
+            ]),
+        ]);
+
+        $this->artisan('ai:sync-models', ['--provider' => 'openrouter'])
+            ->expectsOutput('📡 Syncing OpenRouter models...')
+            ->expectsOutput('✅ Synced 1 OpenRouter models')
+            ->assertSuccessful();
+
+        $model = AIModel::query()->where('model_id', 'openai/gpt-image-2')->firstOrFail();
+        $this->assertSame('openrouter', $model->provider);
+        $this->assertSame(0.03, $model->pricing['image_output']);
+        $this->assertSame(0.00003, $model->pricing['provider']['image_output']);
+    }
+
     public function test_sync_models_command_registers_low_cost_media_provider_models(): void
     {
         $this->artisan('ai:sync-models', ['--provider' => 'media'])

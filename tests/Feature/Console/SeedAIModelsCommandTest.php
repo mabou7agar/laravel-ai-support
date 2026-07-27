@@ -19,6 +19,14 @@ class SeedAIModelsCommandTest extends TestCase
         $this->assertSame('openai', $gpt4o->provider);
         $this->assertEquals(2.0, $gpt4o->metadata['credit_index']);
         $this->assertSame('text', $gpt4o->metadata['content_type']);
+
+        $gptImage2 = AIModel::where('model_id', 'openai/gpt-image-2')->first();
+        $this->assertNotNull($gptImage2);
+        $this->assertSame('openrouter', $gptImage2->provider);
+        $this->assertContains('image_generation', $gptImage2->capabilities);
+        $this->assertSame(0.008, $gptImage2->pricing['input']);
+        $this->assertSame(0.03, $gptImage2->pricing['image_output']);
+        $this->assertSame(0.00003, $gptImage2->pricing['provider']['image_output']);
     }
 
     public function test_seed_skips_existing_rows_unless_fresh(): void

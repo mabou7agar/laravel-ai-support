@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services;
 
 use LaravelAIEngine\Models\AIModel;
+use LaravelAIEngine\Services\OpenRouter\OpenRouterCatalogNormalizer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,7 @@ class AIModelRegistry
 {
     private ?AIModelRecommendationService $recommendations = null;
     private ?AIModelCapabilityDetector $capabilityDetector = null;
+    private ?OpenRouterCatalogNormalizer $openRouterCatalogNormalizer = null;
 
     /**
      * Get all available models
@@ -119,6 +121,11 @@ class AIModelRegistry
     protected function capabilityDetector(): AIModelCapabilityDetector
     {
         return $this->capabilityDetector ??= new AIModelCapabilityDetector();
+    }
+
+    protected function openRouterCatalogNormalizer(): OpenRouterCatalogNormalizer
+    {
+        return $this->openRouterCatalogNormalizer ??= new OpenRouterCatalogNormalizer();
     }
 
     /**
@@ -564,7 +571,9 @@ class AIModelRegistry
                 return ['error' => 'Failed to fetch models from OpenRouter'];
             }
 
-            $models = $response->json('data', []);
+            $models = $this->withAdditionalOpenRouterModels(
+                (array) $response->json('data', []),
+            );
             $synced = [];
             $newModels = [];
             $updatedModels = [];
@@ -629,16 +638,16 @@ class AIModelRegistry
             static fn (mixed $parameter): string => strtolower(trim((string) $parameter)),
             (array) ($modelData['supported_parameters'] ?? [])
         )));
-        $pricing = isset($modelData['pricing'])
-            ? [
-                'input' => (float) ($modelData['pricing']['prompt'] ?? 0),
-                'output' => (float) ($modelData['pricing']['completion'] ?? 0),
-            ]
-            : null;
+        $pricing = $this->openRouterCatalogNormalizer()->pricing(
+            (array) ($modelData['pricing'] ?? []),
+        );
+        $maxCompletionTokens = $modelData['top_provider']['max_completion_tokens'] ?? null;
         $contextWindow = isset($modelData['context_length'])
             ? [
                 'input' => (int) $modelData['context_length'],
-                'output' => (int) ($modelData['top_provider']['max_completion_tokens'] ?? 4096),
+                'output' => is_numeric($maxCompletionTokens)
+                    ? (int) $maxCompletionTokens
+                    : (in_array('image_generation', $capabilities, true) ? null : 4096),
             ]
             : null;
 
@@ -654,6 +663,62 @@ class AIModelRegistry
                 || in_array('structured_outputs', $supportedParameters, true),
             'metadata' => $modelData,
         ];
+    }
+
+    /**
+     * OpenRouter's bulk /models feed can omit models that are available only
+     * through the dedicated Images API. Fetch explicitly configured model IDs
+     * from the endpoint-details API and merge them into the normal sync.
+     *
+     * @param array<int, mixed> $models
+     * @return list<array<string, mixed>>
+     */
+    protected function withAdditionalOpenRouterModels(array $models): array
+    {
+        $byId = [];
+        foreach ($models as $model) {
+            if (! is_array($model) || trim((string) ($model['id'] ?? '')) === '') {
+                continue;
+            }
+            $byId[(string) $model['id']] = $model;
+        }
+
+        $additionalModels = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $model): string => trim((string) $model),
+            (array) config('ai-engine.engines.openrouter.catalog_sync.additional_models', []),
+        ))));
+        $baseUrl = rtrim((string) config('ai-engine.engines.openrouter.base_url', 'https://openrouter.ai/api/v1'), '/');
+
+        foreach ($additionalModels as $modelId) {
+            if (preg_match('~^[a-z0-9._:-]+/[a-z0-9._:-]+$~i', $modelId) !== 1) {
+                Log::warning('Skipping invalid configured OpenRouter catalog model ID', [
+                    'model_id' => $modelId,
+                ]);
+                continue;
+            }
+
+            $response = Http::withHeaders([
+                'HTTP-Referer' => config('app.url'),
+                'X-Title' => config('app.name'),
+            ])->get("{$baseUrl}/models/{$modelId}/endpoints");
+
+            if (! $response->successful()) {
+                Log::warning('Failed to fetch configured OpenRouter catalog model', [
+                    'model_id' => $modelId,
+                    'status' => $response->status(),
+                ]);
+                continue;
+            }
+
+            $model = $this->openRouterCatalogNormalizer()->fromEndpointDetails(
+                (array) $response->json('data', []),
+            );
+            if ($model !== null) {
+                $byId[$modelId] = $model;
+            }
+        }
+
+        return array_values($byId);
     }
 
     /**
