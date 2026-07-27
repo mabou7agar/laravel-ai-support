@@ -251,7 +251,8 @@ class AIModelRegistry
                         'name' => $this->formatModelName($modelId),
                         'description' => 'Auto-discovered OpenAI model',
                         'capabilities' => $capabilities,
-                        'supports_streaming' => !str_starts_with($modelId, 'gpt-image'),
+                        'supports_streaming' => $modelId === 'gpt-image-2'
+                            || !str_starts_with($modelId, 'gpt-image'),
                         'supports_vision' => in_array('vision', $capabilities, true),
                         'supports_function_calling' => in_array('function_calling', $capabilities, true),
                         'supports_json_mode' => in_array('json_mode', $capabilities, true),

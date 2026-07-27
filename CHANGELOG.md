@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.29] — 2026-07-27
+
+### Added
+
+- **GPT Image 2 support** — OpenAI and OpenRouter model registries now expose
+  `gpt-image-2` / `openai/gpt-image-2`, including current image capabilities
+  and pricing metadata.
+- **OpenRouter dedicated Image API transport** — GPT Image requests use
+  OpenRouter's `/images` endpoint with quality, aspect ratio, output format,
+  compression, background, seed, provider routing, and input-reference support.
+  Existing Gemini image generation continues through chat completions for
+  backward compatibility, and callers may override transport with `image_api`.
+
+### Fixed
+
+- **GPT Image 2 parameter compatibility** — transparent backgrounds are
+  rejected before provider work and unsupported `input_fidelity` is omitted.
+
 ## [2.11.28] — 2026-07-26
 
 ### Added

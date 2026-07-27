@@ -236,6 +236,26 @@ OpenRouter supports package-level `generateImage()`, `generateAudio()`, `speechT
 
 OpenRouter chat also supports package tools, `withStructuredOutput()`, real SSE streaming, routing parameters, provider preferences, web-search/plugin options, trace metadata, and normalized `/models` catalog metadata.
 
+GPT Image models use OpenRouter's dedicated Image API automatically:
+
+```php
+$response = Engine::engine('openrouter')
+    ->model('openai/gpt-image-2')
+    ->withParameters([
+        'aspect_ratio' => '16:9',
+        'quality' => 'medium',
+        'background' => 'opaque',
+    ])
+    ->generateImage('A welcoming modern dental clinic reception, no text or logos');
+```
+
+The dedicated transport accepts `n`, `resolution`, `aspect_ratio`, `size`,
+`quality`, `output_format`, `background`, `output_compression`, `seed`,
+`input_references`, and `provider`. GPT Image 2 does not support a transparent
+background or `input_fidelity`. Existing Gemini image models keep using chat
+completions. Set `image_api=chat` to force that legacy transport or
+`image_api=dedicated` to opt another compatible model into the Image API.
+
 Run the routed multimodal live smoke when changing OpenRouter support:
 
 ```bash

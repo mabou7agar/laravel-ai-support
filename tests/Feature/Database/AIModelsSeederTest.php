@@ -14,7 +14,7 @@ class AIModelsSeederTest extends TestCase
     {
         $this->seed(AIModelsSeeder::class);
 
-        foreach (['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'] as $modelId) {
+        foreach (['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'] as $modelId) {
             $model = AIModel::findByModelId($modelId);
 
             $this->assertNotNull($model, "{$modelId} was not seeded.");
@@ -24,6 +24,8 @@ class AIModelsSeederTest extends TestCase
             $this->assertTrue($model->supports_vision);
             $this->assertFalse($model->supports_function_calling);
         }
+
+        $this->assertTrue((bool) AIModel::findByModelId('gpt-image-2')?->supports_streaming);
     }
 
     public function test_seeder_registers_fal_media_models_used_by_routes(): void

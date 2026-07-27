@@ -19,6 +19,7 @@ class AIModelRegistryOpenAISyncTest extends TestCase
         Http::fake([
             'api.openai.com/v1/models' => Http::response([
                 'data' => [
+                    ['id' => 'gpt-image-2'],
                     ['id' => 'gpt-image-1.5'],
                     ['id' => 'gpt-image-1-mini'],
                     ['id' => 'gpt-4o'],
@@ -29,7 +30,7 @@ class AIModelRegistryOpenAISyncTest extends TestCase
         $result = app(AIModelRegistry::class)->syncOpenAIModels();
 
         $this->assertTrue($result['success']);
-        $this->assertSame(3, $result['total']);
+        $this->assertSame(4, $result['total']);
 
         $imageModel = AIModel::findByModelId('gpt-image-1.5');
         $this->assertNotNull($imageModel);
@@ -43,6 +44,10 @@ class AIModelRegistryOpenAISyncTest extends TestCase
         $miniModel = AIModel::findByModelId('gpt-image-1-mini');
         $this->assertNotNull($miniModel);
         $this->assertContains('image_generation', $miniModel->capabilities);
+
+        $gptImage2 = AIModel::findByModelId('gpt-image-2');
+        $this->assertNotNull($gptImage2);
+        $this->assertTrue($gptImage2->supports_streaming);
     }
 
     public function test_fal_sync_imports_paginated_model_catalog_with_capabilities(): void

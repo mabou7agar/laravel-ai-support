@@ -752,6 +752,7 @@ return [
                 'gpt-5-mini' => ['enabled' => true, 'credit_index' => 1.0],
                 'gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.5],
                 'gpt-4o' => ['enabled' => true, 'credit_index' => 2.0],
+                'gpt-image-2' => ['enabled' => true, 'credit_index' => 6.0],
                 'gpt-image-1.5' => ['enabled' => true, 'credit_index' => 6.0],
                 'gpt-image-1' => ['enabled' => true, 'credit_index' => 5.0],
                 'gpt-image-1-mini' => ['enabled' => true, 'credit_index' => 2.0],
@@ -970,6 +971,7 @@ return [
             'models' => [
                 'openai/gpt-5-mini' => ['enabled' => true, 'credit_index' => 2.5],
                 'openai/gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.6],
+                'openai/gpt-image-2' => ['enabled' => true, 'credit_index' => 6.0, 'content_type' => 'image'],
                 'anthropic/claude-3.5-sonnet' => ['enabled' => true, 'credit_index' => 2.0],
                 'google/gemini-2.5-flash' => ['enabled' => true, 'credit_index' => 1.9],
                 'meta-llama/llama-3.1-8b-instruct:free' => ['enabled' => true, 'credit_index' => 0.0],

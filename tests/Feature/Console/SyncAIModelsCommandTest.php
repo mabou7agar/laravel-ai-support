@@ -18,6 +18,7 @@ class SyncAIModelsCommandTest extends TestCase
         Http::fake([
             'api.openai.com/v1/models' => Http::response([
                 'data' => [
+                    ['id' => 'gpt-image-2'],
                     ['id' => 'gpt-image-1.5'],
                     ['id' => 'gpt-image-1-mini'],
                     ['id' => 'gpt-4o'],
@@ -28,7 +29,7 @@ class SyncAIModelsCommandTest extends TestCase
         $this->artisan('ai:sync-models', ['--provider' => 'openai'])
             ->expectsOutput('🔄 Syncing AI Models...')
             ->expectsOutput('📡 Syncing OpenAI models...')
-            ->expectsOutput('✅ Synced 3 OpenAI models')
+            ->expectsOutput('✅ Synced 4 OpenAI models')
             ->assertSuccessful();
 
         $this->assertDatabaseHas('ai_models', [
@@ -42,6 +43,10 @@ class SyncAIModelsCommandTest extends TestCase
         $this->assertContains('image_generation', $imageModel->capabilities);
         $this->assertContains('image_editing', $imageModel->capabilities);
         $this->assertFalse($imageModel->supports_streaming);
+
+        $gptImage2 = AIModel::findByModelId('gpt-image-2');
+        $this->assertNotNull($gptImage2);
+        $this->assertTrue($gptImage2->supports_streaming);
     }
 
     public function test_sync_models_command_discovers_fal_catalog_into_database(): void

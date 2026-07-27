@@ -90,6 +90,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
             EntityEnum::GPT_4O,
             EntityEnum::GPT_4O_MINI,
             EntityEnum::GPT_3_5_TURBO,
+            EntityEnum::GPT_IMAGE_2,
             EntityEnum::GPT_IMAGE_1_5,
             EntityEnum::GPT_IMAGE_1,
             EntityEnum::GPT_IMAGE_1_MINI,
@@ -429,18 +430,30 @@ class OpenAIEngineDriver extends BaseEngineDriver
     public function generateImage(AIRequest $request): AIResponse
     {
         try {
-            $imageCount = $request->getParameters()['image_count'] ?? 1;
-            $size = $request->getParameters()['size'] ?? '1024x1024';
+            $parameters = $request->getParameters();
+            $imageCount = $parameters['image_count'] ?? $parameters['n'] ?? 1;
+            $size = $parameters['size'] ?? '1024x1024';
             $model = $request->getModel()->value;
-            $quality = $request->getParameters()['quality'] ?? $this->defaultImageQuality($model);
+            $quality = $parameters['quality'] ?? $this->defaultImageQuality($model);
 
-            $response = $this->openAIClient->images()->create([
+            $payload = array_filter([
                 'model' => $model,
                 'prompt' => $request->getPrompt(),
                 'n' => $imageCount,
                 'size' => $size,
                 'quality' => $quality,
-            ]);
+                'background' => $parameters['background'] ?? null,
+                'output_format' => $parameters['output_format'] ?? null,
+                'output_compression' => $parameters['output_compression'] ?? null,
+                'moderation' => $parameters['moderation'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null && $value !== '');
+
+            if ($model === EntityEnum::GPT_IMAGE_2
+                && ($payload['background'] ?? null) === 'transparent') {
+                throw new \InvalidArgumentException('GPT Image 2 does not support transparent backgrounds.');
+            }
+
+            $response = $this->openAIClient->images()->create($payload);
 
             $storedImages = array_map(function ($image) use ($request) {
                 $attributes = [
@@ -522,7 +535,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
                     'image' => $this->imageEditResource($params['image'] ?? null, 'image'),
                     'mask' => isset($params['mask']) ? $this->imageEditResource($params['mask'], 'mask') : null,
                     'prompt' => (string) ($params['prompt'] ?? $request->getPrompt()),
-                    'model' => $params['model'] ?? 'gpt-image-1',
+                    'model' => $params['model'] ?? $request->getModel()->value,
                     'n' => 1,
                     'size' => $size,
                 ], static fn ($value) => $value !== null));

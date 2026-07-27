@@ -11,6 +11,7 @@ use LaravelAIEngine\Drivers\BaseEngineDriver;
 use LaravelAIEngine\Drivers\Concerns\BuildsMediaResponses;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
+use LaravelAIEngine\DTOs\OpenRouterImageRequestDTO;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
@@ -150,10 +151,16 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     public function generateImage(AIRequest $request): AIResponse
     {
         try {
-            [$payload, $timeout] = $this->buildImagePayload($request);
-            $response = $this->postJson('/chat/completions', $payload, $timeout !== null ? ['timeout' => $timeout] : []);
+            $transport = $this->buildImageRequest($request);
+            $response = $this->postJson(
+                $transport->endpoint,
+                $transport->payload,
+                $transport->timeoutSeconds !== null ? ['timeout' => $transport->timeoutSeconds] : [],
+            );
 
-            return $this->imageResponseToAi($response, $request);
+            return $transport->usesDedicatedApi
+                ? $this->dedicatedImageResponseToAi($response, $request)
+                : $this->imageResponseToAi($response, $request);
         } catch (\Exception $e) {
             return AIResponse::error($e->getMessage(), $request->getEngine(), $request->getModel());
         }
@@ -185,8 +192,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
         $prepared = [];
         foreach ($requests as $i => $request) {
             try {
-                [$payload, $timeout] = $this->buildImagePayload($request);
-                $prepared[$i] = ['payload' => $payload, 'timeout' => $timeout];
+                $prepared[$i] = $this->buildImageRequest($request);
             } catch (\Exception $e) {
                 $prepared[$i] = ['error' => $e->getMessage()];
             }
@@ -194,19 +200,18 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
         $headers = $this->getHeaders();
         $baseTimeout = (int) ($this->config['timeout'] ?? config('ai-engine.engines.openrouter.timeout', 60));
-        $url = $this->baseUrl . '/chat/completions';
 
-        $responses = Http::pool(function (Pool $pool) use ($prepared, $headers, $baseTimeout, $url): array {
+        $responses = Http::pool(function (Pool $pool) use ($prepared, $headers, $baseTimeout): array {
             $pending = [];
             foreach ($prepared as $i => $p) {
-                if (isset($p['error'])) {
+                if (! $p instanceof OpenRouterImageRequestDTO) {
                     continue; // payload build failed — resolved to an error below
                 }
-                $timeout = is_int($p['timeout'] ?? null) ? $p['timeout'] : $baseTimeout;
+                $timeout = $p->timeoutSeconds ?? $baseTimeout;
                 $pending[] = $pool->as((string) $i)
                     ->withHeaders($headers)
                     ->timeout(max(1, $timeout))
-                    ->post($url, $p['payload']);
+                    ->post($this->baseUrl . $p->endpoint, $p->payload);
             }
 
             return $pending;
@@ -214,8 +219,10 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
         $out = [];
         foreach ($requests as $i => $request) {
-            if (isset($prepared[$i]['error'])) {
-                $out[$i] = AIResponse::error($prepared[$i]['error'], $request->getEngine(), $request->getModel());
+            $transport = $prepared[$i] ?? null;
+            if (! $transport instanceof OpenRouterImageRequestDTO) {
+                $error = is_array($transport) ? (string) ($transport['error'] ?? 'Image request could not be prepared.') : 'Image request could not be prepared.';
+                $out[$i] = AIResponse::error($error, $request->getEngine(), $request->getModel());
                 continue;
             }
 
@@ -230,7 +237,9 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             }
 
             try {
-                $out[$i] = $this->imageResponseToAi($response, $request);
+                $out[$i] = $transport->usesDedicatedApi
+                    ? $this->dedicatedImageResponseToAi($response, $request)
+                    : $this->imageResponseToAi($response, $request);
             } catch (\Exception $e) {
                 $out[$i] = AIResponse::error($e->getMessage(), $request->getEngine(), $request->getModel());
             }
@@ -240,15 +249,26 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     }
 
     /**
-     * Build the chat-completions image payload for one request + resolve its
-     * per-request timeout (null = the engine default). Shared by generateImage and
-     * generateImagesConcurrently so the single and batch paths never drift.
-     *
-     * @return array{0: array<string, mixed>, 1: int|null}
+     * Build the correct OpenRouter image transport without changing legacy
+     * multimodal-chat behavior. GPT Image models use OpenRouter's dedicated
+     * Image API; existing Gemini image models retain chat completions.
      */
-    private function buildImagePayload(AIRequest $request): array
+    private function buildImageRequest(AIRequest $request): OpenRouterImageRequestDTO
     {
         $parameters = $request->getParameters();
+        $timeout = isset($parameters['timeout']) && is_numeric($parameters['timeout'])
+            ? max(1, (int) $parameters['timeout'])
+            : null;
+
+        if ($this->usesDedicatedImageApi($request)) {
+            return new OpenRouterImageRequestDTO(
+                endpoint: '/images',
+                payload: $this->buildDedicatedImagePayload($request),
+                timeoutSeconds: $timeout,
+                usesDedicatedApi: true,
+            );
+        }
+
         $payload = $this->buildChatCompletionPayload($request, $this->buildMessages($request));
         $payload['modalities'] = array_values((array) ($parameters['modalities'] ?? ['image', 'text']));
         $payload['stream'] = false;
@@ -265,11 +285,60 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             unset($payload['image_config']);
         }
 
-        $timeout = isset($parameters['timeout']) && is_numeric($parameters['timeout'])
-            ? max(1, (int) $parameters['timeout'])
-            : null;
+        return new OpenRouterImageRequestDTO(
+            endpoint: '/chat/completions',
+            payload: $payload,
+            timeoutSeconds: $timeout,
+            usesDedicatedApi: false,
+        );
+    }
 
-        return [$payload, $timeout];
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildDedicatedImagePayload(AIRequest $request): array
+    {
+        $parameters = $request->getParameters();
+        $model = $request->getModel()->value;
+        $background = $parameters['background'] ?? null;
+        if ($this->isGptImage2($model) && $background === 'transparent') {
+            throw new \InvalidArgumentException('GPT Image 2 does not support transparent backgrounds.');
+        }
+
+        return array_filter([
+            'model' => $model,
+            'prompt' => $request->getPrompt(),
+            'n' => $parameters['n'] ?? $parameters['image_count'] ?? 1,
+            'resolution' => $parameters['resolution'] ?? $parameters['image_size'] ?? null,
+            'aspect_ratio' => $parameters['aspect_ratio'] ?? null,
+            'size' => $parameters['size'] ?? null,
+            'quality' => $parameters['quality'] ?? null,
+            'output_format' => $parameters['output_format'] ?? null,
+            'background' => $background,
+            'output_compression' => $parameters['output_compression'] ?? null,
+            'seed' => $parameters['seed'] ?? null,
+            'stream' => false,
+            'input_references' => $parameters['input_references'] ?? null,
+            'provider' => $parameters['provider'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    private function usesDedicatedImageApi(AIRequest $request): bool
+    {
+        $mode = strtolower(trim((string) ($request->getParameters()['image_api'] ?? '')));
+        if (in_array($mode, ['chat', 'chat_completions'], true)) {
+            return false;
+        }
+        if (in_array($mode, ['dedicated', 'images'], true)) {
+            return true;
+        }
+
+        return preg_match('~^(?:openai/)?gpt-image-~i', $request->getModel()->value) === 1;
+    }
+
+    private function isGptImage2(string $model): bool
+    {
+        return preg_match('~^(?:openai/)?gpt-image-2(?:$|[-:])~i', $model) === 1;
     }
 
     /**
@@ -302,6 +371,59 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                 'image_count' => count($files),
             ]
         )->withFiles($files)
+         ->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
+    }
+
+    private function dedicatedImageResponseToAi(Response $response, AIRequest $request): AIResponse
+    {
+        if (! $response->successful()) {
+            return AIResponse::error(
+                $response->json()['error']['message'] ?? $response->body(),
+                $request->getEngine(),
+                $request->getModel(),
+            );
+        }
+
+        $data = (array) $response->json();
+        $files = [];
+        foreach ((array) ($data['data'] ?? []) as $image) {
+            if (! is_array($image)) {
+                continue;
+            }
+
+            $base64 = $image['b64_json'] ?? null;
+            if (is_string($base64) && $base64 !== '') {
+                $bytes = base64_decode($base64, true);
+                if ($bytes === false) {
+                    throw new \RuntimeException('OpenRouter image response included invalid base64 data.');
+                }
+                $mediaType = is_string($image['media_type'] ?? null) ? $image['media_type'] : 'image/png';
+                $files[] = $this->storeMediaBytes(
+                    $bytes,
+                    $request,
+                    $this->extensionFromContentType($mediaType, 'png'),
+                );
+                continue;
+            }
+
+            $url = $image['url'] ?? null;
+            if (is_string($url) && $url !== '') {
+                $files[] = $this->storeDataUrlOrReturn($url, $request);
+            }
+        }
+
+        return AIResponse::success(
+            '',
+            $request->getEngine(),
+            $request->getModel(),
+            [
+                'provider' => EngineEnum::OpenRouter->value,
+                'model' => $data['model'] ?? $request->getModel()->value,
+                'usage' => $data['usage'] ?? [],
+                'image_count' => count($files),
+                'transport' => 'images',
+            ],
+        )->withFiles(array_values(array_unique($files)))
          ->withUsage(creditsUsed: max(1, count($files)) * $request->getModel()->creditIndex());
     }
 

@@ -142,6 +142,79 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         Http::assertSent(fn ($request): bool => ! array_key_exists('timeout', $request->data()));
     }
 
+    public function test_gpt_image_2_uses_the_dedicated_openrouter_image_api(): void
+    {
+        Storage::fake('public');
+        Config::set('ai-engine.media_library.disk', 'public');
+
+        Http::fake([
+            'https://openrouter.ai/api/v1/images' => Http::response([
+                'created' => 1_785_000_000,
+                'data' => [[
+                    'b64_json' => base64_encode('gpt-image-2-bytes'),
+                    'media_type' => 'image/webp',
+                ]],
+                'usage' => [
+                    'prompt_tokens' => 20,
+                    'completion_tokens' => 1_568,
+                    'total_tokens' => 1_588,
+                    'cost' => 0.041,
+                ],
+            ]),
+        ]);
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateImage(new AIRequest(
+            prompt: 'A polished website hero photograph.',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-image-2',
+            parameters: [
+                'aspect_ratio' => '16:9',
+                'quality' => 'medium',
+                'background' => 'opaque',
+                'output_format' => 'webp',
+                'output_compression' => 82,
+                'timeout' => 25,
+                'input_fidelity' => 'low',
+            ],
+        ));
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertNotEmpty($response->getFiles());
+        $this->assertSame('images', $response->getMetadata()['transport']);
+        $this->assertSame(0.041, $response->getMetadata()['usage']['cost']);
+
+        Http::assertSent(function ($request): bool {
+            $data = $request->data();
+
+            return $request->url() === 'https://openrouter.ai/api/v1/images'
+                && ($data['model'] ?? null) === 'openai/gpt-image-2'
+                && ($data['aspect_ratio'] ?? null) === '16:9'
+                && ($data['quality'] ?? null) === 'medium'
+                && ($data['output_format'] ?? null) === 'webp'
+                && ($data['output_compression'] ?? null) === 82
+                && ! array_key_exists('input_fidelity', $data)
+                && ! array_key_exists('timeout', $data);
+        });
+    }
+
+    public function test_gpt_image_2_rejects_transparent_backgrounds_before_provider_work(): void
+    {
+        Http::fake();
+
+        $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
+        $response = $driver->generateImage(new AIRequest(
+            prompt: 'A transparent logo.',
+            engine: EngineEnum::OPENROUTER,
+            model: 'openai/gpt-image-2',
+            parameters: ['background' => 'transparent'],
+        ));
+
+        $this->assertFalse($response->isSuccessful());
+        $this->assertStringContainsString('does not support transparent backgrounds', (string) $response->getError());
+        Http::assertNothingSent();
+    }
+
     public function test_generate_text_honours_a_per_request_timeout(): void
     {
         Config::set('ai-engine.engines.openrouter.timeout', 60);

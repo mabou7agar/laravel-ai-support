@@ -1129,6 +1129,16 @@
         "supports_vision": false,
         "supports_streaming": true
     },
+    "gpt-image-2": {
+        "label": "GPT Image 2",
+        "engine": "openai",
+        "driver_class": "LaravelAIEngine\\Drivers\\OpenAI\\DallE3Driver",
+        "credit_index": 6,
+        "content_type": "image",
+        "max_tokens": 400000,
+        "supports_vision": true,
+        "supports_streaming": true
+    },
     "gpt-image-1": {
         "label": "GPT Image 1",
         "engine": "openai",
@@ -1607,6 +1617,16 @@
         "content_type": "text",
         "max_tokens": 128000,
         "supports_vision": false,
+        "supports_streaming": true
+    },
+    "openai/gpt-image-2": {
+        "label": "GPT Image 2 (OpenRouter)",
+        "engine": "openrouter",
+        "driver_class": "LaravelAIEngine\\Drivers\\OpenRouter\\OpenRouterEngineDriver",
+        "credit_index": 6,
+        "content_type": "image",
+        "max_tokens": 400000,
+        "supports_vision": true,
         "supports_streaming": true
     },
     "openai/gpt-5": {

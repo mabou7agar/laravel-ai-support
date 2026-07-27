@@ -40,6 +40,7 @@ class EntityEnum
     public const GPT_5 = 'gpt-5';
     public const GPT_5_MINI = 'gpt-5-mini';
     public const GPT_5_NANO = 'gpt-5-nano';
+    public const GPT_IMAGE_2 = 'gpt-image-2';
     public const GPT_IMAGE_1_5 = 'gpt-image-1.5';
     public const GPT_IMAGE_1 = 'gpt-image-1';
     public const GPT_IMAGE_1_MINI = 'gpt-image-1-mini';
@@ -192,6 +193,7 @@ class EntityEnum
     public const OPENROUTER_GPT_5 = 'openai/gpt-5';
     public const OPENROUTER_GPT_5_MINI = 'openai/gpt-5-mini';
     public const OPENROUTER_GPT_5_NANO = 'openai/gpt-5-nano';
+    public const OPENROUTER_GPT_IMAGE_2 = 'openai/gpt-image-2';
 
     // GPT-4o Models
     public const OPENROUTER_GPT_4O = 'openai/gpt-4o';
