@@ -69,6 +69,9 @@ class AgentToolServiceRegistrar
             if ((bool) config('ai-agent.ai_native.knowledge_tool_enabled', true) && !$registry->has('search_knowledge')) {
                 $registry->register('search_knowledge', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchKnowledgeTool::class));
             }
+            if ((bool) config('ai-agent.assistant.resource_tool_enabled', true) && !$registry->has('search_assistant_resources')) {
+                $registry->register('search_assistant_resources', $app->make(\LaravelAIEngine\Services\Agent\Tools\SearchAssistantResourcesTool::class));
+            }
             // Progressive disclosure: the planner loads full tool schemas on demand via
             // find_tools (the prompt lists the long tail by name + summary only). Register
             // it unconditionally: progressive can also be turned on PER REQUEST

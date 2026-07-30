@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.0] — 2026-07-31
+
+### Added
+
+- **Headless assistant runtime foundation** — task-specific model routes with
+  readiness validation, scoped conversational entity focus, structured resource
+  providers, scoped knowledge-source providers, and extensible access policies.
+- **AI-native structured resource tool** — the model can select
+  `search_assistant_resources` for host-defined courses, lessons, events,
+  bundles, reports, and other records without project-specific intent maps.
+- **Streaming client contract** — a framework-neutral JavaScript client
+  normalizes partial/final transcription, assistant deltas, activity events,
+  cancellation, synchronous chat, durable SSE runs, and realtime sessions.
+- **Structured assistant responses** — reusable DTOs represent text, activity,
+  cards/carousels, metrics, actions, speech metadata, and sources.
+- **Assistant readiness diagnostics** — `php artisan ai:assistant-readiness`
+  validates configured model routes and lists registered resource and knowledge
+  providers.
+
+### Fixed
+
+- **Resilient structured JSON decoding** — structured collection accepts direct,
+  fenced, and prose-wrapped balanced JSON while still failing closed on malformed
+  output.
+- **Resource scope enforcement** — private structured resources are filtered by
+  tenant, workspace, and user scope even when a host provider returns them.
+
 ## [2.11.30] — 2026-07-27
 
 ### Fixed

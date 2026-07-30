@@ -197,6 +197,60 @@ SSE works without a WebSocket service. Enable Laravel Broadcasting when the app 
 
 See `docs/chat-flow.mdx` for the full ChatFlow trace from request validation through runtime routing, dispatcher execution, response metadata, and the focused test suite.
 
+### Headless Assistant Runtime
+
+The package includes a reusable assistant foundation while leaving domain
+repositories, authorization, and UI in the host application:
+
+- task-specific primary/fallback model routes with readiness diagnostics
+- model-selected structured resource retrieval through
+  `search_assistant_resources`
+- tenant/workspace/user-scoped entity focus for follow-up questions such as
+  “tell me more about the course above”
+- scoped knowledge-source contracts for shared, tenant-public, tenant-private,
+  subscription-limited, and user-private documents
+- structured responses for cards, carousels, metrics, actions, sources, and
+  speech metadata
+- a headless browser client for live transcription, activity, answer deltas,
+  SSE, realtime events, and cancellation
+
+Publish the client and validate configuration:
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client
+php artisan ai:assistant-readiness
+php artisan ai:assistant-readiness orchestration --json
+```
+
+Register host adapters in `config/ai-agent.php`:
+
+```php
+'assistant' => [
+    'model_routes' => [
+        'routes' => [
+            'orchestration' => [
+                'engine' => 'openai',
+                'model' => 'gpt-4o',
+                'fallback_engine' => 'openai',
+                'fallback_model' => 'gpt-4o-mini',
+                'required_capabilities' => ['tools'],
+            ],
+        ],
+        'providers' => [App\AI\Routing\AppModelRoutes::class],
+    ],
+    'resource_providers' => [App\AI\Resources\CourseResourceProvider::class],
+    'knowledge_sources' => [App\AI\Knowledge\AppGuideSource::class],
+],
+```
+
+Resource providers should call application services/repositories and return
+`AssistantResourceResult`; they should not query Eloquent directly. The package
+passes trusted user, tenant, and workspace scope into each query and applies a
+second access-policy check before results reach the model.
+
+See `docs-site/guides/assistant-runtime.mdx` for contracts, examples, streaming
+events, security rules, host integration, and production deployment.
+
 ### Structured Chat Collection
 
 ```php

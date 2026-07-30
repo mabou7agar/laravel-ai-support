@@ -42,6 +42,13 @@ class AgentRunEventStreamService
     public const RUN_FAILED = 'run.failed';
     public const RUN_CANCELLED = 'run.cancelled';
     public const RUN_EXPIRED = 'run.expired';
+    public const ASSISTANT_ACKNOWLEDGED = 'assistant.acknowledged';
+    public const TRANSCRIPTION_PARTIAL = 'transcription.partial';
+    public const TRANSCRIPTION_FINAL = 'transcription.final';
+    public const ASSISTANT_DELTA = 'assistant.delta';
+    public const ASSISTANT_COMPLETED = 'assistant.completed';
+    public const ASSISTANT_CANCELLED = 'assistant.cancelled';
+    public const ASSISTANT_FAILED = 'assistant.failed';
 
     public const NAMES = [
         self::RUN_STARTED,
@@ -70,6 +77,13 @@ class AgentRunEventStreamService
         self::RUN_FAILED,
         self::RUN_CANCELLED,
         self::RUN_EXPIRED,
+        self::ASSISTANT_ACKNOWLEDGED,
+        self::TRANSCRIPTION_PARTIAL,
+        self::TRANSCRIPTION_FINAL,
+        self::ASSISTANT_DELTA,
+        self::ASSISTANT_COMPLETED,
+        self::ASSISTANT_CANCELLED,
+        self::ASSISTANT_FAILED,
     ];
 
     public function __construct(

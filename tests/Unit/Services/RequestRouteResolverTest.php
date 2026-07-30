@@ -22,6 +22,22 @@ class RequestRouteResolverTest extends TestCase
         $this->resolver = app(RequestRouteResolver::class);
     }
 
+    public function test_resolver_applies_configured_task_route_before_dynamic_selection(): void
+    {
+        Config::set('ai-agent.assistant.model_routes.routes', [
+            'orchestration' => ['engine' => 'openai', 'model' => 'gpt-4o'],
+        ]);
+
+        $resolved = $this->resolver->resolve(new AIRequest(
+            prompt: 'Hello',
+            metadata: ['task' => 'orchestration'],
+        ));
+
+        $this->assertSame('openai', $resolved->getEngine()->value);
+        $this->assertSame('gpt-4o', $resolved->getModel()->value);
+        $this->assertSame('primary', $resolved->getMetadata()['task_model_route']['selected']);
+    }
+
     public function test_resolver_prefers_native_provider_over_openrouter_for_model_only_requests(): void
     {
         Config::set('ai-engine.default', 'openrouter');

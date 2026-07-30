@@ -831,6 +831,39 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Headless Assistant Runtime
+    |--------------------------------------------------------------------------
+    |
+    | Host applications own domain repositories, authorization, and UI. These
+    | additive registries provide reusable model routing, resource discovery,
+    | structured entity focus, and scoped knowledge contracts.
+    |
+    */
+    'assistant' => [
+        'resource_tool_enabled' => env('AI_ASSISTANT_RESOURCE_TOOL_ENABLED', true),
+        'model_routes' => [
+            'require_registered_models' => env('AI_ASSISTANT_MODEL_ROUTES_REQUIRE_REGISTERED', true),
+            'routes' => [
+                // 'orchestration' => ['engine' => 'openai', 'model' => 'gpt-4o'],
+            ],
+            'providers' => [
+                //
+            ],
+        ],
+        'entity_memory' => [
+            'ttl_seconds' => (int) env('AI_ASSISTANT_ENTITY_MEMORY_TTL', 86400),
+            'max_references' => (int) env('AI_ASSISTANT_ENTITY_MEMORY_MAX_REFERENCES', 20),
+        ],
+        'resource_providers' => [
+            //
+        ],
+        'knowledge_sources' => [
+            //
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Capability Providers
     |--------------------------------------------------------------------------
     |

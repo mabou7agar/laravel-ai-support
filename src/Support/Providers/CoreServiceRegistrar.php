@@ -79,7 +79,8 @@ class CoreServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, fn () => new \LaravelAIEngine\Services\Memory\MemoryManager());
         $app->singleton(\LaravelAIEngine\Services\RequestRouteResolver::class, fn ($app) => new \LaravelAIEngine\Services\RequestRouteResolver(
-            $app->make(\LaravelAIEngine\Services\AIModelRegistry::class)
+            $app->make(\LaravelAIEngine\Services\AIModelRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Routing\TaskModelRequestRouter::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService(
             $app->make(CreditManager::class),

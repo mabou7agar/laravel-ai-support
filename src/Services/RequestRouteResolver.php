@@ -8,15 +8,22 @@ use Illuminate\Support\Collection;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Models\AIModel;
+use LaravelAIEngine\Services\Routing\TaskModelRequestRouter;
 
 class RequestRouteResolver
 {
     public function __construct(
-        protected AIModelRegistry $modelRegistry
+        protected AIModelRegistry $modelRegistry,
+        protected ?TaskModelRequestRouter $taskModelRoutes = null,
     ) {}
 
     public function resolve(AIRequest $request): AIRequest
     {
+        $taskRouted = $this->taskModelRoutes?->apply($request) ?? $request;
+        if ($taskRouted !== $request) {
+            return $taskRouted;
+        }
+
         if ($request->wasEngineExplicitlyProvided() && $request->wasModelExplicitlyProvided()) {
             return $request;
         }
