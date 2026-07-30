@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.1] — 2026-07-31
+
+### Added
+
+- **Model-selected resource filters** — `search_assistant_resources` now passes
+  structured provider-validated filters such as scope, period, status, and date
+  range without introducing package-level domain intent maps.
+
 ## [2.12.0] — 2026-07-31
 
 ### Added

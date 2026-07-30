@@ -28,6 +28,7 @@ final class SearchAssistantResourcesToolTest extends UnitTestCase
         $result = app(SearchAssistantResourcesTool::class)->execute([
             'query' => 'اختبارات البرمجيات',
             'type' => 'course',
+            'filters' => ['scope' => 'current'],
         ], $context);
 
         self::assertTrue($result->success);
@@ -52,6 +53,8 @@ final class ToolCourseProvider implements AssistantResourceProvider
 
     public function search(AssistantResourceQuery $query): AssistantResourceResult
     {
+        \PHPUnit\Framework\Assert::assertSame('current', $query->context['filters']['scope']);
+
         return new AssistantResourceResult(items: [
             new AssistantResourceItem(
                 id: '12',

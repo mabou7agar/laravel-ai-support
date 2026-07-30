@@ -23,6 +23,7 @@ final class SearchAssistantResourcesTool extends SimpleAgentTool
         'query' => ['type' => 'string', 'required' => true, 'description' => 'The user request or semantic search query.'],
         'type' => ['type' => 'string', 'required' => false, 'description' => 'Optional resource type when the user explicitly names one. Do not guess a type when the request spans several resources.'],
         'limit' => ['type' => 'integer', 'required' => false, 'description' => 'Maximum number of structured items to return (1-50).'],
+        'filters' => ['type' => 'object', 'required' => false, 'description' => 'Optional model-selected domain filters such as scope, period, status, or date range. Providers validate supported keys and values.'],
     ];
 
     /** @var array<int, string> */
@@ -63,6 +64,7 @@ final class SearchAssistantResourcesTool extends SimpleAgentTool
             context: [
                 'recent_entities' => $recent,
                 'conversation_history' => array_slice($context->conversationHistory, -6),
+                'filters' => (array) ($parameters['filters'] ?? []),
             ],
         ));
 
