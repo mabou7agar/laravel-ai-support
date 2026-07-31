@@ -22,6 +22,17 @@ class AiNativeFinalActionHandler
      */
     public function handle(string $message, UnifiedActionContext $context, array &$state, array $options, array $plan): AiNativeActionOutcome
     {
+        if ($this->forceRagNeedsEvidence($state, $options)) {
+            $state['runtime_feedback'][] = [
+                'reason' => 'final_without_forced_rag_evidence',
+                'message' => 'This turn requires a knowledge-base-grounded answer. Call search_knowledge now and use its result before returning a final answer.',
+                'required_tools' => ['search_knowledge'],
+            ];
+            $this->stateStore->put($context, $state);
+
+            return AiNativeActionOutcome::continueLoop();
+        }
+
         if ($this->suggestedToolContinuation->mustContinue($state)) {
             $state['runtime_feedback'][] = [
                 'reason' => 'final_before_suggested_tool_continuation',
@@ -70,6 +81,38 @@ class AiNativeFinalActionHandler
         }
 
         return AiNativeActionOutcome::response($this->responses->final($context, $state, $this->planMessage($plan), (array) ($plan['data'] ?? [])));
+    }
+
+    /**
+     * A prompt instruction is not a correctness boundary: a model may still
+     * return a final answer without calling the required retrieval tool.
+     * Enforce force_rag against successful evidence produced in this turn.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function forceRagNeedsEvidence(array $state, array $options): bool
+    {
+        if (empty($options['force_rag'])) {
+            return false;
+        }
+
+        $turnOutcomeCount = max(0, (int) ($state['turn_outcome_count'] ?? 0));
+        if ($turnOutcomeCount === 0) {
+            return true;
+        }
+
+        $outcomes = array_slice((array) ($state['recent_outcomes'] ?? []), -$turnOutcomeCount);
+
+        foreach ($outcomes as $outcome) {
+            if (($outcome['tool'] ?? null) === 'search_knowledge'
+                && ($outcome['success'] ?? false) === true
+                && ($outcome['needs_user_input'] ?? false) !== true) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function planMessage(array $plan): string

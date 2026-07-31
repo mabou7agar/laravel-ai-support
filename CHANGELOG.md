@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.4] — 2026-07-31
+
+### Fixed
+
+- **Forced RAG evidence** — AI-native turns using `force_rag` can no longer
+  finish until `search_knowledge` succeeds during the current turn.
+
 ## [2.12.3] — 2026-07-31
 
 ### Fixed
