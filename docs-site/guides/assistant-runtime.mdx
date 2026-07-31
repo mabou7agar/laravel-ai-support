@@ -204,29 +204,54 @@ Unicode-aware index for the authorized documents in the request and supports
 mixed Arabic/English terms without a phrase map. Authorization runs before
 indexing, so inaccessible private documents never become retrieval candidates.
 
-For a large corpus, bind a persistent semantic/vector implementation while
-keeping the same contract:
+For a large corpus, select the built-in persistent vector implementation:
 
 ```php
-$this->app->bind(
-    \LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class,
-    \App\AI\Knowledge\QdrantScopedKnowledgeIndex::class,
-);
+'assistant' => [
+    'knowledge_index' => [
+        'driver' => 'vector',
+        'vector' => [
+            'collection' => 'ai_assistant_scoped_knowledge',
+            'sync_on_search' => true,
+            'batch_size' => 50,
+            'threshold' => 0.25,
+        ],
+    ],
+],
 ```
 
-The package does not read host models or choose a queue/index refresh strategy.
-A persistent implementation should use the host repository and scheduler, and
-must retain exact scope fields in its payload filters.
+The vector implementation uses the configured Qdrant/Pinecone backend. It
+stores policy-filtered documents under scope-safe IDs, embeds changed
+fingerprints in batches, passes an allowed-ID filter to the driver, and checks
+every returned ID against the current authorized documents before exposing it.
+Vector exceptions fail over to the in-memory Unicode-aware index.
+
+Synchronize an authorized scope during deployment or from a scheduler:
+
+```bash
+php artisan ai:assistant-knowledge-index --force --json
+php artisan ai:assistant-knowledge-index --tenant=42 --subscription-active --json
+```
+
+Hosts can still bind `ScopedKnowledgeIndex` to a custom implementation when
+their persistence lifecycle differs.
 
 Configuration:
 
 ```php
 'assistant' => [
     'knowledge_index' => [
+        'driver' => 'memory', // memory|vector
         'rag_enabled' => true,
         'limit' => 8,
         'max_documents' => 2000,
         'max_content_chars' => 6000,
+        'vector' => [
+            'collection' => 'ai_assistant_scoped_knowledge',
+            'sync_on_search' => true,
+            'batch_size' => 50,
+            'threshold' => 0.25,
+        ],
     ],
 ],
 ```

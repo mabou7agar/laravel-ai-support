@@ -869,12 +869,20 @@ return [
         ],
         'knowledge_index' => [
             // Adds policy-filtered KnowledgeSourceProvider documents to the
-            // standard RAG retriever. Hosts may replace ScopedKnowledgeIndex
-            // with a persistent semantic/vector implementation.
+            // standard RAG retriever. "memory" is dependency-free; "vector"
+            // persists authorized documents through the configured vector
+            // driver and still fails over to Unicode-aware lexical retrieval.
+            'driver' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_DRIVER', 'memory'),
             'rag_enabled' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED', true),
             'limit' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_LIMIT', 8),
             'max_documents' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_DOCUMENTS', 2000),
             'max_content_chars' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_CONTENT_CHARS', 6000),
+            'vector' => [
+                'collection' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_COLLECTION', 'ai_assistant_scoped_knowledge'),
+                'sync_on_search' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_SYNC_ON_SEARCH', true),
+                'batch_size' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_BATCH_SIZE', 50),
+                'threshold' => (float) env('AI_ASSISTANT_KNOWLEDGE_INDEX_THRESHOLD', 0.25),
+            ],
         ],
     ],
 

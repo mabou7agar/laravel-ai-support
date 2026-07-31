@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "target_version": "3.0",
+  "minimum_deprecation_release": "2.14.0",
+  "surfaces": [
+    {
+      "id": "agent_chat.request.async",
+      "kind": "request_field",
+      "status": "deprecated",
+      "replacement": "execution_mode",
+      "remove_in": "3.0",
+      "locations": ["POST /api/v1/agent/chat"],
+      "metadata": {"mapping": {"true": "async", "false": "sync"}}
+    },
+    {
+      "id": "agent_chat.request.rag",
+      "kind": "request_field",
+      "status": "deprecated",
+      "replacement": "use_rag",
+      "remove_in": "3.0",
+      "locations": ["POST /api/v1/agent/chat"]
+    },
+    {
+      "id": "LaravelAIEngine.Facades.AIEngine",
+      "kind": "public_class",
+      "status": "deprecated",
+      "replacement": "LaravelAIEngine\\Facades\\Engine",
+      "remove_in": "3.0",
+      "locations": ["PHP facade imports"]
+    },
+    {
+      "id": "AIEngineFake.requests",
+      "kind": "public_method",
+      "status": "deprecated",
+      "replacement": "AIEngineFake::calls()",
+      "remove_in": "3.0",
+      "locations": ["Package and host tests"]
+    },
+    {
+      "id": "ai-agent.ai_native.enabled",
+      "kind": "config_key",
+      "status": "deprecated",
+      "replacement": "Remove the setting; AI-native execution is always active.",
+      "remove_in": "3.0",
+      "locations": ["config/ai-agent.php"]
+    },
+    {
+      "id": "agent_context.unscoped_cache_fallback",
+      "kind": "cache_compatibility",
+      "status": "deprecated",
+      "replacement": "Scoped AgentContextRepository cache keys",
+      "remove_in": "3.0",
+      "locations": ["AgentContextRepository reads"],
+      "metadata": {
+        "removal_gate": "Old unscoped cache TTLs have expired and migration telemetry is clear."
+      }
+    }
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "uri": "/api/v1/ai/mcp/tools/{tool}/call",
+      "status": "retained",
+      "reason": "MCP calls have provider-event and approval semantics distinct from realtime dispatch."
+    },
+    {
+      "method": "POST",
+      "uri": "/api/v1/ai/realtime/tools/dispatch",
+      "status": "retained",
+      "reason": "Realtime calls return provider function output and support live narration."
+    }
+  ],
+  "public_classes": [
+    {
+      "class": "LaravelAIEngine\\Facades\\Engine",
+      "status": "retained"
+    },
+    {
+      "class": "LaravelAIEngine\\Facades\\AIEngine",
+      "status": "deprecated",
+      "remove_in": "3.0",
+      "replacement": "LaravelAIEngine\\Facades\\Engine"
+    }
+  ]
+}

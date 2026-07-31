@@ -47,6 +47,7 @@ class CoreServiceRegistrar
         $app->singleton(RateLimitManager::class, fn ($app) => new RateLimitManager($app));
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
+        $app->singleton(\LaravelAIEngine\Services\Diagnostics\CompatibilitySnapshotService::class);
 
         // Non-node services historically registered by NodeServiceRegistrar but
         // actually core (core-only deps; consumed by core tool/action components).

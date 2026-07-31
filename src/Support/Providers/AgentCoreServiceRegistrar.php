@@ -72,10 +72,14 @@ class AgentCoreServiceRegistrar
             );
         }
         $app->singleton(\LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry::class);
+        $app->singleton(\LaravelAIEngine\Services\Knowledge\PersistentVectorScopedKnowledgeIndex::class);
         if (!$app->bound(\LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class)) {
             $app->singleton(
                 \LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class,
-                \LaravelAIEngine\Services\Knowledge\InMemoryScopedKnowledgeIndex::class
+                fn ($app) => match ((string) config('ai-agent.assistant.knowledge_index.driver', 'memory')) {
+                    'vector' => $app->make(\LaravelAIEngine\Services\Knowledge\PersistentVectorScopedKnowledgeIndex::class),
+                    default => $app->make(\LaravelAIEngine\Services\Knowledge\InMemoryScopedKnowledgeIndex::class),
+                }
             );
         }
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());

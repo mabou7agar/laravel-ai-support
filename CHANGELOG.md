@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.2] — 2026-07-31
+
+### Added
+
+- **Persistent scoped knowledge index** — `AI_ASSISTANT_KNOWLEDGE_INDEX_DRIVER=vector`
+  stores policy-filtered provider documents through the configured Qdrant or
+  Pinecone driver using batch embeddings, scope-safe storage IDs, cached
+  fingerprints, provider-native allow-list filters, and a second fail-closed
+  result check.
+- **Knowledge index operations** — `php artisan ai:assistant-knowledge-index`
+  synchronizes authorized global/tenant/workspace/user/subscription scopes,
+  supports forced refreshes and JSON output, and clearly rejects the
+  dependency-free in-memory index.
+- **Vector availability fallback** — persistent assistant retrieval falls back
+  to the Unicode-aware in-memory index when embedding or vector infrastructure
+  raises an error.
+- **Machine-readable 3.0 compatibility inventory** — versioned JSON now records
+  deprecated request fields, config keys, facade/testing aliases, cache
+  compatibility, retained routes, and public-class replacements.
+- **Compatibility diagnostics** — `php artisan ai:compatibility` renders the
+  inventory for operators, `--json` supports automation, and
+  `--fail-on-deprecated` provides an opt-in CI gate without removing any 2.x
+  behavior.
+
 ## [2.14.0] — 2026-07-31
 
 ### Added

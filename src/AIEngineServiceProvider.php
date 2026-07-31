@@ -242,6 +242,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\EvaluateRuntimeFixturesCommand::class,
                 Console\Commands\AgentRuntimeCapabilitiesCommand::class,
                 Console\Commands\AssistantRuntimeReadinessCommand::class,
+                Console\Commands\SyncAssistantKnowledgeIndexCommand::class,
+                Console\Commands\CompatibilitySnapshotCommand::class,
                 Console\Commands\ValidateAgentRuntimeConfigCommand::class,
                 Console\Commands\RecoverStuckAgentRunsCommand::class,
                 Console\Commands\ReplayFailedAgentRunStepCommand::class,

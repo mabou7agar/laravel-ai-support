@@ -4,13 +4,26 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Knowledge;
 
+use LaravelAIEngine\Contracts\ScopedKnowledgeIndex;
 use LaravelAIEngine\DTOs\ScopedKnowledgeDocument;
 use LaravelAIEngine\Enums\KnowledgeScope;
 use LaravelAIEngine\Services\Knowledge\InMemoryScopedKnowledgeIndex;
+use LaravelAIEngine\Services\Knowledge\PersistentVectorScopedKnowledgeIndex;
 use LaravelAIEngine\Tests\UnitTestCase;
 
 final class InMemoryScopedKnowledgeIndexTest extends UnitTestCase
 {
+    public function test_config_can_select_the_persistent_vector_binding(): void
+    {
+        config()->set('ai-agent.assistant.knowledge_index.driver', 'vector');
+        $this->app->forgetInstance(ScopedKnowledgeIndex::class);
+
+        self::assertInstanceOf(
+            PersistentVectorScopedKnowledgeIndex::class,
+            app(ScopedKnowledgeIndex::class),
+        );
+    }
+
     public function test_it_ranks_mixed_arabic_and_english_knowledge_without_a_phrase_map(): void
     {
         $documents = [

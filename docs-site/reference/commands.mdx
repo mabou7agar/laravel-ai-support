@@ -18,6 +18,9 @@ php artisan ai:model-status "App\\Models\\Project" --id=15
 php artisan ai:test-engines
 php artisan ai:infra-health
 php artisan ai:system-health
+php artisan ai:assistant-readiness --json
+php artisan ai:assistant-knowledge-index --force --json
+php artisan ai:compatibility --json
 ```
 
 Profiles:
@@ -33,6 +36,15 @@ Use `--stop-on-failure` to halt after the first failed stage and `--json` for ma
 
 Use `php artisan ai:backend-status` to see whether the app is currently reading from `neo4j_graph` or falling back to `vector_qdrant`.
 Use `php artisan ai:model-status "App\\Models\\Project"` to inspect whether one model is actually ready for indexing, graph publishing, and chat retrieval. Add `--id=15` to inspect a real record instead of a blank model instance, and use `--json` if you want the raw diagnostic payload.
+
+`ai:assistant-readiness` validates configured assistant model routes and lists
+registered resource/knowledge providers. `ai:compatibility` reads the versioned
+3.0 compatibility snapshot; add `--fail-on-deprecated` only when a host is
+ready to treat remaining 2.x aliases as a migration CI failure.
+
+`ai:assistant-knowledge-index` requires the `vector` scoped knowledge driver.
+It synchronizes only documents authorized by the supplied
+`--tenant`, `--workspace`, `--user`, and `--subscription-active` scope.
 
 ## Real Conversation Validation
 

@@ -31,3 +31,15 @@ remain distinct lifecycle resources.
 Before 3.0, audit host payloads/imports, update generated examples, capture the
 public API/route compatibility snapshot, run full PHP and JavaScript suites,
 and validate a release candidate in a real Laravel host.
+
+The versioned snapshot ships at `resources/compatibility/3.0.json`. Inspect it
+without changing application state:
+
+```bash
+php artisan ai:compatibility
+php artisan ai:compatibility --json
+```
+
+Use `php artisan ai:compatibility --fail-on-deprecated` as an opt-in migration
+CI gate. It returns a failure status while deprecated 2.x surfaces remain; it
+does not mean those aliases may be removed before the other 3.0 gates pass.

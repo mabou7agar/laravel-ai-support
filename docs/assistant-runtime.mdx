@@ -17,7 +17,8 @@ authorization, and UI.
   `KnowledgeAccessPolicy`.
 - `ScopedKnowledgeIndex` connects authorized provider documents to standard
   RAG retrieval. Its Unicode-aware in-memory implementation is the
-  dependency-free default; hosts can bind a persistent semantic/vector index.
+  dependency-free default; the built-in `vector` driver persists authorized
+  documents through the configured Qdrant/Pinecone backend.
 - `AssistantResponse` defines a stable text/activity/resource/metric/action/
   source/speech response shape.
 - `assistant-client.js` normalizes chat, SSE, realtime transcription, progress,
@@ -32,12 +33,14 @@ Private resource items must declare a tenant, workspace, or user identifier.
 Knowledge documents are filtered before indexing. Pass trusted `tenant_id`,
 `workspace_id`, `user_id`, and `subscription_active` context when searching.
 Disable the bridge with
-`AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED=false`, or replace
-`LaravelAIEngine\Contracts\ScopedKnowledgeIndex` for large persistent indexes.
+`AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED=false`. For production persistence,
+set `AI_ASSISTANT_KNOWLEDGE_INDEX_DRIVER=vector`; custom implementations may
+still replace `LaravelAIEngine\Contracts\ScopedKnowledgeIndex`.
 
 ```bash
 php artisan vendor:publish --tag=ai-engine-assistant-client
 php artisan ai:assistant-readiness --json
+php artisan ai:assistant-knowledge-index --force --json
 ```
 
 See the complete guide at

@@ -223,6 +223,7 @@ Publish the client and validate configuration:
 php artisan vendor:publish --tag=ai-engine-assistant-client
 php artisan ai:assistant-readiness
 php artisan ai:assistant-readiness orchestration --json
+php artisan ai:assistant-knowledge-index --force --json
 ```
 
 The publish tag writes both `assistant-client.js` and
@@ -258,7 +259,10 @@ See `docs/headless-realtime-voice-sdk.mdx` for tool dispatch, security,
 mixed-language turn detection, cancellation, and UI integration.
 
 The 3.0 cleanup has a published migration inventory, but 2.x still preserves
-every listed compatibility alias. See `docs/upgrade-3.0-deprecations.mdx`.
+every listed compatibility alias. Inspect the versioned machine-readable
+inventory with `php artisan ai:compatibility --json`; use
+`--fail-on-deprecated` only as an opt-in migration CI gate. See
+`docs/upgrade-3.0-deprecations.mdx`.
 
 Register host adapters in `config/ai-agent.php`:
 
@@ -278,6 +282,10 @@ Register host adapters in `config/ai-agent.php`:
     ],
     'resource_providers' => [App\AI\Resources\CourseResourceProvider::class],
     'knowledge_sources' => [App\AI\Knowledge\AppGuideSource::class],
+    'knowledge_index' => [
+        'driver' => 'vector',
+        'vector' => ['collection' => 'ai_assistant_scoped_knowledge'],
+    ],
 ],
 ```
 
@@ -285,6 +293,12 @@ Resource providers should call application services/repositories and return
 `AssistantResourceResult`; they should not query Eloquent directly. The package
 passes trusted user, tenant, and workspace scope into each query and applies a
 second access-policy check before results reach the model.
+
+The `vector` knowledge-index driver uses the configured package vector backend,
+batch embeddings, document fingerprints, and scope-safe storage IDs. Search
+results are checked against the current authorized document set even when a
+custom vector driver ignores filters. The dependency-free `memory` driver
+remains the default for backward compatibility.
 
 See `docs-site/guides/assistant-runtime.mdx` for contracts, examples, streaming
 events, security rules, host integration, and production deployment.

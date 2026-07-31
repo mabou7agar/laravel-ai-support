@@ -61,6 +61,20 @@ Before a confirmed removal reaches 3.0:
 7. run the complete PHP and JavaScript suites;
 8. publish a release candidate and validate a real Laravel host upgrade.
 
+The package records route, public-class, request, config, testing, and cache
+compatibility in `resources/compatibility/3.0.json`.
+
+```bash
+php artisan ai:compatibility
+php artisan ai:compatibility --json
+php artisan ai:compatibility --fail-on-deprecated
+```
+
+The last command intentionally returns a failure status while deprecated 2.x
+surfaces remain. It is an opt-in migration gate, not a normal package health
+check and not authorization to remove compatibility before the release gates
+above pass.
+
 ## Host migration checklist
 
 ```text
