@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.7] — 2026-07-31
+
+### Fixed
+
+- **Deterministic forced retrieval** — `force_rag` now executes
+  `search_knowledge` exactly once before planning, so models cannot skip the
+  grounding contract or loop on rejected final answers.
+- **Zero-hit knowledge results** — explicit zero-result RAG responses are
+  failures instead of successful evidence.
+
 ## [2.12.6] — 2026-07-31
 
 ### Fixed

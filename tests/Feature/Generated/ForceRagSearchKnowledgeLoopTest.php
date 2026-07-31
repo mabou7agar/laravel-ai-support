@@ -102,15 +102,9 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
             }
         });
 
-        // Script the planner: first emit a search_knowledge tool_call (as the force_rag
-        // directive demands), then a final answer grounded in the tool result.
+        // Retrieval is enforced by the runtime before the planner can return a
+        // final answer.
         $plans = [
-            [
-                'action' => 'tool_call',
-                'tool' => 'search_knowledge',
-                'arguments' => ['query' => 'refund policy'],
-                'message' => 'Looking that up in the knowledge base.',
-            ],
             [
                 'action' => 'final',
                 'message' => 'Refunds are accepted within 30 days of purchase.',
@@ -136,7 +130,7 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
         $response = $runtime->process(
             'What is our refund policy?',
             $context,
-            ['force_rag' => true]
+            ['force_rag' => true, 'force_rag_query' => 'refund policy']
         );
 
         $this->assertCount(
@@ -148,7 +142,7 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
         $this->assertStringContainsString('30 days', (string) $response->message);
     }
 
-    public function test_force_rag_rejects_an_ungrounded_final_plan_until_search_succeeds(): void
+    public function test_force_rag_retrieves_before_an_ungrounded_final_plan(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 6);
 
@@ -184,22 +178,13 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
         $plans = [
             [
                 'action' => 'final',
-                'message' => 'I do not know.',
-            ],
-            [
-                'action' => 'tool_call',
-                'tool' => 'search_knowledge',
-                'arguments' => ['query' => 'create a course'],
-            ],
-            [
-                'action' => 'final',
                 'message' => 'Open Content > Courses, then select New course.',
             ],
         ];
 
         $ai = Mockery::mock(AIEngineService::class);
         $ai->shouldReceive('generate')
-            ->times(3)
+            ->once()
             ->andReturn(...array_map(
                 static fn (array $plan): AIResponse => AIResponse::success(json_encode($plan), 'openai', 'gpt-4o-mini'),
                 $plans
@@ -222,15 +207,12 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
         $response = $runtime->process(
             'How do I create a course?',
             $context,
-            ['force_rag' => true]
+            ['force_rag' => true, 'force_rag_query' => 'create a course']
         );
 
         $this->assertCount(1, $invocations);
         $this->assertSame('create a course', $invocations[0]['query'] ?? null);
         $this->assertStringContainsString('Content > Courses', (string) $response->message);
-        $this->assertSame(
-            'final_without_forced_rag_evidence',
-            $context->metadata['ai_native']['runtime_feedback'][0]['reason'] ?? null
-        );
+        $this->assertArrayNotHasKey('runtime_feedback', $context->metadata['ai_native']);
     }
 }

@@ -242,6 +242,16 @@ class AiNativeRuntime
         // infer "already done" from a repeat by itself.
         $turnSucceededTools = [];
 
+        $forcedRagFailure = $this->executeForcedRag($message, $context, $state, $options);
+        if ($forcedRagFailure instanceof AgentResponse) {
+            return $forcedRagFailure;
+        }
+        if ((int) ($state['turn_outcome_count'] ?? 0) > 0
+            && (($state['last_turn_outcome']['tool'] ?? null) === 'search_knowledge')
+            && (($state['last_turn_outcome']['success'] ?? false) === true)) {
+            $turnSucceededTools['search_knowledge'] = true;
+        }
+
         for ($step = 0; $step < $this->maxSteps($options); $step++) {
             if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
                 $this->stateStore->put($context, $state);
@@ -995,6 +1005,62 @@ class AiNativeRuntime
                 'message_fingerprint' => substr(hash('sha256', $message), 0, 16),
             ]);
         }
+    }
+
+    /**
+     * force_rag is a caller correctness contract, not merely a prompt hint.
+     * Retrieve once before planning so a model cannot skip the required tool.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function executeForcedRag(
+        string $message,
+        UnifiedActionContext $context,
+        array &$state,
+        array $options,
+    ): ?AgentResponse {
+        if (empty($options['force_rag']) || (int) ($state['turn_outcome_count'] ?? 0) > 0) {
+            return null;
+        }
+
+        if (! $this->tools->has('search_knowledge')) {
+            return $this->responses->final(
+                $context,
+                $state,
+                $this->runtimeText(
+                    'ai-engine::runtime.responses.knowledge_tool_unavailable',
+                    'Knowledge search is unavailable for this request.',
+                ),
+                ['error_code' => 'knowledge_tool_unavailable'],
+            );
+        }
+
+        $query = trim((string) ($options['force_rag_query'] ?? $message));
+        $tool = $this->tools->get('search_knowledge');
+        $arguments = ['query' => $query !== '' ? $query : $message];
+
+        $this->notifyActivity($options, 'tool_call', ['tool_name' => 'search_knowledge']);
+        $result = $this->toolExecutor->execute($tool, $arguments, $context);
+        $this->toolExecutor->recordResult($state, 'search_knowledge', $arguments, $result);
+        $this->notifyActivity($options, 'tool_result', ['tool_name' => 'search_knowledge']);
+        $this->stateStore->put($context, $state);
+
+        if ($result->success && ! $result->requiresUserInput()) {
+            return null;
+        }
+
+        return $this->responses->final(
+            $context,
+            $state,
+            $result->message
+                ?? $result->error
+                ?? $this->runtimeText(
+                    'ai-engine::runtime.responses.knowledge_search_failed',
+                    'I could not find grounded knowledge for that request.',
+                ),
+            ['error_code' => 'knowledge_search_failed'],
+        );
     }
 
     private function maxSteps(array $options): int

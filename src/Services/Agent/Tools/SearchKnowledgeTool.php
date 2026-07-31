@@ -74,10 +74,15 @@ class SearchKnowledgeTool extends SimpleAgentTool
         if ($text === '') {
             return ActionResult::failure($this->localize('ai-engine::runtime.tools.kb_no_result', 'The knowledge base returned no usable result for this query.'));
         }
+        $metadata = is_array($response->metadata ?? null) ? $response->metadata : [];
+        if (array_key_exists('rag_result_count', $metadata)
+            && (int) $metadata['rag_result_count'] === 0) {
+            return ActionResult::failure($text);
+        }
 
         return ActionResult::success($text, [
             'query' => $query,
-            'metadata' => is_array($response->metadata ?? null) ? $response->metadata : [],
+            'metadata' => $metadata,
         ]);
     }
 

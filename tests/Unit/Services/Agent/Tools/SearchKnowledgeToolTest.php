@@ -104,4 +104,22 @@ class SearchKnowledgeToolTest extends UnitTestCase
 
         $this->assertFalse($result->success);
     }
+
+    public function test_it_treats_an_explicit_zero_hit_rag_response_as_failure(): void
+    {
+        $context = new UnifiedActionContext('search-knowledge-zero-hits', 7);
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
+            ->once()
+            ->andReturn(AgentResponse::conversational(
+                'I could not find relevant context.',
+                $context,
+                ['rag_result_count' => 0],
+            ));
+
+        $result = (new SearchKnowledgeTool($conversation))
+            ->execute(['query' => 'missing guide'], $context);
+
+        $this->assertFalse($result->success);
+    }
 }
