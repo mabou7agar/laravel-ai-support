@@ -1,0 +1,67 @@
+---
+title: Headless realtime voice JavaScript SDK
+description: Add framework-neutral microphone, WebRTC, live captions, authoritative tools, progress speech, and cancellation.
+---
+
+Version 2.14 publishes `assistant-voice-client.js` beside
+`assistant-client.js`:
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client --force
+```
+
+```js
+import {
+  createRealtimeVoiceClient,
+  createSemanticVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
+
+const voice = createRealtimeVoiceClient({
+  sessionId: conversationId,
+  metadata: { locale: document.documentElement.lang },
+});
+
+voice.on('voice.state', ({ state }) => renderState(state));
+voice.on('transcription.partial', ({ text }) => renderCaption(text));
+voice.on('tool.completed', ({ result }) => renderStructuredResult(result));
+
+await voice.connect({
+  provider: 'openai',
+  model: 'gpt-realtime',
+  voice: 'marin',
+  input_audio_transcription: { model: 'gpt-realtime-whisper' },
+  turn_detection: createSemanticVad({ eagerness: 'low' }),
+});
+```
+
+The client owns browser microphone permission, OpenAI WebRTC negotiation
+through Laravel, remote audio, mute, barge-in, clean cancellation, normalized
+captions, and de-duplicated tool dispatch. It does not own a visual framework,
+wake-word product choice, or application scope.
+
+For mixed Arabic/English, do not force one transcription language. Semantic VAD
+with low eagerness is less likely to cut off a long utterance. If using
+`createServerVad()`, increase `silenceDurationMs` when short pauses are ending
+turns early. See the
+[Realtime VAD guide](https://developers.openai.com/api/docs/guides/realtime-vad).
+
+Provider function calls dispatch through
+`/api/v1/ai/realtime/tools/dispatch`. The client returns the authoritative
+Laravel result to the provider and can narrate it out of band, avoiding a
+second model-generated answer. Set `autoDispatchTools: false` when the host
+needs a custom broker.
+
+```js
+voice.mute();
+voice.unmute();
+voice.interrupt();
+await voice.disconnect();
+```
+
+Protect realtime routes with host authentication and authorization. Resolve
+tenant, workspace, subscription, and user scope on the server. Keep
+`AI_ENGINE_REALTIME_TRUST_CLIENT_IDENTITY=false`; the browser SDK omits
+`user_id` unless a controlled relay explicitly enables `trustClientIdentity`.
+
+A floating widget and full-page chat should share one client instance so UI
+expansion does not open a second microphone or execute a tool twice.

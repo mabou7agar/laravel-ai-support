@@ -24,6 +24,27 @@ export function createAssistantClient(options = {}) {
     let assistantText = '';
     const consumedRealtimeEvents = new Set();
     const completedResponses = new Set();
+    const partialTranscripts = new Map();
+    const completedTranscripts = new Set();
+
+    const completedResponseText = (event, fallback = '') => {
+        for (const output of event?.response?.output || []) {
+            if (typeof output?.transcript === 'string' && output.transcript) return output.transcript;
+            for (const content of output?.content || []) {
+                const text = content?.transcript || content?.text;
+                if (typeof text === 'string' && text) return text;
+            }
+        }
+        return fallback;
+    };
+
+    const remember = (set, value, limit = 500) => {
+        if (!value) return false;
+        if (set.has(value)) return true;
+        set.add(value);
+        if (set.size > limit) set.delete(set.values().next().value);
+        return false;
+    };
 
     const emit = (name, payload = {}) => {
         for (const listener of listeners.get(name) || []) listener(payload);
@@ -105,18 +126,29 @@ export function createAssistantClient(options = {}) {
 
         if (type === 'response.created') assistantText = '';
         const text = event?.delta || event?.transcript || event?.text || '';
-        if (type.includes('input_audio_transcription.delta')) emit('transcription.partial', { text, event });
-        if (type.includes('input_audio_transcription.completed')) emit('transcription.final', { text, event });
+        if (type.includes('input_audio_transcription.delta')) {
+            const itemId = String(event?.item_id || event?.itemId || 'active');
+            const transcript = `${partialTranscripts.get(itemId) || ''}${text}`;
+            partialTranscripts.set(itemId, transcript);
+            emit('transcription.partial', { text: transcript, delta: text, itemId, event });
+        }
+        if (type.includes('input_audio_transcription.completed')) {
+            const itemId = String(event?.item_id || event?.itemId || eventId || '');
+            if (itemId) partialTranscripts.delete(itemId);
+            if (!itemId || !remember(completedTranscripts, itemId)) {
+                emit('transcription.final', { text, itemId, event });
+            }
+        }
         if (type.includes('audio_transcript.delta') || type === 'response.text.delta') {
             assistantText += text;
             emit('assistant.delta', { text, transcript: assistantText, event });
         }
         if (type.includes('audio_transcript.done') && text) assistantText = text;
         if (type === 'response.done') {
-            const responseId = event?.response?.id || eventId || `anonymous:${assistantText}`;
-            if (!completedResponses.has(responseId)) {
-                completedResponses.add(responseId);
-                emit('assistant.completed', { text: assistantText || text, event });
+            const completion = completedResponseText(event, assistantText || text);
+            const responseId = event?.response?.id || eventId || `anonymous:${completion}`;
+            if (completion && !remember(completedResponses, responseId)) {
+                emit('assistant.completed', { text: completion, event });
             }
         }
     };

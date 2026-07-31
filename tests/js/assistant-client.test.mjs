@@ -27,6 +27,58 @@ test('headless client normalizes realtime captions and response deltas', () => {
     assert.equal(events.at(-1).payload.text, 'أهلًا');
 });
 
+test('partial realtime captions accumulate per utterance', () => {
+    const client = createAssistantClient();
+    const captions = [];
+    client.on('transcription.partial', (payload) => captions.push(payload));
+
+    client.consumeRealtimeEvent({
+        type: 'conversation.item.input_audio_transcription.delta',
+        item_id: 'utterance-1',
+        delta: 'Build ',
+    });
+    client.consumeRealtimeEvent({
+        type: 'conversation.item.input_audio_transcription.delta',
+        item_id: 'utterance-1',
+        delta: 'كورس',
+    });
+
+    assert.equal(captions.at(-1).text, 'Build كورس');
+    assert.equal(captions.at(-1).delta, 'كورس');
+});
+
+test('final realtime captions are emitted once per utterance', () => {
+    const client = createAssistantClient();
+    const captions = [];
+    client.on('transcription.final', ({ text }) => captions.push(text));
+    const event = {
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'utterance-1',
+        transcript: 'Hi عصارة',
+    };
+
+    client.consumeRealtimeEvent(event);
+    client.consumeRealtimeEvent({ ...event, event_id: 'provider-retry' });
+
+    assert.deepEqual(captions, ['Hi عصارة']);
+});
+
+test('function-call-only responses do not emit an empty assistant completion', () => {
+    const client = createAssistantClient();
+    const completions = [];
+    client.on('assistant.completed', ({ text }) => completions.push(text));
+
+    client.consumeRealtimeEvent({
+        type: 'response.done',
+        response: {
+            id: 'response-tool-only',
+            output: [{ type: 'function_call', name: 'agent_chat', arguments: '{}' }],
+        },
+    });
+
+    assert.deepEqual(completions, []);
+});
+
 test('cancel emits a terminal event without requiring an active request', () => {
     const client = createAssistantClient();
     let cancelled = false;

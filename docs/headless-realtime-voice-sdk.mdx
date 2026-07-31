@@ -1,0 +1,209 @@
+# Headless realtime voice JavaScript SDK
+
+Version 2.14 adds a browser runtime for voice without requiring React, Vue, or a
+package-owned widget. It complements `createAssistantClient()` and uses the
+existing Laravel realtime endpoints as the policy and tool boundary.
+
+## Publish and import
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client --force
+```
+
+```js
+import {
+    createRealtimeVoiceClient,
+    createSemanticVad,
+    createServerVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
+```
+
+The same publish tag includes `assistant-client.js`, which the voice module
+imports from the same public directory.
+
+## Connect
+
+Call `connect()` from a user gesture so the browser can grant microphone and
+audio playback permission:
+
+```js
+const voice = createRealtimeVoiceClient({
+    sessionId: conversationId,
+    metadata: {
+        locale: document.documentElement.lang,
+    },
+    autoDispatchTools: true,
+    speakToolResults: true,
+});
+
+voice.on('voice.state', ({ state }) => renderState(state));
+voice.on('transcription.partial', ({ text }) => renderLiveCaption(text));
+voice.on('transcription.final', ({ text }) => commitCaption(text));
+voice.on('tool.started', ({ call }) => renderActivity(call.name));
+voice.on('tool.completed', ({ result }) => renderStructuredResult(result));
+voice.on('voice.error', ({ error }) => showVoiceError(error));
+
+await voice.connect({
+    provider: 'openai',
+    model: 'gpt-realtime',
+    mode: 'voice_chat',
+    voice: 'marin',
+    modalities: ['audio'],
+    input_audio_transcription: {
+        model: 'gpt-realtime-whisper',
+    },
+    turn_detection: createSemanticVad({
+        eagerness: 'low',
+    }),
+});
+```
+
+Do not set a fixed transcription language when users may mix Arabic and
+English. Language selection belongs to the transcription model, while
+application request routing belongs to the Laravel assistant model.
+
+## Turn detection
+
+The SDK exposes two configuration helpers:
+
+```js
+createSemanticVad({
+    eagerness: 'low',
+    createResponse: true,
+    interruptResponse: true,
+});
+
+createServerVad({
+    threshold: 0.5,
+    prefixPaddingMs: 300,
+    silenceDurationMs: 1100,
+    createResponse: true,
+    interruptResponse: true,
+});
+```
+
+Semantic VAD decides that the utterance is complete from speech content. Low
+eagerness gives the user more time and is usually the better starting point for
+long instructions and code-switching. Server VAD ends a turn after silence;
+increase `silenceDurationMs` when natural pauses are being cut off.
+
+These helpers follow the current
+[OpenAI Realtime VAD contract](https://developers.openai.com/api/docs/guides/realtime-vad).
+They are optional: pass provider-specific turn-detection data directly for
+other transports.
+
+## Authoritative tools and speech
+
+The realtime model should not invent application state. Give the session an
+`agent_chat` tool (or application tools exported by the package) and direct
+application requests through that tool. The client then:
+
+1. de-duplicates completed provider calls by call ID;
+2. posts the call to `/api/v1/ai/realtime/tools/dispatch`;
+3. returns `function_call_output` to the provider conversation;
+4. emits `tool.completed` with the structured Laravel result;
+5. narrates the authoritative result out of band when
+   `speakToolResults` is enabled.
+
+Out-of-band narration has no user-role input and disables tools. The provider
+therefore reads the Laravel result instead of treating it as a second user
+request or generating a second unrelated answer.
+
+Set `autoDispatchTools: false` to own dispatch:
+
+```js
+voice.on('tool.call', async ({ call }) => {
+    const result = await applicationToolBroker(call);
+    renderStructuredResult(result);
+});
+```
+
+Use `resolveToolName(name, call)` when provider-safe function names must map
+back to package dispatch names.
+
+## Lifecycle
+
+```js
+voice.mute();
+voice.unmute();
+voice.interrupt();
+await voice.disconnect();
+```
+
+- `mute()` disables the microphone track without destroying the connection.
+- `interrupt()` cancels an active response and clears queued provider audio.
+- speaking while a response is active performs the same barge-in
+  automatically unless `interruptOnSpeech` is `false`.
+- `disconnect()` aborts negotiation, closes media and data channels, stops
+  microphone tracks, and cannot reconnect after a pending permission prompt
+  resolves.
+
+Relevant events include:
+
+- `voice.state`
+- `voice.connected`
+- `voice.disconnected`
+- `voice.muted`
+- `voice.audio_blocked`
+- `voice.error`
+- `transcription.partial`
+- `transcription.final`
+- `assistant.delta`
+- `assistant.completed`
+- `tool.call`
+- `tool.started`
+- `tool.completed`
+- `tool.failed`
+- `realtime.event`
+- `realtime.sent`
+- `transport.error`
+
+The state values are `idle`, `requesting_microphone`, `connecting`,
+`listening`, `processing`, `speaking`, `muted`, `disconnecting`, and `failed`.
+
+## Human progress speech
+
+Do not speak an acknowledgement from both a final-transcript handler and a
+tool-start handler. Choose one source and key it by tool-call ID. The SDK
+already de-duplicates a provider retry with the same call ID.
+
+```js
+const acknowledged = new Set();
+
+voice.on('tool.started', ({ call }) => {
+    if (!call.id || acknowledged.has(call.id)) return;
+    acknowledged.add(call.id);
+    voice.speak(locale.startsWith('ar')
+        ? 'حسنًا، سأبدأ الآن.'
+        : 'Okay, I will start now.');
+});
+```
+
+Use application activity events for later progress such as searching, fetching
+images, or saving. Do not guess those activities from elapsed time.
+
+## Security
+
+- Protect the realtime route group with the host application's authentication,
+  authorization, throttling, and CSRF middleware.
+- Resolve tenant, workspace, subscription, and user scope on the server. Never
+  trust browser metadata to expand scope.
+- The SDK omits `user_id` from browser dispatch by default. The
+  `trustClientIdentity` option is only for controlled relays and must not be
+  enabled in a public browser.
+- Keep `AI_ENGINE_REALTIME_TRUST_CLIENT_IDENTITY=false` for browser sessions.
+- Keep confirmation enabled for mutating tools and render
+  `approval_required` rather than auto-approving it.
+
+## UI integration
+
+The SDK returns state and data only. A floating widget and a full-page chat can
+subscribe to the same client instance, so expanding the UI does not create a
+second microphone, session, or tool execution. RTL alignment, cards,
+carousels, waveform design, and accessible controls stay in the host
+application.
+
+Wake-word detection is intentionally not a phrase dictionary in this SDK.
+Activation may be implemented by the host or a dedicated wake-word model;
+after activation, the realtime transcription and Laravel assistant model
+interpret the user's complete request.

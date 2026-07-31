@@ -29,6 +29,7 @@
               "guides/configuration",
               "guides/model-config-tools",
               "guides/assistant-runtime",
+              "guides/headless-realtime-voice-sdk",
               "guides/capability-memory",
               "guides/graph-relation-modeling",
               "guides/knowledge-base-security",
@@ -68,7 +69,8 @@
               "reference/api-reference",
               "reference/env-reference",
               "reference/qdrant-to-neo4j-migration",
-              "reference/upgrade"
+              "reference/upgrade",
+              "guides/upgrade-3.0-deprecations"
             ]
           }
         ]

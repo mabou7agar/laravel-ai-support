@@ -1,0 +1,77 @@
+# Preparing for Laravel AI Engine 3.0
+
+Version 3.0 is reserved for removing compatibility surfaces that have a stable
+replacement and have completed a 2.x deprecation period. This document is an
+inventory, not an authorization to remove behavior in 2.x.
+
+## Confirmed deprecations
+
+| 2.x compatibility surface | Replacement | 3.0 action |
+| --- | --- | --- |
+| Agent chat request field `async` | `execution_mode=sync|async|auto` | Remove request validation and DTO alias parsing after host payload audits pass |
+| Agent chat request field `rag` | `use_rag` | Remove the alias after API/client payload audits pass |
+| `LaravelAIEngine\Facades\AIEngine` | `LaravelAIEngine\Facades\Engine` | Remove the duplicate facade after import scans pass |
+| `AIEngineFake::requests()` | `AIEngineFake::calls()` | Remove the testing alias after package and host test scans pass |
+| `ai-agent.ai_native.enabled` | AI-native runtime is always active | Remove the deprecated no-op config key |
+| unscoped `UnifiedActionContext` legacy cache-key fallback | scoped `AgentContextRepository` keys | Remove reads only after old cache TTLs have expired and migration telemetry is clear |
+
+These surfaces continue to work in every 2.x release. Documentation and new
+examples must use only the replacement.
+
+## Already removed before 3.0
+
+Do not create a second removal project for code that is already gone:
+
+- the classic `RoutingPipeline`/`IntentRouter` routing brain;
+- the legacy `ConversationService` compatibility alias;
+- package-coded `SkillFlowRunner` execution;
+- old action-draft workflow tools.
+
+The current model-driven runtime, resource providers, scoped knowledge index,
+entity focus, and assistant response schema are the supported foundation.
+
+## Conditional candidates
+
+The following are not approved for removal yet:
+
+- `prompt_json` planner transport. It may be removed only after `native_tools`
+  is the default across supported providers, fallback telemetry is clean, and
+  equivalent structured-output tests pass.
+- provider shortcut methods such as `Engine::openai()`. These are convenience
+  APIs, not accidental duplicates.
+- `/api/v1/ai/mcp/tools/{tool}/call` and
+  `/api/v1/ai/realtime/tools/dispatch`. They have different provider-event,
+  approval, and realtime-output semantics and must not be merged solely because
+  both execute tools.
+- provider-tool runs and agent runs. They represent different lifecycle
+  resources and need an explicit convergence design before any route removal.
+
+## Required release gates
+
+Before a confirmed removal reaches 3.0:
+
+1. keep the deprecation in at least one published 2.x minor release;
+2. scan this repository and known host integrations for old symbols and fields;
+3. add migration tests that prove the replacement behavior;
+4. document request, config, facade, and testing changes in the 3.0 upgrade
+   guide;
+5. ensure no stable example or generated scaffold emits a deprecated surface;
+6. record route and public-class changes in a machine-readable compatibility
+   snapshot;
+7. run the complete PHP and JavaScript suites;
+8. publish a release candidate and validate a real Laravel host upgrade.
+
+## Host migration checklist
+
+```text
+async=true                 -> execution_mode=async
+async=false                -> execution_mode=sync (or auto when intended)
+rag=true|false             -> use_rag=true|false
+AIEngine::...              -> Engine::...
+$fake->requests()          -> $fake->calls()
+ai-agent.ai_native.enabled -> remove the setting
+```
+
+Clear or wait out legacy unscoped agent-context cache entries before upgrading.
+Do not set `prompt_json` removal as a 3.0 requirement until the conditional
+provider gates above have passed.

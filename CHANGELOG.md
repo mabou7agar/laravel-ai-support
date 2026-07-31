@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.0] — 2026-07-31
+
+### Added
+
+- **Headless realtime voice client** — the published browser SDK now owns
+  microphone permission, OpenAI WebRTC SDP negotiation through the Laravel
+  proxy, remote audio, lifecycle state, mute/unmute, interruption, and clean
+  cancellation without imposing a UI framework.
+- **Authoritative realtime tool bridge** — completed provider function calls
+  can dispatch through `/api/v1/ai/realtime/tools/dispatch`, return the tool
+  output to the provider, and narrate the application result without asking
+  the voice model to independently answer the user's request.
+- **Configurable turn detection** — `createServerVad()` and
+  `createSemanticVad()` produce current Realtime turn-detection payloads.
+  Semantic VAD defaults to low eagerness so hosts can avoid cutting off longer
+  or mixed-language utterances.
+- **Voice lifecycle events** — framework-neutral state, connection, audio,
+  transport, transcript, tool, response, and error events support floating,
+  embedded, and full-page chat surfaces from the same runtime.
+
+### Fixed
+
+- **Live caption assembly** — partial transcription deltas now accumulate by
+  utterance and final captions are de-duplicated by provider item ID.
+- **Duplicate terminal events** — function-call-only responses no longer emit
+  empty assistant completions, provider tool retries run once per call ID, and
+  disconnect is emitted once per connection.
+- **Interrupt correctness** — barge-in cancellation is sent only while a
+  provider response is active, avoiding unrelated provider errors while idle.
+- **Cancellable connection startup** — stopping during a pending microphone or
+  SDP request cannot reconnect the voice session after the user has closed it.
+
+### Deprecated
+
+- **Legacy chat request aliases** — use `execution_mode` instead of `async` and
+  `use_rag` instead of `rag`. The aliases remain functional throughout 2.x.
+- **Duplicate facade/testing aliases** — use `Engine` instead of `AIEngine`,
+  and `AIEngineFake::calls()` instead of `requests()`.
+- **AI-native enable switch** — `ai-agent.ai_native.enabled` is a no-op because
+  the removed classic routing brain is no longer available.
+
+No deprecated API is removed in 2.14. See
+`docs/upgrade-3.0-deprecations.mdx` for the compatibility gates that must pass
+before a 3.0 removal.
+
 ## [2.13.0] — 2026-07-31
 
 ### Added

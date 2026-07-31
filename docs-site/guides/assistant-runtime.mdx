@@ -244,8 +244,13 @@ php artisan vendor:publish --tag=ai-engine-assistant-client
 
 ```js
 import { createAssistantClient } from '/vendor/ai-engine/assistant-client.js';
+import {
+  createRealtimeVoiceClient,
+  createSemanticVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
 
 const assistant = createAssistantClient();
+const voice = createRealtimeVoiceClient({ assistantClient: assistant });
 
 assistant.on('transcription.partial', ({ text }) => renderLiveTranscript(text));
 assistant.on('transcription.final', ({ text }) => commitTranscript(text));
@@ -259,6 +264,14 @@ await assistant.send(message, {
     session_id: sessionId,
     execution_mode: 'auto',
 });
+
+await voice.connect({
+  provider: 'openai',
+  model: 'gpt-realtime',
+  voice: 'marin',
+  input_audio_transcription: { model: 'gpt-realtime-whisper' },
+  turn_detection: createSemanticVad({ eagerness: 'low' }),
+});
 ```
 
 The client supports:
@@ -269,13 +282,18 @@ The client supports:
 - assistant answer deltas
 - progress and tool activity
 - cancellation through `AbortController` and stream closure
+- browser microphone and WebRTC lifecycle through the optional voice client
+- mute, interruption, remote audio, and authoritative tool dispatch
 
-The host owns microphone capture, WebRTC/WebSocket connection, TTS voice
-selection, and wake-word UX. Send raw realtime provider events to
-`consumeRealtimeEvent(event)`. Use server VAD or a suitable silence threshold so
-short pauses do not prematurely submit mixed Arabic/English speech. A wake phrase
-should activate listening; ordinary chat content should be interpreted by the
-model, not a hard-coded dictionary.
+The host owns TTS voice selection, visual design, and wake-word UX. The voice
+client owns browser microphone capture and OpenAI WebRTC negotiation; custom
+WebSocket and LiveKit transports can send provider events to
+`consumeRealtimeEvent(event)`. Prefer semantic VAD with low eagerness, or a
+longer server-VAD silence duration, so short pauses do not cut off mixed
+Arabic/English speech. Do not force a transcription language when users may
+code-switch. Keep wake activation separate from model-driven request routing.
+
+See [Headless realtime voice JavaScript SDK](headless-realtime-voice-sdk.mdx).
 
 ## Structured responses
 

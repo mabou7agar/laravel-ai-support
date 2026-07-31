@@ -213,8 +213,9 @@ repositories, authorization, and UI in the host application:
   documents to standard RAG retrieval
 - structured responses for cards, carousels, metrics, actions, sources, and
   speech metadata
-- a headless browser client for live transcription, activity, answer deltas,
-  SSE, realtime events, and cancellation
+- headless browser clients for live transcription, activity, answer deltas,
+  SSE, microphone/WebRTC voice, authoritative tool dispatch, mute,
+  interruption, and cancellation
 
 Publish the client and validate configuration:
 
@@ -223,6 +224,38 @@ php artisan vendor:publish --tag=ai-engine-assistant-client
 php artisan ai:assistant-readiness
 php artisan ai:assistant-readiness orchestration --json
 ```
+
+The publish tag writes both `assistant-client.js` and
+`assistant-voice-client.js`. The voice client is UI-framework neutral:
+
+```js
+import {
+    createRealtimeVoiceClient,
+    createSemanticVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
+
+const voice = createRealtimeVoiceClient({
+    sessionId: conversationId,
+    metadata: { locale: document.documentElement.lang },
+});
+
+voice.on('transcription.partial', ({ text }) => renderCaption(text));
+voice.on('voice.state', ({ state }) => renderVoiceState(state));
+
+await voice.connect({
+    provider: 'openai',
+    model: 'gpt-realtime',
+    voice: 'marin',
+    input_audio_transcription: { model: 'gpt-realtime-whisper' },
+    turn_detection: createSemanticVad({ eagerness: 'low' }),
+});
+```
+
+See `docs/headless-realtime-voice-sdk.mdx` for tool dispatch, security,
+mixed-language turn detection, cancellation, and UI integration.
+
+The 3.0 cleanup has a published migration inventory, but 2.x still preserves
+every listed compatibility alias. See `docs/upgrade-3.0-deprecations.mdx`.
 
 Register host adapters in `config/ai-agent.php`:
 

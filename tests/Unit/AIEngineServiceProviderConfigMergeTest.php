@@ -2,6 +2,7 @@
 
 namespace LaravelAIEngine\Tests\Unit;
 
+use Illuminate\Support\ServiceProvider;
 use LaravelAIEngine\AIEngineServiceProvider;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
 use LaravelAIEngine\Support\Config\AIEngineConfigDefaults;
@@ -45,5 +46,26 @@ class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
     public function test_ai_engine_alias_resolves_unified_manager(): void
     {
         $this->assertInstanceOf(UnifiedEngineManager::class, $this->app->make('ai-engine'));
+    }
+
+    public function test_assistant_client_publish_tag_includes_chat_and_voice_modules(): void
+    {
+        $paths = ServiceProvider::pathsToPublish(
+            AIEngineServiceProvider::class,
+            'ai-engine-assistant-client'
+        );
+        $sources = array_map(
+            static fn (string $path): string|false => realpath($path),
+            array_keys($paths)
+        );
+
+        $this->assertContains(
+            realpath(__DIR__ . '/../../resources/assets/assistant-client.js'),
+            $sources
+        );
+        $this->assertContains(
+            realpath(__DIR__ . '/../../resources/assets/assistant-voice-client.js'),
+            $sources
+        );
     }
 }

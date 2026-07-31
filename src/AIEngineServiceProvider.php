@@ -193,6 +193,7 @@ class AIEngineServiceProvider extends ServiceProvider
 
             $this->publishes([
                 __DIR__.'/../resources/assets/assistant-client.js' => public_path('vendor/ai-engine/assistant-client.js'),
+                __DIR__.'/../resources/assets/assistant-voice-client.js' => public_path('vendor/ai-engine/assistant-voice-client.js'),
             ], 'ai-engine-assistant-client');
 
             $this->publishes([

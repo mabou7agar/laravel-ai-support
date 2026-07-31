@@ -1,0 +1,33 @@
+---
+title: Preparing for 3.0
+description: Migrate deprecated 2.x aliases before Laravel AI Engine 3.0.
+---
+
+No compatibility API is removed in 2.14. Migrate these confirmed deprecations
+during the 2.x window:
+
+| Deprecated | Replacement |
+| --- | --- |
+| chat request `async` | `execution_mode=sync|async|auto` |
+| chat request `rag` | `use_rag` |
+| `LaravelAIEngine\Facades\AIEngine` | `LaravelAIEngine\Facades\Engine` |
+| `AIEngineFake::requests()` | `AIEngineFake::calls()` |
+| `ai-agent.ai_native.enabled` | remove it; AI-native is canonical |
+| legacy unscoped agent-context cache reads | scoped `AgentContextRepository` keys |
+
+The classic routing brain, old `ConversationService` alias, package-coded
+`SkillFlowRunner`, and action-draft workflow tools were already removed. Do not
+reintroduce them for migration.
+
+`prompt_json` is only a conditional removal candidate. It stays until native
+tool transport is proven across supported providers with equivalent fallback
+and structured-output tests.
+
+The MCP tool-call endpoint and realtime tool-dispatch endpoint are not
+duplicates: realtime dispatch accepts provider call envelopes and returns
+voice-compatible output/approval states. Provider-tool runs and agent runs also
+remain distinct lifecycle resources.
+
+Before 3.0, audit host payloads/imports, update generated examples, capture the
+public API/route compatibility snapshot, run full PHP and JavaScript suites,
+and validate a release candidate in a real Laravel host.
