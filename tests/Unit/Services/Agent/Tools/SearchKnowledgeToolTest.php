@@ -16,6 +16,11 @@ class SearchKnowledgeToolTest extends UnitTestCase
     public function test_it_delegates_to_the_rag_pipeline_and_returns_grounded_text(): void
     {
         $context = new UnifiedActionContext('search-knowledge', 7);
+        $context->requestOptions = [
+            'rag_collections' => ['App\Models\Guide'],
+            'search_instructions' => 'Prefer verified navigation steps.',
+            'tenant_id' => 'academy-7',
+        ];
 
         $conversation = Mockery::mock(AgentConversationService::class);
         $conversation->shouldReceive('executeSearchRAG')
@@ -23,7 +28,11 @@ class SearchKnowledgeToolTest extends UnitTestCase
             ->with(
                 'refund policy',
                 $context,
-                Mockery::on(fn (array $options): bool => ($options['force_rag'] ?? false) === true && ($options['limit'] ?? null) === 3),
+                Mockery::on(fn (array $options): bool => ($options['force_rag'] ?? false) === true
+                    && ($options['limit'] ?? null) === 3
+                    && ($options['rag_collections'] ?? null) === ['App\Models\Guide']
+                    && ($options['search_instructions'] ?? null) === 'Prefer verified navigation steps.'
+                    && ($options['tenant_id'] ?? null) === 'academy-7'),
                 Mockery::type('callable')
             )
             ->andReturn(AgentResponse::conversational('Refunds are issued within 14 days.', $context, ['rag_last_metadata' => ['hits' => 2]]));
@@ -36,6 +45,7 @@ class SearchKnowledgeToolTest extends UnitTestCase
         $this->assertSame('Refunds are issued within 14 days.', $result->message);
         $this->assertSame('refund policy', $result->data['query']);
         $this->assertSame(['rag_last_metadata' => ['hits' => 2]], $result->data['metadata']);
+        $this->assertArrayNotHasKey('request_options', $context->toArray());
     }
 
     public function test_it_rejects_an_empty_query_without_touching_the_pipeline(): void

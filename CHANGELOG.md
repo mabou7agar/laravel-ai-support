@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.3] — 2026-07-31
+
+### Fixed
+
+- **AI-native knowledge tool scope** — `search_knowledge` now receives the
+  current request's RAG collections, search instructions, and tenant/workspace
+  scope through transient tool context without persisting that scope across
+  requests.
+
 ## [2.12.2] — 2026-07-31
 
 ### Fixed

@@ -44,7 +44,14 @@ class SearchKnowledgeTool extends SimpleAgentTool
             return ActionResult::failure($this->localize('ai-engine::runtime.tools.kb_query_required', 'A non-empty "query" is required to search the knowledge base.'));
         }
 
-        $options = ['force_rag' => true, 'use_rag' => true];
+        $options = array_filter([
+            'force_rag' => true,
+            'use_rag' => true,
+            'rag_collections' => $context->requestOptions['rag_collections'] ?? null,
+            'search_instructions' => $context->requestOptions['search_instructions'] ?? null,
+            'tenant_id' => $context->requestOptions['tenant_id'] ?? null,
+            'workspace_id' => $context->requestOptions['workspace_id'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null);
         if (isset($parameters['limit']) && is_numeric($parameters['limit'])) {
             $options['limit'] = max(1, min(50, (int) $parameters['limit']));
         }

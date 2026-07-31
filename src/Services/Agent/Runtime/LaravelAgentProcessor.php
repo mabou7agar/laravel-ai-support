@@ -79,6 +79,7 @@ class LaravelAgentProcessor
         $context = $conversationContext->scope === null
             ? $this->contextManager->getOrCreate($sessionId, $userId)
             : $this->contextManager->getOrCreate($sessionId, $userId, $conversationContext->scope);
+        $context->requestOptions = $options;
         $this->hydrateConversationHistory($context, $options);
 
         // Thread caller-supplied run metadata into the tool-visible context.
