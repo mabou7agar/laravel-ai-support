@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Contracts\ScopedKnowledgeIndex;
 use LaravelAIEngine\Services\Assistant\AssistantResourceRegistry;
 use LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry;
 use LaravelAIEngine\Services\Routing\ModelRouteReadinessService;
@@ -21,6 +22,7 @@ final class AssistantRuntimeReadinessCommand extends Command
         ModelRouteReadinessService $routes,
         AssistantResourceRegistry $resources,
         KnowledgeSourceRegistry $knowledge,
+        ScopedKnowledgeIndex $knowledgeIndex,
     ): int {
         $reports = array_map(
             static fn ($report): array => $report->toArray(),
@@ -31,6 +33,10 @@ final class AssistantRuntimeReadinessCommand extends Command
             'model_routes' => $reports,
             'resource_providers' => array_map(static fn (object $provider): string => $provider::class, $resources->providers()),
             'knowledge_sources' => array_map(static fn (object $provider): string => $provider::class, $knowledge->providers()),
+            'knowledge_index' => [
+                'class' => $knowledgeIndex::class,
+                'rag_enabled' => (bool) config('ai-agent.assistant.knowledge_index.rag_enabled', true),
+            ],
         ];
 
         if ((bool) $this->option('json')) {
@@ -52,6 +58,11 @@ final class AssistantRuntimeReadinessCommand extends Command
         );
         $this->line('Resource providers: '.count($payload['resource_providers']));
         $this->line('Knowledge sources: '.count($payload['knowledge_sources']));
+        $this->line(sprintf(
+            'Knowledge index: %s (%s)',
+            $payload['knowledge_index']['class'],
+            $payload['knowledge_index']['rag_enabled'] ? 'RAG enabled' : 'RAG disabled',
+        ));
 
         return $payload['ready'] ? self::SUCCESS : self::FAILURE;
     }

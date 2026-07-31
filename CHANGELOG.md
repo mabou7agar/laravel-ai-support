@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.0] — 2026-07-31
+
+### Added
+
+- **Multi-scope knowledge index** — registered `KnowledgeSourceProvider`
+  documents now participate in the standard RAG retriever after
+  `KnowledgeAccessPolicy` filters global, tenant-public, tenant-private,
+  workspace-private, subscription-limited, and user-private scopes.
+- **Replaceable index contract** — hosts may bind `ScopedKnowledgeIndex` to a
+  persistent semantic/vector implementation. The dependency-free default uses
+  a bounded Unicode-aware in-memory index that supports mixed Arabic/English
+  text without phrase maps.
+- **Scoped RAG citations** — provider documents return normalized source IDs,
+  titles, URLs, scores, and scope metadata through the existing `RAGSource`
+  contract.
+- **Readiness diagnostics** — `ai:assistant-readiness` reports the active
+  knowledge-index binding and whether scoped RAG retrieval is enabled.
+
+### Changed
+
+- **Knowledge source integration** — `search_knowledge` now threads trusted
+  subscription state into RAG scope and can retrieve registered host knowledge
+  without requiring an Eloquent model or a duplicate host-specific bridge.
+
+### Security
+
+- **Filter before indexing** — inaccessible private documents are removed by the
+  configured knowledge access policy before they reach indexing or scoring.
+
+## [2.12.11] — 2026-07-31
+
+### Added
+
+- **Compact planner tool results** — tools may return a complete application/UI
+  payload while supplying a bounded model-facing projection for later planner
+  steps.
+
+## [2.12.10] — 2026-07-31
+
+### Fixed
+
+- **Bounded planner state defaults** — tool-result byte and history limits are
+  enabled by default, with backward-compatible configuration kill switches.
+
+## [2.12.9] — 2026-07-31
+
+### Fixed
+
+- **Bounded knowledge planner metadata** — internal RAG tool state keeps compact
+  citation-safe metadata instead of replaying complete vector payloads.
+
 ## [2.12.8] — 2026-07-31
 
 ### Fixed

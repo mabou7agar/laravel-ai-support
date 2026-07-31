@@ -51,6 +51,7 @@ class SearchKnowledgeTool extends SimpleAgentTool
             'search_instructions' => $this->scopeOption($context, 'search_instructions'),
             'tenant_id' => $this->scopeOption($context, 'tenant_id'),
             'workspace_id' => $this->scopeOption($context, 'workspace_id'),
+            'subscription_active' => $this->scopeOption($context, 'subscription_active'),
         ], static fn (mixed $value): bool => $value !== null);
         if (isset($parameters['limit']) && is_numeric($parameters['limit'])) {
             $options['limit'] = max(1, min(50, (int) $parameters['limit']));

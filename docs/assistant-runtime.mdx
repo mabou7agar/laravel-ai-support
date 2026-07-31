@@ -15,6 +15,9 @@ authorization, and UI.
 - `ConversationEntityMemory` stores scoped recent entities for follow-up turns.
 - `KnowledgeSourceRegistry` exposes host documents through
   `KnowledgeAccessPolicy`.
+- `ScopedKnowledgeIndex` connects authorized provider documents to standard
+  RAG retrieval. Its Unicode-aware in-memory implementation is the
+  dependency-free default; hosts can bind a persistent semantic/vector index.
 - `AssistantResponse` defines a stable text/activity/resource/metric/action/
   source/speech response shape.
 - `assistant-client.js` normalizes chat, SSE, realtime transcription, progress,
@@ -23,6 +26,12 @@ authorization, and UI.
 Configure adapters under `ai-agent.assistant`. Provider implementations should
 depend on host services and repositories rather than querying Eloquent directly.
 Private resource items must declare a tenant, workspace, or user identifier.
+
+Knowledge documents are filtered before indexing. Pass trusted `tenant_id`,
+`workspace_id`, `user_id`, and `subscription_active` context when searching.
+Disable the bridge with
+`AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED=false`, or replace
+`LaravelAIEngine\Contracts\ScopedKnowledgeIndex` for large persistent indexes.
 
 ```bash
 php artisan vendor:publish --tag=ai-engine-assistant-client

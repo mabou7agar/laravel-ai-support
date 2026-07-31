@@ -867,6 +867,15 @@ return [
         'knowledge_sources' => [
             //
         ],
+        'knowledge_index' => [
+            // Adds policy-filtered KnowledgeSourceProvider documents to the
+            // standard RAG retriever. Hosts may replace ScopedKnowledgeIndex
+            // with a persistent semantic/vector implementation.
+            'rag_enabled' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED', true),
+            'limit' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_LIMIT', 8),
+            'max_documents' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_DOCUMENTS', 2000),
+            'max_content_chars' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_CONTENT_CHARS', 6000),
+        ],
     ],
 
     /*

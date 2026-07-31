@@ -72,6 +72,12 @@ class AgentCoreServiceRegistrar
             );
         }
         $app->singleton(\LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry::class);
+        if (!$app->bound(\LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class,
+                \LaravelAIEngine\Services\Knowledge\InMemoryScopedKnowledgeIndex::class
+            );
+        }
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor(

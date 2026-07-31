@@ -24,6 +24,8 @@ final class AssistantRuntimeReadinessCommandTest extends UnitTestCase
         $output = Artisan::output();
         self::assertStringContainsString('"ready": true', $output);
         self::assertStringContainsString('"task": "orchestration"', $output);
+        self::assertStringContainsString('"knowledge_index"', $output);
+        self::assertStringContainsString('InMemoryScopedKnowledgeIndex', $output);
     }
 
     public function test_it_fails_for_an_unregistered_route_model(): void

@@ -16,6 +16,7 @@ final class DefaultKnowledgeAccessPolicy implements KnowledgeAccessPolicy
             KnowledgeScope::GlobalShared,
             KnowledgeScope::TenantPublic => true,
             KnowledgeScope::TenantPrivate => $this->same($document->tenantId, $context['tenant_id'] ?? null),
+            KnowledgeScope::WorkspacePrivate => $this->same($document->workspaceId, $context['workspace_id'] ?? null),
             KnowledgeScope::UserPrivate => $this->same($document->userId, $context['user_id'] ?? null),
             KnowledgeScope::SubscriptionLimited => (bool) ($context['subscription_active'] ?? false)
                 && $this->same($document->tenantId, $context['tenant_id'] ?? null),

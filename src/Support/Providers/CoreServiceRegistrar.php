@@ -146,6 +146,10 @@ class CoreServiceRegistrar
                 new \LaravelAIEngine\Services\RAG\Retrievers\VectorRAGRetriever($vector),
                 new \LaravelAIEngine\Services\RAG\Retrievers\GraphRAGRetriever($graph),
                 new \LaravelAIEngine\Services\RAG\Retrievers\HybridRAGRetriever($hybrid),
+                new \LaravelAIEngine\Services\RAG\Retrievers\ScopedKnowledgeRAGRetriever(
+                    $app->make(\LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry::class),
+                    $app->make(\LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class)
+                ),
             ]);
         });
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGPipeline::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGPipeline(

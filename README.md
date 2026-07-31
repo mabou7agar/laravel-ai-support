@@ -208,7 +208,9 @@ repositories, authorization, and UI in the host application:
 - tenant/workspace/user-scoped entity focus for follow-up questions such as
   “tell me more about the course above”
 - scoped knowledge-source contracts for shared, tenant-public, tenant-private,
-  subscription-limited, and user-private documents
+  workspace-private, subscription-limited, and user-private documents
+- a replaceable multi-scope knowledge index that connects authorized provider
+  documents to standard RAG retrieval
 - structured responses for cards, carousels, metrics, actions, sources, and
   speech metadata
 - a headless browser client for live transcription, activity, answer deltas,
