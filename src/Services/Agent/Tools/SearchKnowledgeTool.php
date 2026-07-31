@@ -47,10 +47,10 @@ class SearchKnowledgeTool extends SimpleAgentTool
         $options = array_filter([
             'force_rag' => true,
             'use_rag' => true,
-            'rag_collections' => $context->requestOptions['rag_collections'] ?? null,
-            'search_instructions' => $context->requestOptions['search_instructions'] ?? null,
-            'tenant_id' => $context->requestOptions['tenant_id'] ?? null,
-            'workspace_id' => $context->requestOptions['workspace_id'] ?? null,
+            'rag_collections' => $this->scopeOption($context, 'rag_collections'),
+            'search_instructions' => $this->scopeOption($context, 'search_instructions'),
+            'tenant_id' => $this->scopeOption($context, 'tenant_id'),
+            'workspace_id' => $this->scopeOption($context, 'workspace_id'),
         ], static fn (mixed $value): bool => $value !== null);
         if (isset($parameters['limit']) && is_numeric($parameters['limit'])) {
             $options['limit'] = max(1, min(50, (int) $parameters['limit']));
@@ -79,5 +79,12 @@ class SearchKnowledgeTool extends SimpleAgentTool
             'query' => $query,
             'metadata' => is_array($response->metadata ?? null) ? $response->metadata : [],
         ]);
+    }
+
+    private function scopeOption(UnifiedActionContext $context, string $key): mixed
+    {
+        return $context->requestOptions[$key]
+            ?? $context->metadata[$key]
+            ?? null;
     }
 }

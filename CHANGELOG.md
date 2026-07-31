@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.6] — 2026-07-31
+
+### Fixed
+
+- **Knowledge tool metadata scope** — `search_knowledge` can resolve RAG
+  collections, search guidance, and tenant/workspace scope from caller
+  metadata when a runtime adapter does not retain transient request options.
+
 ## [2.12.5] — 2026-07-31
 
 ### Fixed

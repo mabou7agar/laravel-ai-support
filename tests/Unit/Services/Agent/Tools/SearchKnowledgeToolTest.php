@@ -62,6 +62,33 @@ class SearchKnowledgeToolTest extends UnitTestCase
         $this->assertFalse($result->success);
     }
 
+    public function test_it_can_read_tool_scope_from_caller_metadata(): void
+    {
+        $context = new UnifiedActionContext('search-knowledge-metadata', 7, metadata: [
+            'rag_collections' => ['App\Models\Guide'],
+            'search_instructions' => 'Use the administration guide.',
+            'tenant_id' => 'academy-7',
+        ]);
+
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
+            ->once()
+            ->with(
+                'create course',
+                $context,
+                Mockery::on(fn (array $options): bool => ($options['rag_collections'] ?? null) === ['App\Models\Guide']
+                    && ($options['search_instructions'] ?? null) === 'Use the administration guide.'
+                    && ($options['tenant_id'] ?? null) === 'academy-7'),
+                Mockery::type('callable')
+            )
+            ->andReturn(AgentResponse::conversational('Open Courses and select Add.', $context));
+
+        $result = (new SearchKnowledgeTool($conversation))
+            ->execute(['query' => 'create course'], $context);
+
+        $this->assertTrue($result->success);
+    }
+
     public function test_it_fails_cleanly_when_the_pipeline_returns_no_text(): void
     {
         $context = new UnifiedActionContext('search-knowledge-blank', 7);
