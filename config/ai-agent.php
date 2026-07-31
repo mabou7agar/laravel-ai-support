@@ -195,6 +195,12 @@ return [
         // Registers the search_knowledge tool so the runtime can reach the vector /
         // document RAG store. Also the tool a force_rag turn is told to call.
         'knowledge_tool_enabled' => env('AI_AGENT_AI_NATIVE_KNOWLEDGE_TOOL', true),
+        // Keep planner state bounded by projecting RAG source/citation metadata
+        // to labels and URLs. The full retrieved chunks have already been used
+        // to produce the grounded answer and must not be duplicated into every
+        // later planner step. Disable only for legacy consumers that inspect
+        // raw vector payloads from the internal search_knowledge tool result.
+        'knowledge_tool_compact_metadata' => env('AI_AGENT_AI_NATIVE_KNOWLEDGE_TOOL_COMPACT_METADATA', true),
         'budget' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_BUDGET_ENABLED', false),
             'max_steps' => (int) env('AI_AGENT_AI_NATIVE_BUDGET_MAX_STEPS', 16),
@@ -203,14 +209,15 @@ return [
         // The runtime state is re-serialized into EVERY subsequent planner step,
         // so one oversized result re-ships its full payload on each remaining
         // step of the turn. Above the cap, long strings are truncated and long
-        // lists elided (scalars/ids at any depth survive). 0 = off (today's
-        // behavior byte-for-byte).
-        'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 0),
+        // lists elided (scalars/ids at any depth survive). The safe default is
+        // 16 KiB per entry; set 0 only when a legacy integration intentionally
+        // needs unbounded internal planner state.
+        'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 16384),
         // Newest tool results kept when a session's PERSISTED state is loaded.
         // Long sessions otherwise accumulate every turn's tool results forever
-        // and re-serialize them into every planner step. 0 = unlimited
-        // (today's behavior byte-for-byte).
-        'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 0),
+        // and re-serialize them into every planner step. The newest 8 entries
+        // are enough for normal follow-ups; set 0 for legacy unlimited state.
+        'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 8),
         // Render-time compaction of the context snapshot's recent_outcomes:
         // byte-identical entries collapse to one + {"repeats":N}, and each
         // entry's 'display' strings are capped (~200 chars). Prompt-only — the
@@ -826,6 +833,48 @@ return [
                 'css' => ['/vendor/ai-engine/structured-collection.css'],
                 'js' => ['/vendor/ai-engine/structured-collection.js'],
             ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Headless Assistant Runtime
+    |--------------------------------------------------------------------------
+    |
+    | Host applications own domain repositories, authorization, and UI. These
+    | additive registries provide reusable model routing, resource discovery,
+    | structured entity focus, and scoped knowledge contracts.
+    |
+    */
+    'assistant' => [
+        'resource_tool_enabled' => env('AI_ASSISTANT_RESOURCE_TOOL_ENABLED', true),
+        'model_routes' => [
+            'require_registered_models' => env('AI_ASSISTANT_MODEL_ROUTES_REQUIRE_REGISTERED', true),
+            'routes' => [
+                // 'orchestration' => ['engine' => 'openai', 'model' => 'gpt-4o'],
+            ],
+            'providers' => [
+                //
+            ],
+        ],
+        'entity_memory' => [
+            'ttl_seconds' => (int) env('AI_ASSISTANT_ENTITY_MEMORY_TTL', 86400),
+            'max_references' => (int) env('AI_ASSISTANT_ENTITY_MEMORY_MAX_REFERENCES', 20),
+        ],
+        'resource_providers' => [
+            //
+        ],
+        'knowledge_sources' => [
+            //
+        ],
+        'knowledge_index' => [
+            // Adds policy-filtered KnowledgeSourceProvider documents to the
+            // standard RAG retriever. Hosts may replace ScopedKnowledgeIndex
+            // with a persistent semantic/vector implementation.
+            'rag_enabled' => env('AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED', true),
+            'limit' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_LIMIT', 8),
+            'max_documents' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_DOCUMENTS', 2000),
+            'max_content_chars' => (int) env('AI_ASSISTANT_KNOWLEDGE_INDEX_MAX_CONTENT_CHARS', 6000),
         ],
     ],
 

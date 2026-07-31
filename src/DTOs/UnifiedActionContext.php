@@ -11,6 +11,13 @@ class UnifiedActionContext
 {
     public array $flowStack = [];
 
+    /**
+     * Current-request runtime options for tools. This state is intentionally
+     * transient and is never written by toArray(), so tenant and collection
+     * scope cannot leak into a later request.
+     */
+    public array $requestOptions = [];
+
     public function __construct(
         public string $sessionId,
         public $userId = null,

@@ -47,6 +47,7 @@ class CoreServiceRegistrar
         $app->singleton(RateLimitManager::class, fn ($app) => new RateLimitManager($app));
         $app->singleton(AnalyticsManager::class, fn ($app) => new AnalyticsManager($app));
         $app->singleton(DriverRegistry::class, fn ($app) => new DriverRegistry($app));
+        $app->singleton(\LaravelAIEngine\Services\Diagnostics\CompatibilitySnapshotService::class);
 
         // Non-node services historically registered by NodeServiceRegistrar but
         // actually core (core-only deps; consumed by core tool/action components).
@@ -79,7 +80,8 @@ class CoreServiceRegistrar
 
         $app->singleton(\LaravelAIEngine\Services\Memory\MemoryManager::class, fn () => new \LaravelAIEngine\Services\Memory\MemoryManager());
         $app->singleton(\LaravelAIEngine\Services\RequestRouteResolver::class, fn ($app) => new \LaravelAIEngine\Services\RequestRouteResolver(
-            $app->make(\LaravelAIEngine\Services\AIModelRegistry::class)
+            $app->make(\LaravelAIEngine\Services\AIModelRegistry::class),
+            $app->make(\LaravelAIEngine\Services\Routing\TaskModelRequestRouter::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\AIEngineService::class, fn ($app) => new \LaravelAIEngine\Services\AIEngineService(
             $app->make(CreditManager::class),
@@ -145,6 +147,10 @@ class CoreServiceRegistrar
                 new \LaravelAIEngine\Services\RAG\Retrievers\VectorRAGRetriever($vector),
                 new \LaravelAIEngine\Services\RAG\Retrievers\GraphRAGRetriever($graph),
                 new \LaravelAIEngine\Services\RAG\Retrievers\HybridRAGRetriever($hybrid),
+                new \LaravelAIEngine\Services\RAG\Retrievers\ScopedKnowledgeRAGRetriever(
+                    $app->make(\LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry::class),
+                    $app->make(\LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class)
+                ),
             ]);
         });
         $app->singleton(\LaravelAIEngine\Services\RAG\RAGPipeline::class, fn ($app) => new \LaravelAIEngine\Services\RAG\RAGPipeline(

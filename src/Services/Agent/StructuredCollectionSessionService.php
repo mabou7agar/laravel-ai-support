@@ -13,6 +13,7 @@ use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Services\AIEngineService;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
+use LaravelAIEngine\Services\StructuredOutput\StructuredJsonDecoder;
 
 class StructuredCollectionSessionService
 {
@@ -23,7 +24,8 @@ class StructuredCollectionSessionService
         protected StructuredCollectionCallbackService $callbacks,
         protected StructuredCollectionFieldPresenter $fields,
         protected ?StructuredCollectionPreviewRenderer $previews = null,
-        protected ?LocaleResourceService $locales = null
+        protected ?LocaleResourceService $locales = null,
+        protected ?StructuredJsonDecoder $jsonDecoder = null,
     ) {
     }
 
@@ -588,11 +590,7 @@ PROMPT;
 
     protected function decodeJson(string $content): array
     {
-        $content = trim($content);
-        $content = (string) preg_replace('/^```(?:json)?|```$/m', '', $content);
-        $decoded = json_decode(trim($content), true);
-
-        return is_array($decoded) ? $decoded : [];
+        return ($this->jsonDecoder ?? new StructuredJsonDecoder())->decode($content);
     }
 
     protected function fallbackQuestion(

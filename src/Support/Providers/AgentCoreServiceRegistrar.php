@@ -43,13 +43,41 @@ class AgentCoreServiceRegistrar
         $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionCallbackService::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionFieldPresenter::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionPreviewRenderer::class);
+        $app->singleton(\LaravelAIEngine\Services\StructuredOutput\StructuredJsonDecoder::class);
         $app->singleton(\LaravelAIEngine\Services\Agent\StructuredCollectionSessionService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\StructuredCollectionSessionService(
             $app->make(\LaravelAIEngine\Services\AIEngineService::class),
             $app->make(\LaravelAIEngine\Services\Agent\StructuredCollectionCallbackService::class),
             $app->make(\LaravelAIEngine\Services\Agent\StructuredCollectionFieldPresenter::class),
             $app->make(\LaravelAIEngine\Services\Agent\StructuredCollectionPreviewRenderer::class),
-            $app->make(\LaravelAIEngine\Services\Localization\LocaleResourceService::class)
+            $app->make(\LaravelAIEngine\Services\Localization\LocaleResourceService::class),
+            $app->make(\LaravelAIEngine\Services\StructuredOutput\StructuredJsonDecoder::class)
         ));
+        $app->singleton(\LaravelAIEngine\Services\Routing\TaskModelRouteRegistry::class);
+        $app->singleton(\LaravelAIEngine\Services\Routing\TaskModelRequestRouter::class);
+        $app->singleton(\LaravelAIEngine\Services\Routing\ModelRouteReadinessService::class);
+        $app->singleton(\LaravelAIEngine\Contracts\ConversationEntityMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationEntityMemory(
+            \Illuminate\Support\Facades\Cache::store()
+        ));
+        if (!$app->bound(\LaravelAIEngine\Contracts\AssistantResourceAccessPolicy::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\AssistantResourceAccessPolicy::class,
+                \LaravelAIEngine\Services\Assistant\DefaultAssistantResourceAccessPolicy::class
+            );
+        }
+        $app->singleton(\LaravelAIEngine\Services\Assistant\AssistantResourceRegistry::class);
+        if (!$app->bound(\LaravelAIEngine\Contracts\KnowledgeAccessPolicy::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\KnowledgeAccessPolicy::class,
+                \LaravelAIEngine\Services\Knowledge\DefaultKnowledgeAccessPolicy::class
+            );
+        }
+        $app->singleton(\LaravelAIEngine\Services\Knowledge\KnowledgeSourceRegistry::class);
+        if (!$app->bound(\LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class,
+                \LaravelAIEngine\Services\Knowledge\InMemoryScopedKnowledgeIndex::class
+            );
+        }
         $app->singleton(\LaravelAIEngine\Contracts\ConversationMemory::class, fn () => new \LaravelAIEngine\Services\Memory\CacheConversationMemory());
         $app->singleton(\LaravelAIEngine\Contracts\ActionAuditLogger::class, fn () => new \LaravelAIEngine\Services\Actions\NullActionAuditLogger());
         $app->singleton(\LaravelAIEngine\Services\Agent\ConversationContextCompactor::class, fn ($app) => new \LaravelAIEngine\Services\Agent\ConversationContextCompactor(

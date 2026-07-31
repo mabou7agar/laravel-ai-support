@@ -48,6 +48,13 @@ class AgentActivityPresenter
             AgentRunEventStreamService::RUN_FAILED               => $this->a('Something went wrong', '✗', 'error', true),
             AgentRunEventStreamService::RUN_CANCELLED            => $this->a('Cancelled', '⊘', 'done', true),
             AgentRunEventStreamService::RUN_EXPIRED              => $this->a('Timed out', '⌛', 'error', true),
+            AgentRunEventStreamService::ASSISTANT_ACKNOWLEDGED   => $this->a('Request received', '•', 'start'),
+            AgentRunEventStreamService::TRANSCRIPTION_PARTIAL    => $this->a('Listening', '◉', 'listening'),
+            AgentRunEventStreamService::TRANSCRIPTION_FINAL      => $this->a('Heard you', '✓', 'listening'),
+            AgentRunEventStreamService::ASSISTANT_DELTA          => $this->a('Writing the reply', '✍', 'writing'),
+            AgentRunEventStreamService::ASSISTANT_COMPLETED      => $this->a('Reply ready', '✓', 'done', true),
+            AgentRunEventStreamService::ASSISTANT_CANCELLED      => $this->a('Cancelled', '⊘', 'done', true),
+            AgentRunEventStreamService::ASSISTANT_FAILED         => $this->a('Something went wrong', '✗', 'error', true),
             default                                             => $this->a('Working', '•', 'acting'),
         };
     }

@@ -1,0 +1,48 @@
+# Headless Assistant Runtime
+
+The package provides generic contracts for model-driven assistants while the
+host application retains ownership of repositories, business services,
+authorization, and UI.
+
+## Runtime building blocks
+
+- `TaskModelRouteRegistry` and `TaskModelRequestRouter` select explicit
+  primary/fallback models by task without overriding explicit caller choices.
+- `AssistantResourceRegistry` aggregates host resource providers and filters
+  private results through `AssistantResourceAccessPolicy`.
+- `search_assistant_resources` lets the AI-native planner retrieve structured
+  cards, carousels, metrics, and sources without phrase-to-intent maps.
+- `ConversationEntityMemory` stores scoped recent entities for follow-up turns.
+- `KnowledgeSourceRegistry` exposes host documents through
+  `KnowledgeAccessPolicy`.
+- `ScopedKnowledgeIndex` connects authorized provider documents to standard
+  RAG retrieval. Its Unicode-aware in-memory implementation is the
+  dependency-free default; hosts can bind a persistent semantic/vector index.
+- `AssistantResponse` defines a stable text/activity/resource/metric/action/
+  source/speech response shape.
+- `assistant-client.js` normalizes chat, SSE, realtime transcription, progress,
+  answer deltas, deduplicated completion, and local/remote cancellation.
+- `assistant-voice-client.js` owns headless browser microphone/WebRTC lifecycle,
+  mute, barge-in, remote audio, and authoritative realtime tool dispatch.
+
+Configure adapters under `ai-agent.assistant`. Provider implementations should
+depend on host services and repositories rather than querying Eloquent directly.
+Private resource items must declare a tenant, workspace, or user identifier.
+
+Knowledge documents are filtered before indexing. Pass trusted `tenant_id`,
+`workspace_id`, `user_id`, and `subscription_active` context when searching.
+Disable the bridge with
+`AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED=false`, or replace
+`LaravelAIEngine\Contracts\ScopedKnowledgeIndex` for large persistent indexes.
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client
+php artisan ai:assistant-readiness --json
+```
+
+See the complete guide at
+`docs-site/guides/assistant-runtime.mdx`, including provider examples, knowledge
+scope rules, streaming integration, and the production checklist.
+
+See `docs/headless-realtime-voice-sdk.mdx` for the v2.14 browser voice API,
+mixed-language turn detection, tool-result narration, and lifecycle events.

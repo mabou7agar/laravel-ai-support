@@ -192,6 +192,11 @@ class AIEngineServiceProvider extends ServiceProvider
             ], 'ai-engine-collection-ui');
 
             $this->publishes([
+                __DIR__.'/../resources/assets/assistant-client.js' => public_path('vendor/ai-engine/assistant-client.js'),
+                __DIR__.'/../resources/assets/assistant-voice-client.js' => public_path('vendor/ai-engine/assistant-voice-client.js'),
+            ], 'ai-engine-assistant-client');
+
+            $this->publishes([
                 __DIR__.'/../resources/lang' => lang_path('vendor/ai-engine'),
             ], 'ai-engine-lang');
 
@@ -236,6 +241,8 @@ class AIEngineServiceProvider extends ServiceProvider
                 Console\Commands\EvaluateRagFixturesCommand::class,
                 Console\Commands\EvaluateRuntimeFixturesCommand::class,
                 Console\Commands\AgentRuntimeCapabilitiesCommand::class,
+                Console\Commands\AssistantRuntimeReadinessCommand::class,
+                Console\Commands\CompatibilitySnapshotCommand::class,
                 Console\Commands\ValidateAgentRuntimeConfigCommand::class,
                 Console\Commands\RecoverStuckAgentRunsCommand::class,
                 Console\Commands\ReplayFailedAgentRunStepCommand::class,

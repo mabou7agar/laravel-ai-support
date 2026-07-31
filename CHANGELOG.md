@@ -7,6 +7,205 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.1] — 2026-07-31
+
+### Added
+
+- **Machine-readable 3.0 compatibility inventory** — versioned JSON now records
+  deprecated request fields, config keys, facade/testing aliases, cache
+  compatibility, retained routes, and public-class replacements.
+- **Compatibility diagnostics** — `php artisan ai:compatibility` renders the
+  inventory for operators, `--json` supports automation, and
+  `--fail-on-deprecated` provides an opt-in CI gate without removing any 2.x
+  behavior.
+
+## [2.14.0] — 2026-07-31
+
+### Added
+
+- **Headless realtime voice client** — the published browser SDK now owns
+  microphone permission, OpenAI WebRTC SDP negotiation through the Laravel
+  proxy, remote audio, lifecycle state, mute/unmute, interruption, and clean
+  cancellation without imposing a UI framework.
+- **Authoritative realtime tool bridge** — completed provider function calls
+  can dispatch through `/api/v1/ai/realtime/tools/dispatch`, return the tool
+  output to the provider, and narrate the application result without asking
+  the voice model to independently answer the user's request.
+- **Configurable turn detection** — `createServerVad()` and
+  `createSemanticVad()` produce current Realtime turn-detection payloads.
+  Semantic VAD defaults to low eagerness so hosts can avoid cutting off longer
+  or mixed-language utterances.
+- **Voice lifecycle events** — framework-neutral state, connection, audio,
+  transport, transcript, tool, response, and error events support floating,
+  embedded, and full-page chat surfaces from the same runtime.
+
+### Fixed
+
+- **Live caption assembly** — partial transcription deltas now accumulate by
+  utterance and final captions are de-duplicated by provider item ID.
+- **Duplicate terminal events** — function-call-only responses no longer emit
+  empty assistant completions, provider tool retries run once per call ID, and
+  disconnect is emitted once per connection.
+- **Interrupt correctness** — barge-in cancellation is sent only while a
+  provider response is active, avoiding unrelated provider errors while idle.
+- **Cancellable connection startup** — stopping during a pending microphone or
+  SDP request cannot reconnect the voice session after the user has closed it.
+
+### Deprecated
+
+- **Legacy chat request aliases** — use `execution_mode` instead of `async` and
+  `use_rag` instead of `rag`. The aliases remain functional throughout 2.x.
+- **Duplicate facade/testing aliases** — use `Engine` instead of `AIEngine`,
+  and `AIEngineFake::calls()` instead of `requests()`.
+- **AI-native enable switch** — `ai-agent.ai_native.enabled` is a no-op because
+  the removed classic routing brain is no longer available.
+
+No deprecated API is removed in 2.14. See
+`docs/upgrade-3.0-deprecations.mdx` for the compatibility gates that must pass
+before a 3.0 removal.
+
+## [2.13.0] — 2026-07-31
+
+### Added
+
+- **Multi-scope knowledge index** — registered `KnowledgeSourceProvider`
+  documents now participate in the standard RAG retriever after
+  `KnowledgeAccessPolicy` filters global, tenant-public, tenant-private,
+  workspace-private, subscription-limited, and user-private scopes.
+- **Replaceable index contract** — hosts may bind `ScopedKnowledgeIndex` to a
+  persistent semantic/vector implementation. The dependency-free default uses
+  a bounded Unicode-aware in-memory index that supports mixed Arabic/English
+  text without phrase maps.
+- **Scoped RAG citations** — provider documents return normalized source IDs,
+  titles, URLs, scores, and scope metadata through the existing `RAGSource`
+  contract.
+- **Readiness diagnostics** — `ai:assistant-readiness` reports the active
+  knowledge-index binding and whether scoped RAG retrieval is enabled.
+
+### Changed
+
+- **Knowledge source integration** — `search_knowledge` now threads trusted
+  subscription state into RAG scope and can retrieve registered host knowledge
+  without requiring an Eloquent model or a duplicate host-specific bridge.
+
+### Security
+
+- **Filter before indexing** — inaccessible private documents are removed by the
+  configured knowledge access policy before they reach indexing or scoring.
+
+## [2.12.11] — 2026-07-31
+
+### Added
+
+- **Compact planner tool results** — tools may return a complete application/UI
+  payload while supplying a bounded model-facing projection for later planner
+  steps.
+
+## [2.12.10] — 2026-07-31
+
+### Fixed
+
+- **Bounded planner state defaults** — tool-result byte and history limits are
+  enabled by default, with backward-compatible configuration kill switches.
+
+## [2.12.9] — 2026-07-31
+
+### Fixed
+
+- **Bounded knowledge planner metadata** — internal RAG tool state keeps compact
+  citation-safe metadata instead of replaying complete vector payloads.
+
+## [2.12.8] — 2026-07-31
+
+### Fixed
+
+- **Localized RAG citations** — citation type, title, URL, and source IDs now
+  normalize localized/nested array values without array-to-string errors.
+
+## [2.12.7] — 2026-07-31
+
+### Fixed
+
+- **Deterministic forced retrieval** — `force_rag` now executes
+  `search_knowledge` exactly once before planning, so models cannot skip the
+  grounding contract or loop on rejected final answers.
+- **Zero-hit knowledge results** — explicit zero-result RAG responses are
+  failures instead of successful evidence.
+
+## [2.12.6] — 2026-07-31
+
+### Fixed
+
+- **Knowledge tool metadata scope** — `search_knowledge` can resolve RAG
+  collections, search guidance, and tenant/workspace scope from caller
+  metadata when a runtime adapter does not retain transient request options.
+
+## [2.12.5] — 2026-07-31
+
+### Fixed
+
+- **Capped outcome accounting** — identical tool outcomes now count reliably
+  even when the persisted recent-outcome buffer is already full.
+
+## [2.12.4] — 2026-07-31
+
+### Fixed
+
+- **Forced RAG evidence** — AI-native turns using `force_rag` can no longer
+  finish until `search_knowledge` succeeds during the current turn.
+
+## [2.12.3] — 2026-07-31
+
+### Fixed
+
+- **AI-native knowledge tool scope** — `search_knowledge` now receives the
+  current request's RAG collections, search instructions, and tenant/workspace
+  scope through transient tool context without persisting that scope across
+  requests.
+
+## [2.12.2] — 2026-07-31
+
+### Fixed
+
+- **Qdrant custom payload index maps** — `getQdrantIndexes()` field-to-type
+  definitions now create indexes for the declared field names and preserve
+  their explicit types. Historical list-of-field definitions remain supported.
+
+## [2.12.1] — 2026-07-31
+
+### Added
+
+- **Model-selected resource filters** — `search_assistant_resources` now passes
+  structured provider-validated filters such as scope, period, status, and date
+  range without introducing package-level domain intent maps.
+
+## [2.12.0] — 2026-07-31
+
+### Added
+
+- **Headless assistant runtime foundation** — task-specific model routes with
+  readiness validation, scoped conversational entity focus, structured resource
+  providers, scoped knowledge-source providers, and extensible access policies.
+- **AI-native structured resource tool** — the model can select
+  `search_assistant_resources` for host-defined courses, lessons, events,
+  bundles, reports, and other records without project-specific intent maps.
+- **Streaming client contract** — a framework-neutral JavaScript client
+  normalizes partial/final transcription, assistant deltas, activity events,
+  cancellation, synchronous chat, durable SSE runs, and realtime sessions.
+- **Structured assistant responses** — reusable DTOs represent text, activity,
+  cards/carousels, metrics, actions, speech metadata, and sources.
+- **Assistant readiness diagnostics** — `php artisan ai:assistant-readiness`
+  validates configured model routes and lists registered resource and knowledge
+  providers.
+
+### Fixed
+
+- **Resilient structured JSON decoding** — structured collection accepts direct,
+  fenced, and prose-wrapped balanced JSON while still failing closed on malformed
+  output.
+- **Resource scope enforcement** — private structured resources are filtered by
+  tenant, workspace, and user scope even when a host provider returns them.
+
 ## [2.11.30] — 2026-07-27
 
 ### Fixed

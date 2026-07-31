@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Tests\Unit\Services\Vector;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use LaravelAIEngine\Services\Vector\Drivers\QdrantPayloadIndexManager;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -67,11 +68,57 @@ class QdrantPayloadIndexManagerTest extends UnitTestCase
         $this->assertSame(['user_id'], $manager->autoFixIndexTypes('invoices'));
     }
 
+    public function test_creates_custom_indexes_from_field_type_map_without_indexing_type_values(): void
+    {
+        $history = [];
+        $handler = new MockHandler([
+            new Response(200),
+            new Response(200),
+            new Response(200),
+        ]);
+        $stack = HandlerStack::create($handler);
+        $stack->push(Middleware::history($history));
+        config()->set('ai-engine.vector.payload_index_fields', []);
+
+        $manager = new QdrantPayloadIndexManager(new Client([
+            'base_uri' => 'http://qdrant.test',
+            'handler' => $stack,
+        ]));
+        $manager->createPayloadIndexes('guides', CustomPayloadIndexModel::class);
+
+        $payloads = array_map(
+            static fn (array $transaction): array => json_decode(
+                (string) $transaction['request']->getBody(),
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            ),
+            $history,
+        );
+
+        $this->assertSame([
+            ['field_name' => 'is_public', 'field_schema' => 'bool'],
+            ['field_name' => 'category_key', 'field_schema' => 'keyword'],
+            ['field_name' => 'legacy_field', 'field_schema' => 'keyword'],
+        ], $payloads);
+    }
+
     private function client(array $responses = []): Client
     {
         return new Client([
             'base_uri' => 'http://qdrant.test',
             'handler' => HandlerStack::create(new MockHandler($responses)),
         ]);
+    }
+}
+
+final class CustomPayloadIndexModel
+{
+    public function getQdrantIndexes(): array
+    {
+        return [
+            'is_public' => 'bool',
+            'category_key' => 'keyword',
+            'legacy_field',
+        ];
     }
 }

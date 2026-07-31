@@ -86,7 +86,7 @@ class AiNativeRuntime
         $this->stateStore = $stateStore ?? new AiNativeStateStore($executionPolicy);
         $this->confirmationPreview = $confirmationPreview ?? new AiNativeConfirmationPreviewService();
         $this->responses = $responses ?? new AiNativeResponseFactory($this->stateStore, $tools, $this->confirmationPresenter);
-        $this->toolExecutor = $toolExecutor ?? new AiNativeToolExecutor($this->taskState, $this->stateStore, $executionPolicy);
+        $this->toolExecutor = $toolExecutor ?? new AiNativeToolExecutor($this->taskState, $this->stateStore, $executionPolicy, $tools);
         $this->suggestedToolContinuation = $suggestedToolContinuation ?? new AiNativeSuggestedToolContinuation($tools);
         $this->askUserConfirmationHandler = $askUserConfirmationHandler ?? new AiNativeAskUserConfirmationHandler(
             $tools,
@@ -242,6 +242,16 @@ class AiNativeRuntime
         // infer "already done" from a repeat by itself.
         $turnSucceededTools = [];
 
+        $forcedRagFailure = $this->executeForcedRag($message, $context, $state, $options);
+        if ($forcedRagFailure instanceof AgentResponse) {
+            return $forcedRagFailure;
+        }
+        if ((int) ($state['turn_outcome_count'] ?? 0) > 0
+            && (($state['last_turn_outcome']['tool'] ?? null) === 'search_knowledge')
+            && (($state['last_turn_outcome']['success'] ?? false) === true)) {
+            $turnSucceededTools['search_knowledge'] = true;
+        }
+
         for ($step = 0; $step < $this->maxSteps($options); $step++) {
             if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
                 $this->stateStore->put($context, $state);
@@ -365,20 +375,15 @@ class AiNativeRuntime
                     return $this->responses->final($context, $state, $closing, ['repeated_completed_call' => true]);
                 }
                 $this->notifyActivity($options, 'tool_call', ['tool_name' => (string) ($plan['tool'] ?? '')]);
-                // Cap-proof per-turn outcome tracking: compare the outcome list
-                // around the handler call. Below the 12-cap a length increase is
-                // the signal; AT the cap the length is constant, so the changed
-                // TAIL element is (a push at cap shifts the front off).
-                $outcomesBefore = (array) ($state['recent_outcomes'] ?? []);
+                $turnOutcomeCountBefore = (int) ($state['turn_outcome_count'] ?? 0);
                 $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
                 $outcome = $this->toolCallHandler->handle($message, $context, $state, $options, $plan);
                 $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, $action);
-                $outcomesAfter = (array) ($state['recent_outcomes'] ?? []);
-                $lastAfter = $outcomesAfter === [] ? null : $outcomesAfter[array_key_last($outcomesAfter)];
-                $lastBefore = $outcomesBefore === [] ? null : $outcomesBefore[array_key_last($outcomesBefore)];
-                if ($lastAfter !== null && (count($outcomesAfter) > count($outcomesBefore) || $lastAfter !== $lastBefore)) {
-                    $state['turn_outcome_count'] = (int) ($state['turn_outcome_count'] ?? 0) + 1;
-                    $state['last_turn_outcome'] = $lastAfter;
+                $lastAfter = is_array($state['last_turn_outcome'] ?? null)
+                    ? $state['last_turn_outcome']
+                    : null;
+                if ($lastAfter !== null
+                    && (int) ($state['turn_outcome_count'] ?? 0) > $turnOutcomeCountBefore) {
                     // Feed the repeat-guard: only a SUCCESSFUL call is "done work"
                     // a repeat of which can be safely short-circuited; failed
                     // calls stay retryable (the model may fix its arguments).
@@ -1000,6 +1005,62 @@ class AiNativeRuntime
                 'message_fingerprint' => substr(hash('sha256', $message), 0, 16),
             ]);
         }
+    }
+
+    /**
+     * force_rag is a caller correctness contract, not merely a prompt hint.
+     * Retrieve once before planning so a model cannot skip the required tool.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function executeForcedRag(
+        string $message,
+        UnifiedActionContext $context,
+        array &$state,
+        array $options,
+    ): ?AgentResponse {
+        if (empty($options['force_rag']) || (int) ($state['turn_outcome_count'] ?? 0) > 0) {
+            return null;
+        }
+
+        if (! $this->tools->has('search_knowledge')) {
+            return $this->responses->final(
+                $context,
+                $state,
+                $this->runtimeText(
+                    'ai-engine::runtime.responses.knowledge_tool_unavailable',
+                    'Knowledge search is unavailable for this request.',
+                ),
+                ['error_code' => 'knowledge_tool_unavailable'],
+            );
+        }
+
+        $query = trim((string) ($options['force_rag_query'] ?? $message));
+        $tool = $this->tools->get('search_knowledge');
+        $arguments = ['query' => $query !== '' ? $query : $message];
+
+        $this->notifyActivity($options, 'tool_call', ['tool_name' => 'search_knowledge']);
+        $result = $this->toolExecutor->execute($tool, $arguments, $context);
+        $this->toolExecutor->recordResult($state, 'search_knowledge', $arguments, $result);
+        $this->notifyActivity($options, 'tool_result', ['tool_name' => 'search_knowledge']);
+        $this->stateStore->put($context, $state);
+
+        if ($result->success && ! $result->requiresUserInput()) {
+            return null;
+        }
+
+        return $this->responses->final(
+            $context,
+            $state,
+            $result->message
+                ?? $result->error
+                ?? $this->runtimeText(
+                    'ai-engine::runtime.responses.knowledge_search_failed',
+                    'I could not find grounded knowledge for that request.',
+                ),
+            ['error_code' => 'knowledge_search_failed'],
+        );
     }
 
     private function maxSteps(array $options): int

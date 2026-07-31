@@ -13,8 +13,19 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class AiNativeStateResultCapTest extends UnitTestCase
 {
-    public function test_default_off_records_the_result_untouched(): void
+    public function test_safe_default_caps_an_oversized_result(): void
     {
+        $state = [];
+        $this->executor()->recordResult($state, 'stage_preview', [], $this->bigResult());
+
+        $recorded = $state['tool_results'][0]['result'];
+        $this->assertTrue($recorded['_state_truncated']);
+        $this->assertLessThanOrEqual(11, count($recorded['data']['operations']));
+    }
+
+    public function test_zero_limit_records_the_result_untouched_for_legacy_consumers(): void
+    {
+        config()->set('ai-agent.ai_native.state_result_max_bytes', 0);
         $state = [];
         $this->executor()->recordResult($state, 'stage_preview', [], $this->bigResult());
 

@@ -197,6 +197,101 @@ SSE works without a WebSocket service. Enable Laravel Broadcasting when the app 
 
 See `docs/chat-flow.mdx` for the full ChatFlow trace from request validation through runtime routing, dispatcher execution, response metadata, and the focused test suite.
 
+### Headless Assistant Runtime
+
+The package includes a reusable assistant foundation while leaving domain
+repositories, authorization, and UI in the host application:
+
+- task-specific primary/fallback model routes with readiness diagnostics
+- model-selected structured resource retrieval through
+  `search_assistant_resources`
+- tenant/workspace/user-scoped entity focus for follow-up questions such as
+  “tell me more about the course above”
+- scoped knowledge-source contracts for shared, tenant-public, tenant-private,
+  workspace-private, subscription-limited, and user-private documents
+- a replaceable multi-scope knowledge index that connects authorized provider
+  documents to standard RAG retrieval
+- structured responses for cards, carousels, metrics, actions, sources, and
+  speech metadata
+- headless browser clients for live transcription, activity, answer deltas,
+  SSE, microphone/WebRTC voice, authoritative tool dispatch, mute,
+  interruption, and cancellation
+
+Publish the client and validate configuration:
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client
+php artisan ai:assistant-readiness
+php artisan ai:assistant-readiness orchestration --json
+```
+
+The publish tag writes both `assistant-client.js` and
+`assistant-voice-client.js`. The voice client is UI-framework neutral:
+
+```js
+import {
+    createRealtimeVoiceClient,
+    createSemanticVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
+
+const voice = createRealtimeVoiceClient({
+    sessionId: conversationId,
+    metadata: { locale: document.documentElement.lang },
+    negotiationTimeoutMs: 20000,
+    connectTimeoutMs: 20000,
+});
+
+voice.on('transcription.partial', ({ text }) => renderCaption(text));
+voice.on('voice.state', ({ state }) => renderVoiceState(state));
+voice.on('voice.phase', ({ phase }) => renderConnectionPhase(phase));
+
+await voice.connect({
+    provider: 'openai',
+    model: 'gpt-realtime',
+    voice: 'marin',
+    input_audio_transcription: { model: 'gpt-realtime-whisper' },
+    turn_detection: createSemanticVad({ eagerness: 'low' }),
+});
+```
+
+See `docs/headless-realtime-voice-sdk.mdx` for tool dispatch, security,
+mixed-language turn detection, cancellation, and UI integration.
+
+The 3.0 cleanup has a published migration inventory, but 2.x still preserves
+every listed compatibility alias. Inspect the versioned machine-readable
+inventory with `php artisan ai:compatibility --json`; use
+`--fail-on-deprecated` only as an opt-in migration CI gate. See
+`docs/upgrade-3.0-deprecations.mdx`.
+
+Register host adapters in `config/ai-agent.php`:
+
+```php
+'assistant' => [
+    'model_routes' => [
+        'routes' => [
+            'orchestration' => [
+                'engine' => 'openai',
+                'model' => 'gpt-4o',
+                'fallback_engine' => 'openai',
+                'fallback_model' => 'gpt-4o-mini',
+                'required_capabilities' => ['tools'],
+            ],
+        ],
+        'providers' => [App\AI\Routing\AppModelRoutes::class],
+    ],
+    'resource_providers' => [App\AI\Resources\CourseResourceProvider::class],
+    'knowledge_sources' => [App\AI\Knowledge\AppGuideSource::class],
+],
+```
+
+Resource providers should call application services/repositories and return
+`AssistantResourceResult`; they should not query Eloquent directly. The package
+passes trusted user, tenant, and workspace scope into each query and applies a
+second access-policy check before results reach the model.
+
+See `docs-site/guides/assistant-runtime.mdx` for contracts, examples, streaming
+events, security rules, host integration, and production deployment.
+
 ### Structured Chat Collection
 
 ```php

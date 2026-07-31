@@ -1,0 +1,330 @@
+---
+title: "Headless Assistant Runtime"
+description: "Build a model-driven, scoped assistant with structured resources, semantic knowledge, conversational entity focus, and realtime streaming."
+---
+
+## What the package provides
+
+The assistant runtime is a generic coordination layer. It does not know what a
+course, order, academy, or report is. A host application supplies those domain
+capabilities through small adapters backed by its service and repository layers.
+
+The model decides whether to answer conversationally, search semantic knowledge,
+or call a structured resource tool. Deterministic rules remain responsible for
+authorization, tenant isolation, validation, approvals, and provider limits.
+
+| Concern | Package | Host application |
+| --- | --- | --- |
+| Model/tool loop | AI-native runtime | Task and model preferences |
+| Resource contract | DTOs, registry, tool, access policy | Repository-backed providers |
+| Semantic knowledge | Scoped source registry, policy-filtered RAG index contract | Documents and optional persistent index |
+| Follow-up context | Scoped entity memory | Domain labels and URLs |
+| Streaming contract | SSE events and headless client | UI, audio transport, wake word |
+| Authorization | Fail-closed default policies | Policies and optional custom adapters |
+
+## Configure task-specific models
+
+Declare stable task names instead of selecting models inside controllers:
+
+```php
+// config/ai-agent.php
+'assistant' => [
+    'model_routes' => [
+        'require_registered_models' => true,
+        'routes' => [
+            'orchestration' => [
+                'engine' => 'openai',
+                'model' => 'gpt-4o',
+                'fallback_engine' => 'openai',
+                'fallback_model' => 'gpt-4o-mini',
+                'required_capabilities' => ['tools'],
+            ],
+        ],
+        'providers' => [
+            App\AI\Routing\AppModelRoutes::class,
+        ],
+    ],
+],
+```
+
+`TaskModelRouteProvider` can supply dynamic routes. Configuration loads first,
+provider routes override it, and explicit runtime registrations override both.
+There is no implicit fallback to an unrelated model.
+
+Set `metadata.task` on an `AIRequest` to route requests that did not explicitly
+choose both an engine and model. Explicit caller choices remain authoritative.
+For a controlled retry, call
+`TaskModelRequestRouter::fallback($request, 'orchestration')`; it selects only
+the fallback declared for that task.
+
+Run readiness checks during deployment:
+
+```bash
+php artisan ai:assistant-readiness
+php artisan ai:assistant-readiness orchestration --json
+```
+
+The command fails when a route is malformed, the fallback pair is incomplete,
+the fallback equals the primary route, or a required registered model is
+unavailable/disabled.
+
+## Expose structured resources
+
+Keep Eloquent access in a repository and business rules in a service. The
+provider only translates a generic query and result:
+
+```php
+<?php
+
+namespace App\AI\Resources;
+
+use App\Services\CourseSearchService;
+use LaravelAIEngine\Contracts\AssistantResourceProvider;
+use LaravelAIEngine\DTOs\AssistantResourceItem;
+use LaravelAIEngine\DTOs\AssistantResourceQuery;
+use LaravelAIEngine\DTOs\AssistantResourceResult;
+
+final readonly class CourseResourceProvider implements AssistantResourceProvider
+{
+    public function __construct(private CourseSearchService $courses) {}
+
+    public function supports(AssistantResourceQuery $query): bool
+    {
+        return $query->type === null || $query->type === 'course';
+    }
+
+    public function search(AssistantResourceQuery $query): AssistantResourceResult
+    {
+        $rows = $this->courses->semanticSearch(
+            phrase: $query->query,
+            tenantId: $query->scope['tenant_id'] ?? null,
+            limit: $query->limit,
+        );
+
+        return new AssistantResourceResult(
+            items: array_map(static fn ($course) => new AssistantResourceItem(
+                id: (string) $course->id,
+                type: 'course',
+                title: $course->name,
+                summary: $course->description,
+                image: $course->imageUrl,
+                url: $course->publicUrl,
+                visibility: $course->isPublic ? 'public' : 'private',
+                tenantId: (string) $course->academyId,
+                metadata: [
+                    'lessons_count' => $course->lessonsCount,
+                    'watch_minutes' => $course->watchMinutes,
+                ],
+            ), $rows),
+        );
+    }
+}
+```
+
+Register it:
+
+```php
+'assistant' => [
+    'resource_providers' => [
+        App\AI\Resources\CourseResourceProvider::class,
+        App\AI\Resources\ReportResourceProvider::class,
+    ],
+],
+```
+
+The AI-native runtime registers `search_assistant_resources`. Its description is
+generic enough for the model to choose it for courses, lessons, paths, bundles,
+events, orders, revenue, and future resource types. No phrase-to-intent map is
+required.
+
+The tool returns structured `items`, `metrics`, `sources`, and a `presentation`
+hint (`cards`, `carousel`, or `metrics`). It also stores the returned entities in
+session memory so subsequent messages receive `recent_entities`.
+Its optional `filters` object lets the model express provider-specific scope,
+period, status, or date-range constraints. Providers must allow-list and validate
+those values before passing them to repositories.
+
+## Scope and access rules
+
+Private resources must include at least one of `tenantId`, `workspaceId`, or
+`userId`. The default policy rejects a private item when its declared scope does
+not exactly match trusted request context. Public/global/shared resources can be
+returned across tenants.
+
+Providers must still scope their database query. The registry policy is a
+defense-in-depth boundary, not a replacement for repository authorization.
+
+Bind a custom policy only when the application has more specific rules:
+
+```php
+$this->app->bind(
+    \LaravelAIEngine\Contracts\AssistantResourceAccessPolicy::class,
+    \App\AI\Security\AssistantResourcePolicy::class,
+);
+```
+
+For revenue, orders, student activity, or operational reports, always return
+private scoped resources/metrics. Never mark analytics as public.
+
+## Scoped semantic knowledge
+
+Implement `KnowledgeSourceProvider` and emit `ScopedKnowledgeDocument` values.
+Available scopes are:
+
+- `global_shared`
+- `tenant_public`
+- `tenant_private`
+- `workspace_private`
+- `subscription_limited`
+- `user_private`
+
+```php
+yield new ScopedKnowledgeDocument(
+    id: 'guide:create-course',
+    text: $guideText,
+    scope: KnowledgeScope::GlobalShared,
+    metadata: ['url' => route('docs.course.create')],
+);
+
+yield new ScopedKnowledgeDocument(
+    id: "academy:{$academyId}:course:{$courseId}",
+    text: $courseSearchText,
+    scope: KnowledgeScope::TenantPrivate,
+    tenantId: (string) $academyId,
+);
+```
+
+`KnowledgeSourceRegistry::documents($context)` filters every document through
+`KnowledgeAccessPolicy`. Replace that policy if subscription validity or public
+academy visibility requires application-specific checks.
+
+Registered documents participate in the standard `search_knowledge` RAG path.
+The default `ScopedKnowledgeIndex` implementation builds a bounded,
+Unicode-aware index for the authorized documents in the request and supports
+mixed Arabic/English terms without a phrase map. Authorization runs before
+indexing, so inaccessible private documents never become retrieval candidates.
+
+For a large corpus, bind a persistent semantic/vector implementation while
+keeping the same contract:
+
+```php
+$this->app->bind(
+    \LaravelAIEngine\Contracts\ScopedKnowledgeIndex::class,
+    \App\AI\Knowledge\QdrantScopedKnowledgeIndex::class,
+);
+```
+
+The package does not read host models or choose a queue/index refresh strategy.
+A persistent implementation should use the host repository and scheduler, and
+must retain exact scope fields in its payload filters.
+
+Configuration:
+
+```php
+'assistant' => [
+    'knowledge_index' => [
+        'rag_enabled' => true,
+        'limit' => 8,
+        'max_documents' => 2000,
+        'max_content_chars' => 6000,
+    ],
+],
+```
+
+Set `AI_ASSISTANT_KNOWLEDGE_INDEX_RAG_ENABLED=false` to preserve a host's
+existing RAG-only behavior during migration.
+
+## Realtime UI and voice
+
+Publish and import the headless client:
+
+```bash
+php artisan vendor:publish --tag=ai-engine-assistant-client
+```
+
+```js
+import { createAssistantClient } from '/vendor/ai-engine/assistant-client.js';
+import {
+  createRealtimeVoiceClient,
+  createSemanticVad,
+} from '/vendor/ai-engine/assistant-voice-client.js';
+
+const assistant = createAssistantClient();
+const voice = createRealtimeVoiceClient({ assistantClient: assistant });
+
+assistant.on('transcription.partial', ({ text }) => renderLiveTranscript(text));
+assistant.on('transcription.final', ({ text }) => commitTranscript(text));
+assistant.on('assistant.acknowledged', () => speakStatus('Okay, I will process that.'));
+assistant.on('tool.started', ({ activity }) => speakStatus(activity?.label));
+assistant.on('assistant.delta', ({ text }) => appendAnswer(text));
+assistant.on('assistant.completed', finishAnswer);
+assistant.on('assistant.failed', showError);
+
+await assistant.send(message, {
+    session_id: sessionId,
+    execution_mode: 'auto',
+});
+
+await voice.connect({
+  provider: 'openai',
+  model: 'gpt-realtime',
+  voice: 'marin',
+  input_audio_transcription: { model: 'gpt-realtime-whisper' },
+  turn_detection: createSemanticVad({ eagerness: 'low' }),
+});
+```
+
+The client supports:
+
+- normal chat requests
+- durable SSE run streams
+- normalized partial/final realtime transcription
+- assistant answer deltas
+- progress and tool activity
+- cancellation through `AbortController` and stream closure
+- browser microphone and WebRTC lifecycle through the optional voice client
+- mute, interruption, remote audio, and authoritative tool dispatch
+
+The host owns TTS voice selection, visual design, and wake-word UX. The voice
+client owns browser microphone capture and OpenAI WebRTC negotiation; custom
+WebSocket and LiveKit transports can send provider events to
+`consumeRealtimeEvent(event)`. Prefer semantic VAD with low eagerness, or a
+longer server-VAD silence duration, so short pauses do not cut off mixed
+Arabic/English speech. Do not force a transcription language when users may
+code-switch. Keep wake activation separate from model-driven request routing.
+
+See [Headless realtime voice JavaScript SDK](headless-realtime-voice-sdk.mdx).
+
+## Structured responses
+
+`AssistantResponse` provides one stable transport shape:
+
+```json
+{
+  "message": "I found two active courses.",
+  "state": "completed",
+  "activities": [],
+  "resources": [],
+  "metrics": [],
+  "actions": [],
+  "sources": [],
+  "speech": {"text": "I found two active courses."},
+  "metadata": {}
+}
+```
+
+Render `resources` as cards or a carousel and `metrics` as dashboard cards. Do
+not prepend a second Markdown list containing the same data.
+
+## Production checklist
+
+1. Configure explicit model routes and valid fallbacks.
+2. Register repository-backed resource and knowledge providers.
+3. Pass authenticated `user_id`, `tenant_id`, and `workspace_id` in runtime
+   context.
+4. Index shared documents globally and private documents with exact scope.
+5. Run queue workers for durable chat and scheduled indexing.
+6. Use SSE directly or Laravel Broadcasting/Reverb for run events.
+7. Run `php artisan ai:assistant-readiness --json` during deployment.
+8. Test cross-tenant denial, public discovery, mixed-language transcription,
+   entity follow-ups, cancellation, and structured rendering end to end.

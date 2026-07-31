@@ -13,6 +13,21 @@ class AgentActivityPresenterTest extends UnitTestCase
         return new AgentActivityPresenter();
     }
 
+    public function test_it_presents_headless_assistant_and_transcription_events(): void
+    {
+        $presenter = $this->presenter();
+
+        self::assertSame('listening', $presenter->describe(
+            \LaravelAIEngine\Services\Agent\AgentRunEventStreamService::TRANSCRIPTION_PARTIAL,
+        )['phase']);
+        self::assertTrue($presenter->describe(
+            \LaravelAIEngine\Services\Agent\AgentRunEventStreamService::ASSISTANT_COMPLETED,
+        )['terminal']);
+        self::assertSame('error', $presenter->describe(
+            \LaravelAIEngine\Services\Agent\AgentRunEventStreamService::ASSISTANT_FAILED,
+        )['phase']);
+    }
+
     public function test_tool_started_humanizes_verb_and_entity(): void
     {
         $p = $this->presenter();
