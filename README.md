@@ -237,10 +237,13 @@ import {
 const voice = createRealtimeVoiceClient({
     sessionId: conversationId,
     metadata: { locale: document.documentElement.lang },
+    negotiationTimeoutMs: 20000,
+    connectTimeoutMs: 20000,
 });
 
 voice.on('transcription.partial', ({ text }) => renderCaption(text));
 voice.on('voice.state', ({ state }) => renderVoiceState(state));
+voice.on('voice.phase', ({ phase }) => renderConnectionPhase(phase));
 
 await voice.connect({
     provider: 'openai',

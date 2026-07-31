@@ -160,8 +160,10 @@ test('headless voice client connects, mutes, interrupts, and disconnects', async
         }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     });
     const states = [];
+    const phases = [];
     let disconnected = 0;
     client.on('voice.state', ({ state }) => states.push(state));
+    client.on('voice.phase', ({ phase }) => phases.push(phase));
     client.on('voice.disconnected', () => { disconnected += 1; });
 
     const descriptor = await client.connect({ provider: 'openai', voice: 'marin' });
@@ -173,6 +175,7 @@ test('headless voice client connects, mutes, interrupts, and disconnects', async
     assert.equal(client.isConnected(), true);
     assert.equal(client.getState(), 'listening');
     assert.deepEqual(states.slice(0, 3), ['requesting_microphone', 'connecting', 'listening']);
+    assert.deepEqual(phases, ['creating_connection', 'negotiating', 'securing']);
 
     client.mute();
     assert.equal(track.enabled, false);
@@ -192,6 +195,84 @@ test('headless voice client connects, mutes, interrupts, and disconnects', async
     assert.equal(peer.closed, true);
     assert.equal(client.getState(), 'idle');
     assert.equal(disconnected, 1);
+});
+
+test('SDP negotiation has its own bounded timeout and aborts the request', async () => {
+    let aborted = false;
+    const track = {
+        enabled: true,
+        stopped: false,
+        stop() { this.stopped = true; },
+    };
+    const timedClient = createRealtimeVoiceClient({
+        fetch: async (_url, request) => new Promise((_resolve, reject) => {
+            request.signal.addEventListener('abort', () => {
+                aborted = true;
+                const error = new Error('aborted');
+                error.name = 'AbortError';
+                reject(error);
+            });
+        }),
+        mediaDevices: {
+            getUserMedia: async () => ({
+                getTracks: () => [track],
+                getAudioTracks: () => [track],
+            }),
+        },
+        RTCPeerConnection: FakePeerConnection,
+        createAudio: () => ({}),
+        negotiationTimeoutMs: 1,
+        setTimeout: (callback) => {
+            queueMicrotask(callback);
+            return 1;
+        },
+        clearTimeout: () => {},
+    });
+
+    await assert.rejects(
+        timedClient.connect(),
+        (error) => error?.code === 'negotiation_timeout',
+    );
+    assert.equal(aborted, true);
+    assert.equal(track.stopped, true);
+    assert.equal(timedClient.getState(), 'failed');
+});
+
+test('remote audio can be retried after browser autoplay is unlocked', async () => {
+    let playCalls = 0;
+    let blocked = 0;
+    const audio = {
+        play: async () => {
+            playCalls += 1;
+            if (playCalls === 1) throw new Error('autoplay blocked');
+        },
+        pause: () => {},
+        srcObject: null,
+    };
+    const client = createRealtimeVoiceClient({
+        fetch: async () => new Response(JSON.stringify({
+            success: true,
+            data: { session: { provider: 'openai', sdp: { answer: 'answer-sdp' } } },
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        mediaDevices: {
+            getUserMedia: async () => ({
+                getTracks: () => [],
+                getAudioTracks: () => [],
+            }),
+        },
+        RTCPeerConnection: FakePeerConnection,
+        createAudio: () => audio,
+    });
+    client.on('voice.audio_blocked', () => { blocked += 1; });
+    await client.connect();
+
+    const peer = FakePeerConnection.instances.at(-1);
+    peer.ontrack({ streams: [{}] });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(blocked, 1);
+
+    assert.equal(await client.resumeAudio(), true);
+    assert.equal(playCalls, 2);
 });
 
 test('speech only interrupts an active provider response', async () => {

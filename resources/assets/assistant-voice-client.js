@@ -166,6 +166,10 @@ export function createRealtimeVoiceClient(options = {}) {
     const setTimer = options.setTimeout || globalThis.setTimeout?.bind(globalThis);
     const clearTimer = options.clearTimeout || globalThis.clearTimeout?.bind(globalThis);
     const connectTimeoutMs = Math.max(1000, Number(options.connectTimeoutMs || 20000));
+    const negotiationTimeoutMs = Math.max(
+        1000,
+        Number(options.negotiationTimeoutMs || connectTimeoutMs),
+    );
     const handledToolCalls = new Set();
     let state = 'idle';
     let peer = null;
@@ -200,6 +204,8 @@ export function createRealtimeVoiceClient(options = {}) {
         state = next;
         emit('voice.state', { state: next, previous, ...payload });
     };
+
+    const phase = (name, payload = {}) => emit('voice.phase', { phase: name, ...payload });
 
     const emitDisconnected = () => {
         if (disconnectedEmitted) return;
@@ -404,27 +410,56 @@ export function createRealtimeVoiceClient(options = {}) {
 
     const requestAnswer = async (session, sdp) => {
         connectController = new AbortController();
-        const response = await fetchImpl(
-            options.sdpEndpoint || '/api/v1/ai/realtime/sdp',
-            {
-                method: 'POST',
-                credentials: options.withCredentials === false ? 'same-origin' : 'include',
-                headers: headers(),
-                signal: connectController.signal,
-                body: JSON.stringify({ ...session, transport: 'webrtc', sdp }),
-            },
-        );
-        const body = await response.json().catch(() => ({}));
-        const answer = body?.data?.session?.sdp?.answer
-            || body?.data?.answer_sdp
-            || body?.answer_sdp;
-        if (!response.ok || !answer) {
-            throw new RealtimeVoiceError(
-                body?.message || `Realtime SDP exchange failed (${response.status}).`,
-                { code: 'sdp_exchange_failed', status: response.status, response: body },
+        let timedOut = false;
+        const timer = setTimer?.(() => {
+            timedOut = true;
+            connectController?.abort();
+        }, negotiationTimeoutMs);
+
+        try {
+            const response = await fetchImpl(
+                options.sdpEndpoint || '/api/v1/ai/realtime/sdp',
+                {
+                    method: 'POST',
+                    credentials: options.withCredentials === false ? 'same-origin' : 'include',
+                    headers: headers(),
+                    signal: connectController.signal,
+                    body: JSON.stringify({ ...session, transport: 'webrtc', sdp }),
+                },
             );
+            const body = await response.json().catch(() => ({}));
+            const answer = body?.data?.session?.sdp?.answer
+                || body?.data?.answer_sdp
+                || body?.answer_sdp;
+            if (!response.ok || !answer) {
+                throw new RealtimeVoiceError(
+                    body?.message || `Realtime SDP exchange failed (${response.status}).`,
+                    { code: 'sdp_exchange_failed', status: response.status, response: body },
+                );
+            }
+            return { answer, descriptor: body?.data?.session || body?.data || body };
+        } catch (error) {
+            if (timedOut) {
+                throw new RealtimeVoiceError('Realtime SDP exchange timed out.', {
+                    code: 'negotiation_timeout',
+                });
+            }
+            throw error;
+        } finally {
+            clearTimer?.(timer);
         }
-        return { answer, descriptor: body?.data?.session || body?.data || body };
+    };
+
+    const resumeAudio = async () => {
+        if (!remoteAudio?.play) return false;
+        try {
+            await remoteAudio.play();
+            emit('voice.audio_resumed', { audio: remoteAudio });
+            return true;
+        } catch (error) {
+            emit('voice.audio_blocked', { error, audio: remoteAudio });
+            return false;
+        }
     };
 
     const disconnect = async ({ cancelAssistant = false } = {}) => {
@@ -481,6 +516,7 @@ export function createRealtimeVoiceClient(options = {}) {
                 }
                 microphone = acquiredMicrophone;
                 transition('connecting');
+                phase('creating_connection');
                 peer = new PeerConnection(options.rtcConfiguration);
                 channel = peer.createDataChannel(options.dataChannelLabel || 'oai-events');
                 remoteAudio = createAudio();
@@ -489,9 +525,7 @@ export function createRealtimeVoiceClient(options = {}) {
                 for (const track of microphone.getTracks()) peer.addTrack(track, microphone);
                 peer.ontrack = (event) => {
                     remoteAudio.srcObject = event.streams?.[0] || null;
-                    Promise.resolve(remoteAudio.play?.()).catch((error) => {
-                        emit('voice.audio_blocked', { error, audio: remoteAudio });
-                    });
+                    void resumeAudio();
                 };
                 installChannelHandlers();
 
@@ -499,12 +533,14 @@ export function createRealtimeVoiceClient(options = {}) {
                 if (generation !== lifecycle) return null;
                 await peer.setLocalDescription(offer);
                 if (generation !== lifecycle) return null;
+                phase('negotiating');
                 const result = await requestAnswer(
                     session,
                     peer.localDescription?.sdp || offer.sdp,
                 );
                 if (generation !== lifecycle) return null;
                 descriptor = result.descriptor;
+                phase('securing');
                 await peer.setRemoteDescription({
                     type: 'answer',
                     sdp: normalizeRealtimeSdp(result.answer),
@@ -559,6 +595,7 @@ export function createRealtimeVoiceClient(options = {}) {
         consumeRealtimeEvent,
         sendEvent,
         speak,
+        resumeAudio,
         interrupt,
         mute: () => setMuted(true),
         unmute: () => setMuted(false),

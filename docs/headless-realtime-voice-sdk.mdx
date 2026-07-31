@@ -34,9 +34,12 @@ const voice = createRealtimeVoiceClient({
     },
     autoDispatchTools: true,
     speakToolResults: true,
+    negotiationTimeoutMs: 20000,
+    connectTimeoutMs: 20000,
 });
 
 voice.on('voice.state', ({ state }) => renderState(state));
+voice.on('voice.phase', ({ phase }) => renderConnectionPhase(phase));
 voice.on('transcription.partial', ({ text }) => renderLiveCaption(text));
 voice.on('transcription.final', ({ text }) => commitCaption(text));
 voice.on('tool.started', ({ call }) => renderActivity(call.name));
@@ -57,6 +60,12 @@ await voice.connect({
     }),
 });
 ```
+
+`negotiationTimeoutMs` bounds the authenticated SDP HTTP exchange, while
+`connectTimeoutMs` bounds the later WebRTC DataChannel handshake. Keeping them
+separate lets the UI distinguish an application/provider timeout from a
+network, VPN, or firewall failure. Connection phases are emitted as
+`creating_connection`, `negotiating`, and `securing`.
 
 Do not set a fixed transcription language when users may mix Arabic and
 English. Language selection belongs to the transcription model, while
@@ -127,11 +136,14 @@ back to package dispatch names.
 voice.mute();
 voice.unmute();
 voice.interrupt();
+await voice.resumeAudio();
 await voice.disconnect();
 ```
 
 - `mute()` disables the microphone track without destroying the connection.
 - `interrupt()` cancels an active response and clears queued provider audio.
+- `resumeAudio()` retries the remote audio element after a user gesture when
+  browser autoplay policy blocked the first playback attempt.
 - speaking while a response is active performs the same barge-in
   automatically unless `interruptOnSpeech` is `false`.
 - `disconnect()` aborts negotiation, closes media and data channels, stops
@@ -141,10 +153,12 @@ await voice.disconnect();
 Relevant events include:
 
 - `voice.state`
+- `voice.phase`
 - `voice.connected`
 - `voice.disconnected`
 - `voice.muted`
 - `voice.audio_blocked`
+- `voice.audio_resumed`
 - `voice.error`
 - `transcription.partial`
 - `transcription.final`
