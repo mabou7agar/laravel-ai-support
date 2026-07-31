@@ -39,6 +39,11 @@ class AiNativeToolExecutor
         ];
 
         $this->taskState->recordToolResult($state, $toolName, $params, $result, $writeTool);
+        $state['turn_outcome_count'] = (int) ($state['turn_outcome_count'] ?? 0) + 1;
+        $outcomes = (array) ($state['recent_outcomes'] ?? []);
+        $state['last_turn_outcome'] = $outcomes === []
+            ? null
+            : $outcomes[array_key_last($outcomes)];
     }
 
     /**

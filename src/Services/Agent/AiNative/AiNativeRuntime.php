@@ -365,20 +365,15 @@ class AiNativeRuntime
                     return $this->responses->final($context, $state, $closing, ['repeated_completed_call' => true]);
                 }
                 $this->notifyActivity($options, 'tool_call', ['tool_name' => (string) ($plan['tool'] ?? '')]);
-                // Cap-proof per-turn outcome tracking: compare the outcome list
-                // around the handler call. Below the 12-cap a length increase is
-                // the signal; AT the cap the length is constant, so the changed
-                // TAIL element is (a push at cap shifts the front off).
-                $outcomesBefore = (array) ($state['recent_outcomes'] ?? []);
+                $turnOutcomeCountBefore = (int) ($state['turn_outcome_count'] ?? 0);
                 $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
                 $outcome = $this->toolCallHandler->handle($message, $context, $state, $options, $plan);
                 $this->notifyNewRuntimeFeedback($options, $state, $feedbackCount, $step, $action);
-                $outcomesAfter = (array) ($state['recent_outcomes'] ?? []);
-                $lastAfter = $outcomesAfter === [] ? null : $outcomesAfter[array_key_last($outcomesAfter)];
-                $lastBefore = $outcomesBefore === [] ? null : $outcomesBefore[array_key_last($outcomesBefore)];
-                if ($lastAfter !== null && (count($outcomesAfter) > count($outcomesBefore) || $lastAfter !== $lastBefore)) {
-                    $state['turn_outcome_count'] = (int) ($state['turn_outcome_count'] ?? 0) + 1;
-                    $state['last_turn_outcome'] = $lastAfter;
+                $lastAfter = is_array($state['last_turn_outcome'] ?? null)
+                    ? $state['last_turn_outcome']
+                    : null;
+                if ($lastAfter !== null
+                    && (int) ($state['turn_outcome_count'] ?? 0) > $turnOutcomeCountBefore) {
                     // Feed the repeat-guard: only a SUCCESSFUL call is "done work"
                     // a repeat of which can be safely short-circuited; failed
                     // calls stay retryable (the model may fix its arguments).

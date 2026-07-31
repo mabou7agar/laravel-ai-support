@@ -212,6 +212,12 @@ class ForceRagSearchKnowledgeLoopTest extends TestCase
             $this->app->make(IntentSignalService::class)
         );
         $context = new UnifiedActionContext('force-rag-guard', 78);
+        $context->metadata['ai_native']['recent_outcomes'] = array_fill(0, 12, [
+            'tool' => 'search_knowledge',
+            'outcome' => 'found',
+            'success' => true,
+            'label' => 'create a course',
+        ]);
 
         $response = $runtime->process(
             'How do I create a course?',

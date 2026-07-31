@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.5] — 2026-07-31
+
+### Fixed
+
+- **Capped outcome accounting** — identical tool outcomes now count reliably
+  even when the persisted recent-outcome buffer is already full.
+
 ## [2.12.4] — 2026-07-31
 
 ### Fixed
