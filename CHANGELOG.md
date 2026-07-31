@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.8] — 2026-07-31
+
+### Fixed
+
+- **Localized RAG citations** — citation type, title, URL, and source IDs now
+  normalize localized/nested array values without array-to-string errors.
+
 ## [2.12.7] — 2026-07-31
 
 ### Fixed

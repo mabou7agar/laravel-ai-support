@@ -117,6 +117,23 @@ class RAGPipelineTest extends UnitTestCase
         $this->assertSame('file_1', $provider->citations[0]->sourceId);
     }
 
+    public function test_normalizes_localized_citation_values(): void
+    {
+        app()->setLocale('ar');
+
+        $citation = RAGCitation::fromArray([
+            'type' => ['en' => 'guide'],
+            'title' => ['en' => 'Create a course', 'ar' => 'إنشاء دورة'],
+            'url' => ['ar' => '/cp/courses/create'],
+            'source_id' => ['value' => 13],
+        ]);
+
+        $this->assertSame('guide', $citation->type);
+        $this->assertSame('إنشاء دورة', $citation->title);
+        $this->assertSame('/cp/courses/create', $citation->url);
+        $this->assertSame('13', $citation->sourceId);
+    }
+
     public function test_normalizes_arrayable_vector_search_result_with_matched_chunk_text_taking_precedence(): void
     {
         $source = RAGSource::fromMixed(new class implements Arrayable {
