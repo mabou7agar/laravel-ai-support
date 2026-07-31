@@ -68,4 +68,17 @@ class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
             $sources
         );
     }
+
+    public function test_missing_optional_component_directory_is_not_registered(): void
+    {
+        $componentPath = realpath(__DIR__ . '/../../src')
+            . '/../resources/views/components';
+        $registeredPaths = array_column(
+            $this->app->make('blade.compiler')->getAnonymousComponentPaths(),
+            'path'
+        );
+
+        $this->assertDirectoryDoesNotExist($componentPath);
+        $this->assertNotContains($componentPath, $registeredPaths);
+    }
 }

@@ -454,12 +454,18 @@ class AIEngineServiceProvider extends ServiceProvider
      */
     protected function registerBladeComponents(): void
     {
+        $componentPath = __DIR__.'/../resources/views/components';
+
+        if (! is_dir($componentPath)) {
+            return;
+        }
+
         $compiler = $this->app->make('blade.compiler');
 
         // Register anonymous components (Laravel 9+ only)
         // anonymousComponentPath was introduced in Laravel 9
         if (method_exists($compiler, 'anonymousComponentPath')) {
-            $compiler->anonymousComponentPath(__DIR__.'/../resources/views/components', 'ai-engine');
+            $compiler->anonymousComponentPath($componentPath, 'ai-engine');
         }
     }
 
