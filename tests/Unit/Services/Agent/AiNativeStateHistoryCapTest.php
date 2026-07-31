@@ -10,8 +10,22 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class AiNativeStateHistoryCapTest extends UnitTestCase
 {
-    public function test_default_off_loads_persisted_state_untouched(): void
+    public function test_safe_defaults_cap_persisted_state(): void
     {
+        $context = $this->contextWithState([
+            'tool_results' => array_fill(0, 20, $this->bigResult()),
+        ]);
+
+        $state = (new AiNativeStateStore())->state($context);
+
+        $this->assertCount(8, $state['tool_results']);
+        $this->assertTrue($state['tool_results'][0]['_state_truncated']);
+    }
+
+    public function test_zero_limits_load_persisted_state_untouched_for_legacy_consumers(): void
+    {
+        config()->set('ai-agent.ai_native.state_result_max_bytes', 0);
+        config()->set('ai-agent.ai_native.state_history_max_results', 0);
         $context = $this->contextWithState([
             'tool_results' => array_fill(0, 20, $this->bigResult()),
         ]);

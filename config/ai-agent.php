@@ -209,14 +209,15 @@ return [
         // The runtime state is re-serialized into EVERY subsequent planner step,
         // so one oversized result re-ships its full payload on each remaining
         // step of the turn. Above the cap, long strings are truncated and long
-        // lists elided (scalars/ids at any depth survive). 0 = off (today's
-        // behavior byte-for-byte).
-        'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 0),
+        // lists elided (scalars/ids at any depth survive). The safe default is
+        // 16 KiB per entry; set 0 only when a legacy integration intentionally
+        // needs unbounded internal planner state.
+        'state_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_STATE_RESULT_MAX_BYTES', 16384),
         // Newest tool results kept when a session's PERSISTED state is loaded.
         // Long sessions otherwise accumulate every turn's tool results forever
-        // and re-serialize them into every planner step. 0 = unlimited
-        // (today's behavior byte-for-byte).
-        'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 0),
+        // and re-serialize them into every planner step. The newest 8 entries
+        // are enough for normal follow-ups; set 0 for legacy unlimited state.
+        'state_history_max_results' => (int) env('AI_AGENT_AI_NATIVE_STATE_HISTORY_MAX_RESULTS', 8),
         // Render-time compaction of the context snapshot's recent_outcomes:
         // byte-identical entries collapse to one + {"repeats":N}, and each
         // entry's 'display' strings are capped (~200 chars). Prompt-only — the
