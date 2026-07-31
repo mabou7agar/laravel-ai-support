@@ -82,8 +82,115 @@ class SearchKnowledgeTool extends SimpleAgentTool
 
         return ActionResult::success($text, [
             'query' => $query,
-            'metadata' => $metadata,
+            'metadata' => $this->metadataForPlanner($metadata),
         ]);
+    }
+
+    /**
+     * Keep the planner-facing knowledge result bounded.
+     *
+     * RAG response metadata can contain complete vector payloads, chunk text,
+     * entity snapshots, and graph links in both `sources` and `citations`.
+     * Replaying that data inside the AiNative state duplicates context which is
+     * already represented by the grounded answer text and can grow one planner
+     * step into hundreds of kilobytes. The host still receives the original RAG
+     * response through its normal response/event path; only this internal tool
+     * result is projected to citation-safe fields.
+     *
+     * Set ai-agent.ai_native.knowledge_tool_compact_metadata=false to preserve
+     * the legacy full metadata payload.
+     *
+     * @param array<string, mixed> $metadata
+     * @return array<string, mixed>
+     */
+    private function metadataForPlanner(array $metadata): array
+    {
+        if (! (bool) config('ai-agent.ai_native.knowledge_tool_compact_metadata', true)) {
+            return $metadata;
+        }
+
+        $projected = $metadata;
+        foreach ($metadata as $key => $value) {
+            if (in_array($key, ['sources', 'citations'], true)) {
+                $projected[$key] = $this->citationSummaries($value);
+            }
+        }
+
+        return array_filter(
+            $projected,
+            static fn (mixed $value): bool => $value !== null && $value !== [],
+        );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function citationSummaries(mixed $entries): array
+    {
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        $summaries = [];
+        foreach (array_slice(array_values($entries), 0, 8) as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $summary = array_filter([
+                'type' => $this->scalarValue($entry['type'] ?? $entry['citation_type'] ?? null),
+                'title' => $this->scalarValue($entry['title'] ?? $entry['citation_title'] ?? null),
+                'url' => $this->scalarValue($entry['url'] ?? $entry['citation_url'] ?? null),
+                'source_id' => $this->scalarValue($entry['source_id'] ?? $entry['id'] ?? null),
+                'scope_type' => $this->scalarValue(
+                    $entry['scope_type'] ?? data_get($entry, 'metadata.scope_type'),
+                ),
+                'scope_label' => $this->scalarValue(
+                    $entry['scope_label'] ?? data_get($entry, 'metadata.scope_label'),
+                ),
+            ], static fn (?string $value): bool => $value !== null);
+
+            if ($summary !== []) {
+                $summaries[] = $summary;
+            }
+        }
+
+        return $summaries;
+    }
+
+    private function scalarValue(mixed $value): ?string
+    {
+        if (is_scalar($value)) {
+            $value = trim((string) $value);
+
+            return $value !== '' ? mb_substr($value, 0, 500) : null;
+        }
+
+        if (! is_array($value)) {
+            return null;
+        }
+
+        foreach (array_unique(array_filter([
+            function_exists('app') && app()->bound('translator') ? app()->getLocale() : null,
+            'en',
+            'ar',
+        ])) as $locale) {
+            if (array_key_exists($locale, $value)) {
+                $localized = $this->scalarValue($value[$locale]);
+                if ($localized !== null) {
+                    return $localized;
+                }
+            }
+        }
+
+        foreach ($value as $candidate) {
+            $scalar = $this->scalarValue($candidate);
+            if ($scalar !== null) {
+                return $scalar;
+            }
+        }
+
+        return null;
     }
 
     private function scopeOption(UnifiedActionContext $context, string $key): mixed

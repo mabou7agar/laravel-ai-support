@@ -535,4 +535,63 @@ class RagVectorFlowTest extends UnitTestCase
             $this->assertTrue($result->success, 'limit case ' . var_export($case['limit'], true));
         }
     }
+
+    public function test_search_knowledge_projects_large_vector_metadata_for_planner_state(): void
+    {
+        config()->set('ai-agent.ai_native.knowledge_tool_compact_metadata', true);
+        app()->setLocale('ar');
+        $context = new UnifiedActionContext('sess-bounded-rag', 7);
+        $conversation = Mockery::mock(AgentConversationService::class);
+        $conversation->shouldReceive('executeSearchRAG')
+            ->once()
+            ->andReturnUsing(static function () use ($context): AgentResponse {
+                $response = AgentResponse::conversational('Grounded course steps.', $context);
+                $response->metadata = [
+                    'sources' => [[
+                        'type' => 'vector',
+                        'title' => ['ar' => 'إنشاء دورة', 'en' => 'Create a course'],
+                        'url' => '/cp/courses/create',
+                        'source_id' => '3',
+                        'metadata' => [
+                            'scope_type' => 'osarh_platform_guide',
+                            'scope_label' => 'OSARH platform guide',
+                            'chunk_text' => str_repeat('large vector chunk ', 10_000),
+                            'object' => ['private_payload' => str_repeat('x', 100_000)],
+                        ],
+                    ]],
+                    'citations' => [[
+                        'type' => 'vector',
+                        'title' => ['ar' => 'إنشاء دورة'],
+                        'url' => '/cp/courses/create',
+                        'source_id' => '3',
+                        'metadata' => ['chunk_text' => str_repeat('duplicate ', 10_000)],
+                    ]],
+                    'rag_enabled' => true,
+                    'rag_pipeline' => true,
+                    'rag_result_count' => 1,
+                    'rag_source_types' => ['vector'],
+                    'rag_analysis' => ['query' => 'should not enter planner state'],
+                ];
+
+                return $response;
+            });
+
+        $result = (new SearchKnowledgeTool($conversation))->execute([
+            'query' => 'كيف أنشئ دورة؟',
+        ], $context);
+        $encoded = json_encode($result->data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $this->assertTrue($result->success);
+        $this->assertIsString($encoded);
+        $this->assertLessThan(5_000, strlen($encoded));
+        $this->assertSame('إنشاء دورة', data_get($result->data, 'metadata.sources.0.title'));
+        $this->assertSame('/cp/courses/create', data_get($result->data, 'metadata.citations.0.url'));
+        $this->assertSame(1, data_get($result->data, 'metadata.rag_result_count'));
+        $this->assertStringNotContainsString('large vector chunk', $encoded);
+        $this->assertStringNotContainsString('private_payload', $encoded);
+        $this->assertSame(
+            'should not enter planner state',
+            data_get($result->data, 'metadata.rag_analysis.query'),
+        );
+    }
 }
