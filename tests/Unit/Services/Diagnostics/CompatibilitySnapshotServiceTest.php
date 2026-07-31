@@ -17,11 +17,12 @@ final class CompatibilitySnapshotServiceTest extends UnitTestCase
         self::assertSame(1, $snapshot['schema_version']);
         self::assertSame('3.0', $snapshot['target_version']);
         self::assertNotEmpty($snapshot['surfaces']);
-        self::assertContains(
-            'LaravelAIEngine.Facades.AIEngine',
-            array_column($snapshot['surfaces'], 'id'),
+        self::assertSame(
+            ['removed'],
+            array_values(array_unique(array_column($snapshot['surfaces'], 'status'))),
         );
         self::assertContains('retained', array_column($snapshot['routes'], 'status'));
+        self::assertContains('removed', array_column($snapshot['public_classes'], 'status'));
     }
 
     public function test_it_rejects_unsafe_target_names(): void

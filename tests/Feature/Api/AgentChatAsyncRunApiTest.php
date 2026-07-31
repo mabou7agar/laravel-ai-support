@@ -14,7 +14,7 @@ use Mockery;
 
 class AgentChatAsyncRunApiTest extends TestCase
 {
-    public function test_agent_chat_api_queues_durable_run_when_async_is_true(): void
+    public function test_agent_chat_api_queues_durable_run_for_explicit_async_mode(): void
     {
         $service = Mockery::mock(AgentChatRunService::class);
         $service->shouldReceive('start')
@@ -52,7 +52,7 @@ class AgentChatAsyncRunApiTest extends TestCase
             'memory' => false,
             'actions' => true,
             'use_rag' => false,
-            'async' => true,
+            'execution_mode' => 'async',
         ])
             ->assertAccepted()
             ->assertJsonPath('success', true)
@@ -239,45 +239,12 @@ class AgentChatAsyncRunApiTest extends TestCase
             'engine' => 'openai',
             'model' => 'gpt-4o-mini',
             'use_rag' => false,
-            'async' => true,
+            'execution_mode' => 'async',
         ])
             ->assertOk()
             ->assertJsonPath('data.response', 'Sync fallback.')
             ->assertJsonPath('data.execution_mode', 'sync')
             ->assertJsonPath('data.execution_mode_reason', 'async_disabled');
-    }
-
-    public function test_agent_chat_api_accepts_async_auto_alias_for_auto_execution_mode(): void
-    {
-        $service = Mockery::mock(AgentChatRunService::class);
-        $service->shouldNotReceive('start');
-
-        $chat = Mockery::mock(ChatService::class);
-        $chat->shouldReceive('processMessage')
-            ->once()
-            ->withAnyArgs()
-            ->andReturnUsing(function (...$args): AIResponse {
-                $options = end($args);
-                $this->assertSame('auto', $options['execution_mode'] ?? null);
-                $this->assertSame('sync', $options['execution_mode_resolved'] ?? null);
-
-                return AIResponse::success('Hello from auto.', 'openai', 'gpt-4o-mini');
-            });
-
-        $this->app->instance(AgentChatRunService::class, $service);
-        $this->app->instance(ChatService::class, $chat);
-
-        $this->postJson('/api/v1/agent/chat', [
-            'message' => 'Hi',
-            'session_id' => 'async-auto-alias-chat-api',
-            'engine' => 'openai',
-            'model' => 'gpt-4o-mini',
-            'use_rag' => false,
-            'async' => 'auto',
-        ])
-            ->assertOk()
-            ->assertJsonPath('data.response', 'Hello from auto.')
-            ->assertJsonPath('data.execution_mode', 'sync');
     }
 
     public function test_agent_chat_run_service_creates_run_and_dispatches_job(): void

@@ -6,7 +6,7 @@
     {
       "id": "agent_chat.request.async",
       "kind": "request_field",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "execution_mode",
       "remove_in": "3.0",
       "locations": ["POST /api/v1/agent/chat"],
@@ -15,7 +15,7 @@
     {
       "id": "agent_chat.request.rag",
       "kind": "request_field",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "use_rag",
       "remove_in": "3.0",
       "locations": ["POST /api/v1/agent/chat"]
@@ -23,7 +23,7 @@
     {
       "id": "LaravelAIEngine.Facades.AIEngine",
       "kind": "public_class",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "LaravelAIEngine\\Facades\\Engine",
       "remove_in": "3.0",
       "locations": ["PHP facade imports"]
@@ -31,7 +31,7 @@
     {
       "id": "AIEngineFake.requests",
       "kind": "public_method",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "AIEngineFake::calls()",
       "remove_in": "3.0",
       "locations": ["Package and host tests"]
@@ -39,7 +39,7 @@
     {
       "id": "ai-agent.ai_native.enabled",
       "kind": "config_key",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "Remove the setting; AI-native execution is always active.",
       "remove_in": "3.0",
       "locations": ["config/ai-agent.php"]
@@ -47,7 +47,7 @@
     {
       "id": "agent_context.unscoped_cache_fallback",
       "kind": "cache_compatibility",
-      "status": "deprecated",
+      "status": "removed",
       "replacement": "Scoped AgentContextRepository cache keys",
       "remove_in": "3.0",
       "locations": ["AgentContextRepository reads"],
@@ -77,7 +77,7 @@
     },
     {
       "class": "LaravelAIEngine\\Facades\\AIEngine",
-      "status": "deprecated",
+      "status": "removed",
       "remove_in": "3.0",
       "replacement": "LaravelAIEngine\\Facades\\Engine"
     }

@@ -181,7 +181,7 @@ Configure LiveKit with `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, a
 
 ## Durable Agent Run Streams
 
-Agent chat can create durable queued runs by sending `async=true` to `POST /api/v1/agent/chat`. The response includes `status_url`, `trace_url`, `stream_url`, and Laravel broadcast metadata.
+Agent chat can create durable queued runs by sending `execution_mode=async` to `POST /api/v1/agent/chat`. The response includes `status_url`, `trace_url`, `stream_url`, and Laravel broadcast metadata.
 
 Use SSE when a browser tab needs live progress without a WebSocket service:
 

@@ -29,7 +29,6 @@ Confirmed write tools also get duplicate protection. When the same confirming to
 Optionally, a read request can be prevented from re-triggering a write. After a write completes, an ambiguous follow-up such as "search for the invoice for Mohamed" can bias the planner into re-running the create flow. Set `AI_AGENT_GUARD_READ_INTENT_WRITES=true` (`ai-agent.ai_native.guard_read_intent_writes`) and the runtime nudges the planner back toward a read/lookup tool when the latest message is a read (search/show/list/count) carrying no write intent and no write is in progress. It fails open — never blocking a write that is genuinely in progress (skill scope, pending tool, active objective) or a message that also asks to create/update. Override the verb lists with `ai-agent.ai_native.read_intent_terms` / `write_intent_terms`.
 
 ```env
-AI_AGENT_AI_NATIVE_ENABLED=true
 AI_AGENT_AI_NATIVE_SKILLS=true
 ```
 
@@ -229,7 +228,7 @@ If a client cannot consume live events, use the run trace API to read persisted 
 
 ## Durable Chat Entry Point
 
-`POST /api/v1/agent/chat` stays synchronous by default. Use `execution_mode=auto` when the client wants the package to queue only work that needs durability. Use `execution_mode=async` or `async=true` when a chat request should always become a durable agent run:
+`POST /api/v1/agent/chat` stays synchronous by default. Use `execution_mode=auto` when the client wants the package to queue only work that needs durability. Use `execution_mode=async` when a chat request should always become a durable agent run:
 
 ```bash
 curl -X POST "$APP_URL/api/v1/agent/chat" \

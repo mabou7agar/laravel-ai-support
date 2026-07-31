@@ -36,23 +36,11 @@ class SendMessageRequest extends FormRequest
             'actions' => 'sometimes|boolean',
             'streaming' => 'sometimes|boolean',
             'use_rag' => 'sometimes|nullable|boolean',
-            'rag' => 'sometimes|nullable|boolean',
             'force_rag' => 'sometimes|boolean',
             'rag_collections' => 'sometimes|array',
             'rag_collections.*' => 'string',
             'search_instructions' => 'sometimes|string|max:500',
             'highlight_context' => 'sometimes|nullable|string|max:4000',
-            'async' => ['sometimes', function (string $attribute, mixed $value, \Closure $fail): void {
-                if (is_bool($value) || $value === 0 || $value === 1) {
-                    return;
-                }
-
-                if (is_string($value) && in_array(strtolower($value), ['0', '1', 'true', 'false', 'auto', 'sync', 'async'], true)) {
-                    return;
-                }
-
-                $fail('The async field must be a boolean or one of sync, async, auto.');
-            }],
             'execution_mode' => 'sometimes|string|in:sync,async,auto',
             'auto_select_model' => 'sometimes|boolean',
             'task_type' => 'sometimes|string|in:vision,coding,reasoning,fast,cheap,quality,default',
@@ -132,9 +120,8 @@ class SendMessageRequest extends FormRequest
     /**
      * Resolve the canonical RAG toggle.
      *
-     * Both `use_rag` (preferred) and the legacy `rag` alias are validated boolean
-     * fields. When neither is supplied RAG stays enabled (default true); it is only
-     * disabled when a caller explicitly passes a falsy value.
+     * When `use_rag` is omitted RAG stays enabled; it is only disabled when a
+     * caller explicitly passes a falsy canonical value.
      */
     public function useRag(): bool
     {
@@ -142,10 +129,6 @@ class SendMessageRequest extends FormRequest
 
         if (array_key_exists('use_rag', $validated) && $validated['use_rag'] !== null) {
             return (bool) $validated['use_rag'];
-        }
-
-        if (array_key_exists('rag', $validated) && $validated['rag'] !== null) {
-            return (bool) $validated['rag'];
         }
 
         return true;
@@ -157,12 +140,7 @@ class SendMessageRequest extends FormRequest
     public function toDTO(): SendMessageDTO
     {
         $validated = $this->validated();
-        $async = $validated['async'] ?? false;
         $executionMode = $validated['execution_mode'] ?? null;
-        if (is_string($async) && in_array(strtolower($async), ['sync', 'async', 'auto'], true)) {
-            $executionMode ??= strtolower($async);
-            $async = strtolower($async) === 'async';
-        }
         $userId = $validated['user_id'] ?? auth()->user()?->getAuthIdentifier();
         
         return new SendMessageDTO(
@@ -173,7 +151,6 @@ class SendMessageRequest extends FormRequest
             memory: $validated['memory'] ?? true,
             actions: $validated['actions'] ?? true,
             streaming: $validated['streaming'] ?? false,
-            async: (bool) filter_var($async, FILTER_VALIDATE_BOOLEAN),
             userId: $userId !== null ? (string) $userId : null,
             intelligentRag: $this->useRag(),
             forceRag: $validated['force_rag'] ?? false,

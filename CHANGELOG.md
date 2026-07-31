@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] — 2026-08-01
+
+### Removed
+
+- **Agent Chat request aliases** — `async` and `rag` are no longer validated or
+  translated. Use `execution_mode` and `use_rag`.
+- **Duplicate facade and testing APIs** —
+  `LaravelAIEngine\Facades\AIEngine` and `AIEngineFake::requests()` are
+  removed. Use `Engine` and `AIEngineFake::calls()`.
+- **AI-native enable switch** — `ai-agent.ai_native.enabled` and
+  `AI_AGENT_AI_NATIVE_ENABLED` are removed; the model-driven AI-native runtime
+  is always active.
+- **Raw context-cache compatibility** — agent context reads and deletes no
+  longer touch `agent_context:{session}`. All context persistence uses scoped,
+  identity-aware keys.
+
+### Changed
+
+- **Compatibility diagnostics** — the 3.0 snapshot records all six planned
+  removals and `ai:compatibility --fail-on-deprecated` now succeeds with zero
+  deprecated surfaces.
+- **Upgrade guide** — request, facade, test fake, config, and cache migrations
+  are documented in `docs/upgrade-3.0-deprecations.mdx`.
+
+## [2.14.3] — 2026-07-31
+
+### Fixed
+
+- **Blade view caching** — optional anonymous component paths are registered
+  only when their directory exists, allowing `php artisan view:cache` in hosts
+  that publish only the headless assistant assets.
+
 ## [2.14.2] — 2026-07-31
 
 ### Added

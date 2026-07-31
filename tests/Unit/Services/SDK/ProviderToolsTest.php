@@ -54,7 +54,7 @@ class ProviderToolsTest extends UnitTestCase
             ->withTools([new WebSearch()])
             ->generate('Find current Laravel AI docs');
 
-        $this->assertCount(1, $fake->requests());
+        $this->assertCount(1, $fake->calls());
         $fake->assertPrompted(function (array $request): bool {
             return ($request['options']['functions'][0]['type'] ?? null) === 'web_search';
         });

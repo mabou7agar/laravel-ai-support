@@ -28,7 +28,6 @@ class SendMessageDTO
         public readonly ?int $responseSuggestionLimit = null,
         public readonly ?array $collection = null,
         public readonly ?string $executionMode = null,
-        public readonly bool $async = false,
         public readonly ?string $highlightContext = null
     ) {}
 
@@ -58,9 +57,8 @@ class SendMessageDTO
             'memory' => $this->memory,
             'actions' => $this->actions,
             'streaming' => $this->streaming,
-            'async' => $this->async,
             'user_id' => auth()->user()->id ?? $this->userId,
-            'rag' => $this->intelligentRag,
+            'use_rag' => $this->intelligentRag,
             'force_rag' => $this->forceRag,
             'rag_collections' => $this->ragCollections,
             'search_instructions' => $this->searchInstructions,

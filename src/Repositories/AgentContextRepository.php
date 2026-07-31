@@ -13,15 +13,6 @@ class AgentContextRepository
     {
         $data = Cache::get($this->cacheKey($sessionId, $userId, $scope));
 
-        // Scoped contexts must never fall back to an unscoped/legacy key because
-        // another tenant or workspace may legitimately reuse the same session id.
-        if (!$data && $this->normalizeScope($scope) === null) {
-            $legacy = Cache::get(UnifiedActionContext::legacyCacheKey($sessionId));
-            $data = is_array($legacy) && $this->sameUser($legacy['user_id'] ?? null, $userId)
-                ? $legacy
-                : null;
-        }
-
         if (!is_array($data)) {
             return null;
         }
@@ -44,10 +35,6 @@ class AgentContextRepository
     public function forget(string $sessionId, mixed $userId = null, ?string $scope = null): void
     {
         Cache::forget($this->cacheKey($sessionId, $userId, $scope));
-
-        if ($this->normalizeScope($scope) === null) {
-            Cache::forget(UnifiedActionContext::legacyCacheKey($sessionId));
-        }
     }
 
     public function exists(string $sessionId, mixed $userId = null, ?string $scope = null): bool
@@ -83,8 +70,4 @@ class AgentContextRepository
         return $userId === null || $userId === '' ? 'guest' : (string) $userId;
     }
 
-    private function sameUser(mixed $storedUserId, mixed $requestedUserId): bool
-    {
-        return $this->userKey($storedUserId) === $this->userKey($requestedUserId);
-    }
 }

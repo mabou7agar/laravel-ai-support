@@ -183,7 +183,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/ai/realtime/tools/dispatch \
 
 Register observability exporters in `ai-engine.observability.exporters` to send traces and evaluations to HTTP collectors, OpenTelemetry OTLP, LangSmith, or logs.
 
-For agent chat tasks, `/api/v1/agent/chat` is synchronous by default. Send `execution_mode=auto` to let the package keep simple chat synchronous and queue durable work such as goal/sub-agent runs, streaming work, structured collection callbacks, and matched skills. Send `execution_mode=async` or `async=true` to force a queued run.
+For agent chat tasks, `/api/v1/agent/chat` is synchronous by default. Send `execution_mode=auto` to let the package keep simple chat synchronous and queue durable work such as goal/sub-agent runs, streaming work, structured collection callbacks, and matched skills. Send `execution_mode=async` to force a queued run.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/agent/chat \
@@ -258,10 +258,9 @@ await voice.connect({
 See `docs/headless-realtime-voice-sdk.mdx` for tool dispatch, security,
 mixed-language turn detection, cancellation, and UI integration.
 
-The 3.0 cleanup has a published migration inventory, but 2.x still preserves
-every listed compatibility alias. Inspect the versioned machine-readable
-inventory with `php artisan ai:compatibility --json`; use
-`--fail-on-deprecated` only as an opt-in migration CI gate. See
+Version 3.0 removes the compatibility aliases deprecated in 2.x. Inspect the
+machine-readable removal inventory with `php artisan ai:compatibility --json`;
+`--fail-on-deprecated` succeeds when the host has completed the cutover. See
 `docs/upgrade-3.0-deprecations.mdx`.
 
 Register host adapters in `config/ai-agent.php`:

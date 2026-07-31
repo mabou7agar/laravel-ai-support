@@ -63,7 +63,7 @@ Controllers should not query models directly. If a new request field needs busin
 | --- | --- |
 | `execution_mode=sync` | Always sync, with reason `explicit_sync`. |
 | Async disabled in config | Sync, with reason `async_disabled`. |
-| `execution_mode=async` or `async=true` | Async, with reason `explicit_async`. |
+| `execution_mode=async` | Async, with reason `explicit_async`. |
 | Config default async | Async, with reason `config_async_default`. |
 | No explicit mode | Sync, with reason `default_sync`. |
 | `execution_mode=auto` plus goal/sub-agent | Async, with reason `goal_or_sub_agent`. |

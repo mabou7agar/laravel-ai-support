@@ -27,7 +27,7 @@ class AgentChatExecutionModeResolver
             return new AgentChatExecutionDecision('sync', 'async_disabled');
         }
 
-        if ($requested === 'async' || $dto->async) {
+        if ($requested === 'async') {
             return new AgentChatExecutionDecision('async', 'explicit_async');
         }
 

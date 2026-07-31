@@ -245,10 +245,10 @@ class ChatMultiturnFlowTest extends TestCase
     }
 
     // =====================================================================
-    // ContextManager: save/clear/exists/load + dual cache-key (priority 4)
+    // ContextManager: save/clear/exists/load + scoped cache key (priority 4)
     // =====================================================================
 
-    public function test_save_clear_exists_load_public_api_and_dual_cache_key_forgetting(): void
+    public function test_save_clear_exists_and_load_public_api_with_scoped_cache_key(): void
     {
         $context = new UnifiedActionContext('session-s2', 'u9');
 
@@ -275,15 +275,10 @@ class ChatMultiturnFlowTest extends TestCase
         $this->assertSame('session-s2', $loaded->sessionId);
         $this->assertSame('u9', (string) $loaded->userId);
 
-        // Write a legacy-cache-key entry directly.
-        Cache::put(UnifiedActionContext::legacyCacheKey('session-s2'), ['session_id' => 'session-s2', 'user_id' => 'u9'], now()->addHour());
-        $this->assertNotNull(Cache::get(UnifiedActionContext::legacyCacheKey('session-s2')));
-
-        // clear() forgets BOTH the namespaced AND legacy keys.
+        // clear() forgets the canonical scoped key.
         $manager->clear('session-s2', 'u9');
         $this->assertFalse($manager->exists('session-s2', 'u9'));
         $this->assertNull(Cache::get(UnifiedActionContext::cacheKey('session-s2', 'u9')));
-        $this->assertNull(Cache::get(UnifiedActionContext::legacyCacheKey('session-s2')));
     }
 
     // =====================================================================

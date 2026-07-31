@@ -17,9 +17,8 @@ use Mockery;
 
 class RunSkillToolAiNativeTest extends UnitTestCase
 {
-    public function test_run_skill_delegates_to_ai_native_runtime_when_enabled(): void
+    public function test_run_skill_delegates_to_ai_native_runtime(): void
     {
-        config()->set('ai-agent.ai_native.enabled', true);
         config()->set('ai-agent.ai_native.skills', true);
 
         $context = new UnifiedActionContext('run-skill-ai-native');

@@ -75,7 +75,7 @@ Async durable response:
 }
 ```
 
-`execution_mode` accepts `sync`, `async`, or `auto`. Auto keeps simple chat synchronous and queues durable work such as goal/sub-agent runs, streaming requests, structured collection callbacks, and matched skills. The legacy `async=true` flag is still supported and is equivalent to `execution_mode=async`.
+`execution_mode` accepts `sync`, `async`, or `auto`. Auto keeps simple chat synchronous and queues durable work such as goal/sub-agent runs, streaming requests, structured collection callbacks, and matched skills.
 
 When the resolved mode is async, the endpoint returns `202 Accepted`, creates an `ai_agent_runs` record, dispatches `RunAgentJob`, and returns run inspection URLs:
 

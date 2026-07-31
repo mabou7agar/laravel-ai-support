@@ -10,7 +10,7 @@ Use this path when you want a chat UI that can answer, collect data, suggest act
 | Browser/mobile chat | `POST /api/v1/agent/chat` |
 | App-defined business actions | actions, tools, and skills |
 | Gather a target JSON object | `StructuredCollectionDefinition` |
-| Long-running agent work | `async=true` plus agent run APIs |
+| Long-running agent work | `execution_mode=async` plus agent run APIs |
 | Long-running provider tools | provider tool lifecycle APIs |
 
 ## Basic Chat API
@@ -39,7 +39,7 @@ The response can include:
 
 For the full request-to-response path, routing trace fields, and where to change each layer, see [ChatFlow Trace](chat-flow.mdx).
 
-For work that may call tools, wait for approval, create files, or run longer than a normal HTTP request, use `execution_mode=auto`. Auto keeps simple chat synchronous and queues durable work. Use `execution_mode=async` or `async=true` when you always want a queued run:
+For work that may call tools, wait for approval, create files, or run longer than a normal HTTP request, use `execution_mode=auto`. Auto keeps simple chat synchronous and queues durable work. Use `execution_mode=async` when you always want a queued run:
 
 ```json
 {

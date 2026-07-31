@@ -391,13 +391,6 @@ class UnifiedActionContext
     {
         $data = Cache::get(self::cacheKey($sessionId, $userId, $contextScope));
 
-        if (!$data && trim((string) $contextScope) === '') {
-            $legacy = Cache::get(self::legacyCacheKey($sessionId));
-            $data = is_array($legacy) && self::sameUser($legacy['user_id'] ?? null, $userId)
-                ? $legacy
-                : null;
-        }
-
         if (!$data) {
             return null;
         }
@@ -422,19 +415,9 @@ class UnifiedActionContext
         return 'agent_context:' . sha1(json_encode($identity, JSON_THROW_ON_ERROR));
     }
 
-    public static function legacyCacheKey(string $sessionId): string
-    {
-        return "agent_context:{$sessionId}";
-    }
-
     protected static function userKey(mixed $userId): string
     {
         return $userId === null || $userId === '' ? 'guest' : (string) $userId;
-    }
-
-    protected static function sameUser(mixed $storedUserId, mixed $requestedUserId): bool
-    {
-        return self::userKey($storedUserId) === self::userKey($requestedUserId);
     }
 
     /**

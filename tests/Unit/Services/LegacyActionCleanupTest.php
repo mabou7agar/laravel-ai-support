@@ -33,13 +33,10 @@ class LegacyActionCleanupTest extends UnitTestCase
         $this->assertFalse(class_exists('LaravelAIEngine\\Services\\RAG\\RAGChatService'));
     }
 
-    public function test_ai_engine_facade_alias_exists_for_composer_alias_contract(): void
+    public function test_ai_engine_facade_alias_is_removed(): void
     {
-        $this->assertTrue(class_exists('LaravelAIEngine\\Facades\\AIEngine'));
-        $this->assertTrue(is_subclass_of(
-            'LaravelAIEngine\\Facades\\AIEngine',
-            'LaravelAIEngine\\Facades\\Engine'
-        ));
+        $this->assertFalse(class_exists('LaravelAIEngine\\Facades\\AIEngine'));
+        $this->assertTrue(class_exists('LaravelAIEngine\\Facades\\Engine'));
     }
 
     public function test_unused_placeholder_services_are_removed(): void

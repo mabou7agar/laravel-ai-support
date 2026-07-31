@@ -12,7 +12,8 @@ Context: after making AiNative the default execution path for every turn (only `
 - Deleted: `IntentRouter`, `Services/Agent/Routing/` (`RoutingPipeline` + 8 stages), the `BenchmarkOrchestrationV2Command` / `EvaluateRoutingFixturesCommand` console commands, and the `routing_pipeline.stages` config block.
 - Kept (shared infra): `AgentExecutionDispatcher`, `AgentConversationService::executeSearchRAG`, `RAGDecisionEngine`, `GoalAgentService`, `MessageRoutingClassifier`, `RoutingContextResolver`, `AgentPlanner` — all reachable from AiNative tools and/or the federation continuation path.
 - **Federation path-1 preserved** via a new `route_to_node` AiNative tool (federation package): the planner can explicitly route a turn to a remote node, reusing `NodeSessionManager::routeToNode`. Path-2 (RAG model-router) was already reachable via `search_knowledge`.
-- `ai-agent.ai_native.enabled` is now vestigial (AiNative is unconditional); kept for config back-compat, no longer read.
+- `ai-agent.ai_native.enabled` became vestigial after this decision and was
+  removed in 3.0 after the 2.x deprecation window.
 
 Follow-up cleanup (done): the dead `USE_TOOL`/`HANDLE_SELECTION` dispatcher arms + `executeTool`/`executeSelection`, the orphaned `AgentActionExecutionService` (379 LOC), and the `RoutingStageContract` + scaffold `routing-stage` artifact type were all removed once the classic decision producers were gone.
 
@@ -113,7 +114,7 @@ The decision that must NOT be made is "leave it exactly as-is." The `ai_native:o
 
 ## 6. Open questions for the owner
 
-1. ~~Will any real deployment run `ai_native.enabled=false`?~~ **Resolved: moot** — Option B was executed; the classic path is gone and `ai_native.enabled` is now a deprecated no-op.
+1. ~~Will any real deployment run `ai_native.enabled=false`?~~ **Resolved** — Option B was executed; the classic path is gone and the no-op setting was removed in 3.0.
 2. ~~Keep the deterministic-routing benchmark commands?~~ **Resolved: removed** in the Phase-3 cleanup (`BenchmarkOrchestrationV2Command` / `EvaluateRoutingFixturesCommand` deleted).
 3. ~~Should structured queries live in `RAGDecisionEngine` or the `data_query` tool?~~ **Resolved: both, intentionally** — `DataQueryTool` is the local, AI-free AiNative arm (fail-closed-by-default scoping, opt-out via `data_query.require_scope=false` or a per-model `public` flag); `RAGStructuredDataService` is the federation-aware, paginated RAG engine. See the Structured-query boundary section.
 

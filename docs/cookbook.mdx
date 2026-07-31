@@ -3359,7 +3359,7 @@ Stream agent run events live via Server-Sent Events (SSE), or establish realtime
 
 ### SSE Streaming for Agent Runs
 
-When an agent run is created asynchronously (with `async=true`), you can stream its lifecycle events to the browser in real-time. The `AgentRunSseStreamService` polls the run's persisted event stream and emits new events:
+When an agent run is created asynchronously (with `execution_mode=async`), you can stream its lifecycle events to the browser in real-time. The `AgentRunSseStreamService` polls the run's persisted event stream and emits new events:
 
 ```php
 use LaravelAIEngine\Services\Agent\AgentRunSseStreamService;

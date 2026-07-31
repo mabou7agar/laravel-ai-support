@@ -49,4 +49,21 @@ class SendMessageDTOTest extends UnitTestCase
         $this->assertSame('auto', $dto->agentOptions()['execution_mode']);
     }
 
+    public function test_serialized_payload_uses_only_canonical_chat_fields(): void
+    {
+        $dto = new SendMessageDTO(
+            message: 'hello',
+            sessionId: 'session',
+            intelligentRag: true,
+            executionMode: 'async',
+        );
+
+        $payload = $dto->toArray();
+
+        $this->assertTrue($payload['use_rag']);
+        $this->assertSame('async', $payload['execution_mode']);
+        $this->assertArrayNotHasKey('rag', $payload);
+        $this->assertArrayNotHasKey('async', $payload);
+    }
+
 }

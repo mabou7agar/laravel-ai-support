@@ -508,21 +508,13 @@ class AIEngineFake extends UnifiedEngineManager
     }
 
     // -------------------------------------------------------------------------
-    // Inspection helpers (backward-compatible)
+    // Inspection helpers
     // -------------------------------------------------------------------------
 
     /**
      * Return all recorded calls.
      */
     public function calls(): array
-    {
-        return $this->calls;
-    }
-
-    /**
-     * Alias kept for backward compatibility.
-     */
-    public function requests(): array
     {
         return $this->calls;
     }

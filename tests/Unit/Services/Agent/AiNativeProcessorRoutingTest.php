@@ -19,10 +19,8 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 {
     use \LaravelAIEngine\Tests\Concerns\RequiresFederation;
 
-    public function test_processor_uses_ai_native_runtime_when_enabled(): void
+    public function test_processor_uses_the_ai_native_runtime(): void
     {
-        config()->set('ai-agent.ai_native.enabled', true);
-
         $context = new UnifiedActionContext('ai-native-processor', 42);
 
         $contextManager = Mockery::mock(ContextManager::class);
@@ -62,8 +60,6 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
     public function test_processor_routes_unrelated_chat_to_ai_native_without_skill_state(): void
     {
-        config()->set('ai-agent.ai_native.enabled', true);
-
         $context = new UnifiedActionContext('ai-native-processor-small-talk', 42);
 
         $contextManager = Mockery::mock(ContextManager::class);
@@ -110,11 +106,9 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
     public function test_processor_routes_force_rag_through_ai_native(): void
     {
-        // force_rag no longer bypasses AiNative. When AiNative is enabled it owns the
-        // turn and reaches RAG from inside the runtime; the flag is passed through as a
+        // force_rag no longer bypasses AiNative. AiNative owns the turn and reaches
+        // RAG from inside the runtime; the flag is passed through as a
         // hint. Only a routed_to_node continuation may still skip AiNative.
-        config()->set('ai-agent.ai_native.enabled', true);
-
         $context = new UnifiedActionContext('force-rag-processor', 42);
 
         $contextManager = Mockery::mock(ContextManager::class);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use Illuminate\Support\Facades\Cache;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Enums\ConversationContextMode;
 use LaravelAIEngine\Repositories\AgentContextRepository;
@@ -119,5 +120,19 @@ class ServerOwnedDeltaContextTest extends UnitTestCase
         $repository->save($unscoped);
 
         $this->assertNull($repository->find('legacy-session', null, 'tenant:new'));
+    }
+
+    public function test_unscoped_context_does_not_read_the_removed_raw_session_cache_key(): void
+    {
+        Cache::put('agent_context:legacy-session', [
+            'session_id' => 'legacy-session',
+            'user_id' => null,
+            'conversation_history' => [['role' => 'user', 'content' => 'legacy data']],
+        ], now()->addHour());
+
+        $repository = new AgentContextRepository();
+
+        $this->assertNull($repository->find('legacy-session'));
+        $this->assertNull(UnifiedActionContext::load('legacy-session', null));
     }
 }
