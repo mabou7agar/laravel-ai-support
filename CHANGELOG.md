@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.2] — 2026-07-31
+
+### Fixed
+
+- **Qdrant custom payload index maps** — `getQdrantIndexes()` field-to-type
+  definitions now create indexes for the declared field names and preserve
+  their explicit types. Historical list-of-field definitions remain supported.
+
 ## [2.12.1] — 2026-07-31
 
 ### Added

@@ -35,7 +35,17 @@ class QdrantPayloadIndexManager
 
         $relationFields = $this->detectBelongsToFields($modelClass);
         $customIndexes = $this->getModelCustomIndexes($modelClass);
-        $indexableFields = array_unique(array_merge($configFields, $relationFields, $customIndexes));
+        [$customFields, $customTypes] = $this->normalizeCustomIndexes($customIndexes);
+        $indexableFields = array_values(array_unique(array_merge(
+            $configFields,
+            $relationFields,
+            $customFields,
+        )));
+        $fieldTypes = $this->detectFieldTypes($modelClass, $indexableFields);
+
+        foreach ($customTypes as $fieldName => $fieldType) {
+            $fieldTypes[$fieldName] = $this->normalizeIndexType($fieldType);
+        }
 
         Log::debug('Payload index fields detected', [
             'collection' => $collection,
@@ -45,9 +55,40 @@ class QdrantPayloadIndexManager
             'total_fields' => $indexableFields,
         ]);
 
-        foreach ($this->detectFieldTypes($modelClass, $indexableFields) as $fieldName => $fieldType) {
+        foreach ($fieldTypes as $fieldName => $fieldType) {
             $this->createPayloadIndex($collection, $fieldName, $fieldType);
         }
+    }
+
+    /**
+     * Support the documented field => type contract while retaining the
+     * historical list-of-fields form for existing applications.
+     *
+     * @return array{0: array<int, string>, 1: array<string, string>}
+     */
+    private function normalizeCustomIndexes(array $indexes): array
+    {
+        $fields = [];
+        $types = [];
+
+        foreach ($indexes as $field => $type) {
+            if (is_int($field) && is_string($type) && $type !== '') {
+                $fields[] = $type;
+
+                continue;
+            }
+
+            if (! is_string($field) || $field === '') {
+                continue;
+            }
+
+            $fields[] = $field;
+            if (is_string($type) && $type !== '') {
+                $types[$field] = $type;
+            }
+        }
+
+        return [array_values(array_unique($fields)), $types];
     }
 
     public function getModelCustomIndexes(?string $modelClass): array
