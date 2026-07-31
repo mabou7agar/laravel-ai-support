@@ -8,13 +8,16 @@ use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\Tools\AgentTool;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
+use Throwable;
 
 class AiNativeToolExecutor
 {
     public function __construct(
         private readonly AgentTaskStateService $taskState,
         private readonly AiNativeStateStore $stateStore,
-        private readonly ?AgentExecutionPolicyService $policy = null
+        private readonly ?AgentExecutionPolicyService $policy = null,
+        private readonly ?ToolRegistry $tools = null
     ) {}
 
     public function execute(AgentTool $tool, array $params, UnifiedActionContext $context): ActionResult
@@ -29,13 +32,15 @@ class AiNativeToolExecutor
 
     public function recordResult(array &$state, string $toolName, array $params, ActionResult $result, bool $writeTool = false): void
     {
+        $plannerResult = $this->resultForPlanner($toolName, $result);
+
         $state['tool_results'][] = [
             'tool' => $toolName,
             // Params are capped too: a generate_view call carries the full
             // section HTML (and on regenerate, previous_html) — uncapped they
             // re-ship per step exactly like oversized results did.
             'params' => $this->capForState($this->stateStore->redactedArray($params)),
-            'result' => $this->capForState($this->stateStore->redactedArray($result->toArray())),
+            'result' => $this->capForState($this->stateStore->redactedArray($plannerResult)),
         ];
 
         $this->taskState->recordToolResult($state, $toolName, $params, $result, $writeTool);
@@ -44,6 +49,29 @@ class AiNativeToolExecutor
         $state['last_turn_outcome'] = $outcomes === []
             ? null
             : $outcomes[array_key_last($outcomes)];
+    }
+
+    /**
+     * Keep large application payloads out of the model loop when the tool
+     * provides a compact planner projection. Fail open to the legacy complete
+     * result so existing tools remain byte-for-byte compatible.
+     *
+     * @return array<string, mixed>
+     */
+    private function resultForPlanner(string $toolName, ActionResult $result): array
+    {
+        $tool = $this->tools?->get($toolName);
+        if (!$tool instanceof AgentTool) {
+            return $result->toArray();
+        }
+
+        try {
+            $plannerResult = $tool->resultForPlanner($result);
+
+            return $plannerResult !== [] ? $plannerResult : $result->toArray();
+        } catch (Throwable) {
+            return $result->toArray();
+        }
     }
 
     /**

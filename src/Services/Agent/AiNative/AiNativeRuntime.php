@@ -86,7 +86,7 @@ class AiNativeRuntime
         $this->stateStore = $stateStore ?? new AiNativeStateStore($executionPolicy);
         $this->confirmationPreview = $confirmationPreview ?? new AiNativeConfirmationPreviewService();
         $this->responses = $responses ?? new AiNativeResponseFactory($this->stateStore, $tools, $this->confirmationPresenter);
-        $this->toolExecutor = $toolExecutor ?? new AiNativeToolExecutor($this->taskState, $this->stateStore, $executionPolicy);
+        $this->toolExecutor = $toolExecutor ?? new AiNativeToolExecutor($this->taskState, $this->stateStore, $executionPolicy, $tools);
         $this->suggestedToolContinuation = $suggestedToolContinuation ?? new AiNativeSuggestedToolContinuation($tools);
         $this->askUserConfirmationHandler = $askUserConfirmationHandler ?? new AiNativeAskUserConfirmationHandler(
             $tools,

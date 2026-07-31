@@ -48,6 +48,22 @@ abstract class AgentTool
     }
 
     /**
+     * Return the representation that may be sent back to the model planner.
+     *
+     * Tool results can contain large host-facing payloads (render trees,
+     * previews, exports, binary metadata) that the model does not need after
+     * execution. Override this method to expose only the identifiers, status,
+     * counts, and next-step facts required for planning. The original
+     * ActionResult remains untouched for the application/UI.
+     *
+     * @return array<string, mixed>
+     */
+    public function resultForPlanner(ActionResult $result): array
+    {
+        return $result->toArray();
+    }
+
+    /**
      * @return array<int, string>
      */
     public function getCapabilities(): array
