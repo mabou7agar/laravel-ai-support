@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Vector\Drivers;
 
-use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use LaravelAIEngine\Services\Vector\Contracts\ModelPayloadIndexReconcilerInterface;
+use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use Throwable;
 
-class QdrantDriver implements VectorDriverInterface
+class QdrantDriver implements VectorDriverInterface, ModelPayloadIndexReconcilerInterface
 {
     protected Client $client;
     protected string $host;
@@ -851,6 +852,20 @@ class QdrantDriver implements VectorDriverInterface
     public function ensureAllPayloadIndexes(string $collection, ?string $modelClass = null): void
     {
         $this->payloadIndexManager()->ensureAllPayloadIndexes($collection, $modelClass);
+    }
+
+    /**
+     * Reconcile a model's authoritative payload-index declarations when the
+     * collection already exists. Missing collections remain the responsibility
+     * of the normal collection creation flow.
+     */
+    public function reconcileModelPayloadIndexes(string $collection, string $modelClass): void
+    {
+        if (!$this->collectionExists($collection)) {
+            return;
+        }
+
+        $this->ensureAllPayloadIndexes($collection, $modelClass);
     }
     
     /**

@@ -1464,6 +1464,11 @@ model declaration before filters are built. Historical list-style declarations
 such as `['status', 'category']` remain supported, but their types are inferred;
 use the field-to-type map when a filter value must remain numeric or boolean.
 
+This protection is applied by `VectorSearchService` through the optional
+`ModelPayloadIndexReconcilerInterface` driver capability. Internal model context is
+never added to provider filters, and custom vector drivers remain backward
+compatible because the capability is opt-in.
+
 ### Vector Search
 
 Search your models by semantic meaning, not just keywords.

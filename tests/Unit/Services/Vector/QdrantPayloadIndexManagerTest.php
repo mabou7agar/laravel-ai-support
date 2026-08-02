@@ -200,6 +200,53 @@ class QdrantPayloadIndexManagerTest extends UnitTestCase
         ));
     }
 
+    public function test_generic_reconciliation_cache_does_not_suppress_typed_model_repair(): void
+    {
+        $history = [];
+        $schemaWithKeyword = json_encode([
+            'result' => [
+                'payload_schema' => [
+                    'projection_version' => ['data_type' => 'keyword'],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $handler = new MockHandler([
+            new Response(200, [], $schemaWithKeyword),
+            new Response(200, [], $schemaWithKeyword),
+            new Response(200),
+            new Response(200),
+            new Response(200, [], json_encode([
+                'result' => [
+                    'payload_schema' => [
+                        'projection_version' => ['data_type' => 'integer'],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $stack = HandlerStack::create($handler);
+        $stack->push(Middleware::history($history));
+        config()->set('ai-engine.vector.payload_index_fields', []);
+
+        $manager = new QdrantPayloadIndexManager(new Client([
+            'base_uri' => 'http://qdrant.test',
+            'handler' => $stack,
+        ]));
+
+        $manager->ensureAllPayloadIndexes('cached-guides');
+        $manager->ensureAllPayloadIndexes(
+            'cached-guides',
+            TypedProjectionPayloadIndexModel::class,
+        );
+
+        $this->assertSame(
+            ['GET', 'GET', 'DELETE', 'PUT', 'GET'],
+            array_map(
+                static fn (array $transaction): string => $transaction['request']->getMethod(),
+                $history,
+            ),
+        );
+    }
+
     private function client(array $responses = []): Client
     {
         return new Client([
