@@ -27,6 +27,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Services/UnifiedEngineManagerTest.php',
             'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',
         ],
+        'guides/assistant-runtime' => [
+            'tests/Unit/Console/Commands/AssistantRuntimeReadinessCommandTest.php',
+            'tests/Unit/Services/Agent/AgentRuntimeManagerTest.php',
+            'tests/Feature/Api/AgentChatAsyncRunApiTest.php',
+        ],
         'guides/capability-memory' => [
             'tests/Unit/Services/Agent/AgentCapabilityRegistryTest.php',
         ],
@@ -92,6 +97,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Services/Graph/GraphCypherPlanCompilerTest.php',
             'tests/Unit/Services/Graph/GraphKnowledgeBaseServiceTest.php',
         ],
+        'guides/headless-realtime-voice-sdk' => [
+            'tests/Unit/Services/SDK/RealtimeSessionServiceTest.php',
+            'tests/Unit/Services/SDK/RealtimeToolBrokerServiceTest.php',
+            'tests/Feature/Api/McpRealtimeIntegrationApiTest.php',
+        ],
         'guides/knowledge-base-security' => [
             'tests/Unit/Services/Graph/GraphKnowledgeBaseServiceTest.php',
             'tests/Unit/Services/Graph/GraphBackendResolverTest.php',
@@ -147,6 +157,11 @@ class DocsCoverageMatrixTest extends TestCase
             'tests/Unit/Support/InfrastructureHealthServiceTest.php',
             'tests/Unit/Console/InfrastructureHealthCommandTest.php',
             'tests/Feature/Node/NodeApiRoutesTest.php',
+        ],
+        'guides/upgrade-3.0-deprecations' => [
+            'tests/Unit/Console/Commands/CompatibilitySnapshotCommandTest.php',
+            'tests/Unit/AIEngineServiceProviderConfigMergeTest.php',
+            'tests/Unit/Facades/EngineTest.php',
         ],
         'reference/api-reference' => [
             'tests/Feature/Api/ConversationListApiTest.php',

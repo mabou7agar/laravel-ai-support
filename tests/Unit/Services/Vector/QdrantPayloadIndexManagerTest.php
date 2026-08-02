@@ -102,6 +102,104 @@ class QdrantPayloadIndexManagerTest extends UnitTestCase
         ], $payloads);
     }
 
+    public function test_existing_collection_reconciles_model_declared_index_types(): void
+    {
+        $history = [];
+        $handler = new MockHandler([
+            new Response(200, [], json_encode([
+                'result' => [
+                    'payload_schema' => [
+                        'projection_version' => ['data_type' => 'keyword'],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+            new Response(200),
+            new Response(200),
+            new Response(200, [], json_encode([
+                'result' => [
+                    'payload_schema' => [
+                        'projection_version' => ['data_type' => 'integer'],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $stack = HandlerStack::create($handler);
+        $stack->push(Middleware::history($history));
+        config()->set('ai-engine.vector.payload_index_fields', []);
+
+        $manager = new QdrantPayloadIndexManager(new Client([
+            'base_uri' => 'http://qdrant.test',
+            'handler' => $stack,
+        ]));
+        $manager->ensureAllPayloadIndexes(
+            'existing-guides',
+            TypedProjectionPayloadIndexModel::class,
+        );
+
+        $this->assertSame(
+            ['GET', 'DELETE', 'PUT', 'GET'],
+            array_map(
+                static fn (array $transaction): string => $transaction['request']->getMethod(),
+                $history,
+            ),
+        );
+        $this->assertSame(
+            '/collections/existing-guides/index/projection_version',
+            $history[1]['request']->getUri()->getPath(),
+        );
+        $this->assertSame([
+            'field_name' => 'projection_version',
+            'field_schema' => 'integer',
+        ], json_decode(
+            (string) $history[2]['request']->getBody(),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ));
+    }
+
+    public function test_existing_empty_collection_creates_typed_model_index_without_guessing(): void
+    {
+        $history = [];
+        $handler = new MockHandler([
+            new Response(200, [], json_encode([
+                'result' => ['payload_schema' => []],
+            ], JSON_THROW_ON_ERROR)),
+            new Response(200),
+            new Response(200, [], json_encode([
+                'result' => [
+                    'payload_schema' => [
+                        'projection_version' => ['data_type' => 'integer'],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $stack = HandlerStack::create($handler);
+        $stack->push(Middleware::history($history));
+        config()->set('ai-engine.vector.payload_index_fields', []);
+
+        $manager = new QdrantPayloadIndexManager(new Client([
+            'base_uri' => 'http://qdrant.test',
+            'handler' => $stack,
+        ]));
+        $manager->ensureAllPayloadIndexes(
+            'empty-guides',
+            TypedProjectionPayloadIndexModel::class,
+        );
+
+        $this->assertSame(['GET', 'PUT', 'GET'], array_map(
+            static fn (array $transaction): string => $transaction['request']->getMethod(),
+            $history,
+        ));
+        $this->assertSame([
+            'field_name' => 'projection_version',
+            'field_schema' => 'integer',
+        ], json_decode(
+            (string) $history[1]['request']->getBody(),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ));
+    }
+
     private function client(array $responses = []): Client
     {
         return new Client([
@@ -119,6 +217,16 @@ final class CustomPayloadIndexModel
             'is_public' => 'bool',
             'category_key' => 'keyword',
             'legacy_field',
+        ];
+    }
+}
+
+final class TypedProjectionPayloadIndexModel
+{
+    public function getQdrantIndexes(): array
+    {
+        return [
+            'projection_version' => 'integer',
         ];
     }
 }
