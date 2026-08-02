@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Existing Qdrant payload schemas** — vector collection initialization now
+  applies typed `getQdrantIndexes()` declarations to existing collections,
+  creates missing declared indexes with the authoritative type, and recreates
+  incompatible indexes before filtered retrieval. Legacy untyped index lists
+  remain supported.
+
 ## [3.0.0] — 2026-08-01
 
 ### Removed

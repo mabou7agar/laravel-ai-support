@@ -95,3 +95,22 @@ php artisan ai:infra-health
 ```
 
 If `qdrant_self_check` fails, fix connection first before debugging AI behavior.
+
+Declare filterable payload fields and their types on each vector model:
+
+```php
+public function getQdrantIndexes(): array
+{
+    return [
+        'tenant_id' => 'integer',
+        'projection_version' => 'integer',
+        'is_public' => 'bool',
+    ];
+}
+```
+
+These typed declarations apply to existing collections as well as newly
+created collections. During collection initialization the package creates
+missing declared indexes and reconciles incompatible existing types, preventing
+Qdrant from comparing a numeric payload against a string filter. Legacy
+list-style declarations remain supported with inferred types.

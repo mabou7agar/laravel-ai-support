@@ -490,7 +490,7 @@ class QdrantPayloadIndexManager
         try {
             $currentTypes = $this->getExistingIndexesWithTypes($collection);
 
-            if (empty($currentTypes)) {
+            if (empty($currentTypes) && empty($expectedTypes)) {
                 return $fixed;
             }
 
@@ -509,8 +509,13 @@ class QdrantPayloadIndexManager
                         'field' => $field,
                         'type' => $expectedType,
                     ]);
-                    $this->createPayloadIndex($collection, $field, $expectedType);
-                    $fixed[] = $field;
+                    if ($this->createPayloadIndex(
+                        $collection,
+                        $field,
+                        $this->normalizeIndexType($expectedType),
+                    )) {
+                        $fixed[] = $field;
+                    }
 
                     continue;
                 }
@@ -526,10 +531,18 @@ class QdrantPayloadIndexManager
                         'expected_type' => $expectedType,
                     ]);
 
-                    $this->deletePayloadIndex($collection, $field);
+                    if (! $this->deletePayloadIndex($collection, $field)) {
+                        continue;
+                    }
+
                     usleep(100000);
-                    $this->createPayloadIndex($collection, $field, $expectedType);
-                    $fixed[] = $field;
+                    if ($this->createPayloadIndex(
+                        $collection,
+                        $field,
+                        $normalizedExpected,
+                    )) {
+                        $fixed[] = $field;
+                    }
                 }
             }
 
@@ -606,7 +619,6 @@ class QdrantPayloadIndexManager
             return;
         }
 
-        $existingIndexes = $this->getExistingIndexes($collection);
         $configFields = config('ai-engine.vector.payload_index_fields', [
             'user_id',
             'tenant_id',
@@ -618,15 +630,31 @@ class QdrantPayloadIndexManager
         ]);
 
         $relationFields = $modelClass ? $this->detectBelongsToFields($modelClass) : [];
-        $allFields = array_unique(array_merge($configFields, $relationFields));
+        $customIndexes = $this->getModelCustomIndexes($modelClass);
+        [$customFields, $customTypes] = $this->normalizeCustomIndexes($customIndexes);
+        $allFields = array_values(array_unique(array_merge(
+            $configFields,
+            $relationFields,
+            $customFields,
+        )));
+
+        // A typed model declaration is authoritative. Existing collections may
+        // predate it or may have had the field auto-created from a name-based
+        // guess, so reconcile both missing and incompatible declared indexes.
+        $reconciledFields = $customTypes === []
+            ? []
+            : $this->autoFixIndexTypes($collection, $customTypes);
+
+        $existingIndexes = $this->getExistingIndexes($collection);
         $missingFields = array_diff($allFields, $existingIndexes);
 
-        static::$indexEnsuredCollections[$cacheKey] = true;
-
         if (empty($missingFields)) {
+            static::$indexEnsuredCollections[$cacheKey] = true;
+
             Log::debug('All payload indexes already exist', [
                 'collection' => $collection,
                 'existing_indexes' => $existingIndexes,
+                'reconciled_fields' => $reconciledFields,
             ]);
 
             return;
@@ -636,10 +664,28 @@ class QdrantPayloadIndexManager
             'collection' => $collection,
             'missing_fields' => $missingFields,
             'existing_indexes' => $existingIndexes,
+            'custom_indexes' => $customIndexes,
         ]);
 
-        foreach ($this->detectFieldTypes($modelClass, $missingFields) as $fieldName => $fieldType) {
-            $this->createPayloadIndex($collection, $fieldName, $fieldType);
+        $fieldTypes = $this->detectFieldTypes($modelClass, $missingFields);
+        foreach ($customTypes as $fieldName => $fieldType) {
+            if (in_array($fieldName, $missingFields, true)) {
+                $fieldTypes[$fieldName] = $this->normalizeIndexType($fieldType);
+            }
+        }
+
+        $allCreated = true;
+        foreach ($fieldTypes as $fieldName => $fieldType) {
+            $allCreated = $this->createPayloadIndex(
+                $collection,
+                $fieldName,
+                $fieldType,
+            ) && $allCreated;
+        }
+
+        if ($allCreated) {
+            static::$indexEnsuredCollections[$cacheKey] = true;
+            $this->clearIndexTypeCache($collection);
         }
     }
 
