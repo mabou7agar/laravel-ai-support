@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-08-02
+
+### Added
+
+- **Non-outcome step allowance** — hosts may declare successful read/discovery
+  tools through `non_outcome_tools` and grant them a bounded
+  `non_outcome_step_allowance`, preserving mutation budgets without changing
+  existing callers.
+
 ## [3.0.2] — 2026-08-02
 
 ### Fixed

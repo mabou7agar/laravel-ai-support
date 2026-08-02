@@ -241,6 +241,17 @@ class AiNativeRuntime
         // drives three identical lookups on purpose), so the runtime must not
         // infer "already done" from a repeat by itself.
         $turnSucceededTools = [];
+        // Host-declared read/discovery calls may prepare an outcome without
+        // consuming its mutation budget. The ceiling grows only after a
+        // configured tool succeeds, is bounded, and is granted once per unique
+        // tool name, so retries cannot expand the loop indefinitely.
+        $baseMaxSteps = $this->maxSteps($options);
+        $nonOutcomeStepAllowance = max(0, (int) ($options['non_outcome_step_allowance'] ?? 0));
+        $nonOutcomeTools = array_fill_keys(array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($options['non_outcome_tools'] ?? []),
+        ), static fn (string $tool): bool => $tool !== '')), true);
+        $succeededNonOutcomeTools = [];
 
         $forcedRagFailure = $this->executeForcedRag($message, $context, $state, $options);
         if ($forcedRagFailure instanceof AgentResponse) {
@@ -252,7 +263,11 @@ class AiNativeRuntime
             $turnSucceededTools['search_knowledge'] = true;
         }
 
-        for ($step = 0; $step < $this->maxSteps($options); $step++) {
+        for (
+            $step = 0;
+            $step < $baseMaxSteps + min($nonOutcomeStepAllowance, count($succeededNonOutcomeTools));
+            $step++
+        ) {
             if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
                 $this->stateStore->put($context, $state);
 
@@ -389,6 +404,9 @@ class AiNativeRuntime
                     // calls stay retryable (the model may fix its arguments).
                     if (($lastAfter['success'] ?? null) === true && $planTool !== '') {
                         $turnSucceededTools[$planTool] = true;
+                        if (isset($nonOutcomeTools[$planTool])) {
+                            $succeededNonOutcomeTools[$planTool] = true;
+                        }
                     }
                 }
                 $this->notifyActivity($options, 'tool_result', ['tool_name' => (string) ($plan['tool'] ?? '')]);

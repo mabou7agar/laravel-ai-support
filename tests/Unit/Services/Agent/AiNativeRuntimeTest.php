@@ -3226,6 +3226,44 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(2, $toolLog['lookup_customer'], 'un-declared tools keep their repeat behavior');
     }
 
+    public function test_successful_non_outcome_tool_grants_a_bounded_extra_step(): void
+    {
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'inspect'],
+                'message' => 'Inspecting.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_product',
+                'arguments' => ['query' => 'mutate'],
+                'message' => 'Applying.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'Applied after inspection.',
+                'data' => [],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process(
+            'Inspect then apply',
+            new UnifiedActionContext('ai-native-non-outcome-budget', 77),
+            [
+                'max_steps' => 2,
+                'non_outcome_tools' => ['lookup_customer'],
+                'non_outcome_step_allowance' => 1,
+            ],
+        );
+
+        $this->assertSame('Applied after inspection.', $response->message);
+        $this->assertCount(1, $toolLog['lookup_customer']);
+        $this->assertCount(1, $toolLog['lookup_product']);
+    }
+
     public function test_budget_mode_off_keeps_existing_step_cap(): void
     {
         config()->set('ai-agent.ai_native.max_steps', 1);

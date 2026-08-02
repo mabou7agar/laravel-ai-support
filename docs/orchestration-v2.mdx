@@ -339,6 +339,23 @@ Laravel is the default runtime. LangGraph remains optional and explicit:
 ],
 ```
 
+### Read-only discovery budget
+
+Hosts can keep inspection and schema discovery outside a bounded mutation
+budget without changing existing runtime behavior:
+
+```php
+$runtime->process($message, $context, [
+    'max_steps' => 2,
+    'non_outcome_tools' => ['inspect_resource', 'find_tools'],
+    'non_outcome_step_allowance' => 2,
+]);
+```
+
+Each unique allowlisted tool grants one additional planner step only after it
+succeeds, up to the configured allowance. Failed and repeated calls do not
+extend the loop.
+
 ## Upgrade Notes
 
 The v2 flow is a breaking simplification. New applications should call the runtime boundary and avoid adding behavior to broad orchestration services.
