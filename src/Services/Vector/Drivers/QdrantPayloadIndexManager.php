@@ -614,7 +614,11 @@ class QdrantPayloadIndexManager
 
     public function ensureAllPayloadIndexes(string $collection, ?string $modelClass = null): void
     {
-        $cacheKey = 'all:' . $collection;
+        // A collection may first be initialized without model context and then
+        // searched through a model with authoritative typed declarations. Keep
+        // those reconciliation states separate so the generic initialization
+        // pass cannot suppress model-specific schema repair.
+        $cacheKey = 'all:' . $collection . ':' . ($modelClass ?? '_default');
         if (isset(static::$indexEnsuredCollections[$cacheKey])) {
             return;
         }

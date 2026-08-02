@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
 use LaravelAIEngine\Services\Vector\ChunkingService;
 use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
+use LaravelAIEngine\Services\Vector\Drivers\QdrantDriver;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
 use LaravelAIEngine\Services\Vector\VectorAccessControl;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
@@ -17,6 +18,92 @@ use LaravelAIEngine\Tests\UnitTestCase;
 
 class VectorSearchServiceContractTest extends UnitTestCase
 {
+    public function test_standard_search_reconciles_model_payload_indexes_without_leaking_model_filter(): void
+    {
+        $driver = $this->createMock(QdrantDriver::class);
+        $driver->expects($this->once())
+            ->method('reconcileModelPayloadIndexes')
+            ->with('vec_schema_search_records', SchemaSearchRecord::class);
+        $driver->expects($this->once())
+            ->method('search')
+            ->with(
+                'vec_schema_search_records',
+                [0.1, 0.2, 0.3],
+                8,
+                0.25,
+                ['projection_version' => 5],
+            )
+            ->willReturn([]);
+
+        $driverManager = $this->createMock(VectorDriverManager::class);
+        $driverManager->method('driver')->willReturn($driver);
+
+        $embeddingService = $this->createMock(EmbeddingService::class);
+        $embeddingService->expects($this->once())
+            ->method('embed')
+            ->with('course test', null)
+            ->willReturn([0.1, 0.2, 0.3]);
+
+        $accessControl = $this->createMock(VectorAccessControl::class);
+        $accessControl->expects($this->once())
+            ->method('buildSearchFilters')
+            ->with(null, [
+                'projection_version' => 5,
+                'model_class' => SchemaSearchRecord::class,
+            ])
+            ->willReturn(['projection_version' => 5]);
+        $accessControl->method('getUserById')->willReturn(null);
+        $accessControl->method('getAccessLevel')->willReturn('public');
+
+        $service = new VectorSearchService(
+            $driverManager,
+            $embeddingService,
+            $accessControl,
+            app(SearchDocumentBuilder::class),
+            app(ChunkingService::class),
+        );
+
+        $this->assertCount(0, $service->search(
+            SchemaSearchRecord::class,
+            'course test',
+            8,
+            0.25,
+            ['projection_version' => 5],
+        ));
+    }
+
+    public function test_find_similar_reconciles_model_payload_indexes_before_retrieval(): void
+    {
+        $driver = $this->createMock(QdrantDriver::class);
+        $driver->expects($this->once())
+            ->method('reconcileModelPayloadIndexes')
+            ->with('vec_schema_search_records', SchemaSearchRecord::class);
+        $driver->expects($this->once())
+            ->method('get')
+            ->with('vec_schema_search_records', '12')
+            ->willReturn(['vector' => [0.1, 0.2, 0.3]]);
+        $driver->expects($this->once())
+            ->method('search')
+            ->with('vec_schema_search_records', [0.1, 0.2, 0.3], 6, 0.4, [])
+            ->willReturn([]);
+
+        $driverManager = $this->createMock(VectorDriverManager::class);
+        $driverManager->method('driver')->willReturn($driver);
+
+        $service = new VectorSearchService(
+            $driverManager,
+            $this->createMock(EmbeddingService::class),
+            $this->createMock(VectorAccessControl::class),
+            app(SearchDocumentBuilder::class),
+            app(ChunkingService::class),
+        );
+
+        $model = new SchemaSearchRecord();
+        $model->id = 12;
+
+        $this->assertCount(0, $service->findSimilar($model, 5, 0.4));
+    }
+
     public function test_indexes_multi_chunk_document_using_search_document_chunks_and_metadata(): void
     {
         config()->set('ai-engine.vector.multi_chunk_enabled', true);
@@ -183,4 +270,9 @@ class VectorSearchServiceContractTest extends UnitTestCase
 
         $this->assertTrue($service->index($model));
     }
+}
+
+final class SchemaSearchRecord extends Model
+{
+    protected $table = 'schema_search_records';
 }

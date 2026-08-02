@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] — 2026-08-02
+
+### Fixed
+
+- **Package-wide model schema preparation** — `VectorSearchService` now invokes
+  an optional driver capability before every model-backed search and
+  find-similar retrieval. Qdrant uses it to reconcile typed payload-index
+  declarations without leaking internal model context into provider filters.
+  Model-specific reconciliation also has a distinct cache key, so an earlier
+  generic collection initialization cannot suppress a typed model repair.
+
 ## [3.0.1] — 2026-08-02
 
 ### Fixed

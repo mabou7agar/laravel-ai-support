@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Console\Commands;
 
 use Illuminate\Console\Command;
+use LaravelAIEngine\Services\Vector\Contracts\ModelPayloadIndexReconcilerInterface;
 use LaravelAIEngine\Services\Vector\VectorSearchService;
 use LaravelAIEngine\Services\RAG\RAGCollectionDiscovery;
 use LaravelAIEngine\Traits\Vectorizable;
@@ -248,8 +249,8 @@ class VectorIndexCommand extends Command
                 // Create missing indexes
                 $this->info('   🔧 Creating missing indexes...');
 
-                if (method_exists($driver, 'ensureAllPayloadIndexes')) {
-                    $driver->ensureAllPayloadIndexes($collectionName, $modelClass);
+                if ($driver instanceof ModelPayloadIndexReconcilerInterface) {
+                    $driver->reconcileModelPayloadIndexes($collectionName, $modelClass);
                     $this->info('   ✓ Missing indexes created');
                 } else {
                     $this->warn('   Driver does not support auto-creating indexes');

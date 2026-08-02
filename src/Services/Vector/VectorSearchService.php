@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\DTOs\GraphVectorLink;
 use LaravelAIEngine\DTOs\SearchDocument;
 use LaravelAIEngine\Services\Tenant\MultiTenantVectorService;
+use LaravelAIEngine\Services\Vector\Contracts\ModelPayloadIndexReconcilerInterface;
+use LaravelAIEngine\Services\Vector\Contracts\VectorDriverInterface;
 use LaravelAIEngine\Services\Vector\VectorDriverManager;
 use LaravelAIEngine\Services\Vector\EmbeddingService;
 use LaravelAIEngine\Services\Vectorization\SearchDocumentBuilder;
@@ -88,6 +90,7 @@ class VectorSearchService
 
             // Search in vector database
             $driver = $this->driverManager->driver();
+            $this->reconcileModelPayloadIndexes($driver, $collectionName, $modelClass);
             
             \Log::info('Calling driver->search', [
                 'collection' => $collectionName,
@@ -136,6 +139,7 @@ class VectorSearchService
 
             // Get the model's vector from database
             $driver = $this->driverManager->driver();
+            $this->reconcileModelPayloadIndexes($driver, $collectionName, $modelClass);
             $vectorData = $driver->get($collectionName, (string) $model->id);
 
             if (!$vectorData || empty($vectorData['vector'])) {
@@ -359,12 +363,9 @@ class VectorSearchService
                 $driver->deleteCollection($collectionName);
             } elseif ($driver->collectionExists($collectionName)) {
                 Log::info('Collection already exists, ensuring indexes', ['collection' => $collectionName]);
-                
-                // Ensure payload indexes exist on existing collection
-                if (method_exists($driver, 'ensureAllPayloadIndexes')) {
-                    $driver->ensureAllPayloadIndexes($collectionName, $modelClass);
-                }
-                
+
+                $this->reconcileModelPayloadIndexes($driver, $collectionName, $modelClass);
+
                 return true;
             }
 
@@ -388,6 +389,20 @@ class VectorSearchService
                 'error' => $e->getMessage(),
             ]);
             return false;
+        }
+    }
+
+    /**
+     * Prepare schema-aware drivers for model-backed retrieval without adding
+     * internal context to provider filters.
+     */
+    protected function reconcileModelPayloadIndexes(
+        VectorDriverInterface $driver,
+        string $collectionName,
+        string $modelClass
+    ): void {
+        if ($driver instanceof ModelPayloadIndexReconcilerInterface) {
+            $driver->reconcileModelPayloadIndexes($collectionName, $modelClass);
         }
     }
 
