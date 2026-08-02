@@ -255,6 +255,16 @@ class QdrantDriver implements VectorDriverInterface
                 // Collection is empty, return no results
                 return [];
             }
+
+            // VectorSearchService carries the model class as internal filter
+            // context. Reconcile its authoritative typed declarations before
+            // provisioning ad-hoc filter indexes or coercing filter values.
+            // This protects every model-backed retrieval path, including
+            // collections created before getQdrantIndexes() was introduced.
+            $modelClass = $filters['model_class'] ?? null;
+            if (is_string($modelClass) && class_exists($modelClass)) {
+                $this->ensureAllPayloadIndexes($collection, $modelClass);
+            }
             
             // Ensure filter indexes exist for the fields being filtered
             if (!empty($filters)) {

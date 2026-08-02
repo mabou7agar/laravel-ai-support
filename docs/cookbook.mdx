@@ -1458,11 +1458,11 @@ public function getQdrantIndexes(): array
 ```
 
 Typed declarations are authoritative for both new and existing collections.
-When the vector service opens an existing Qdrant collection, it creates missing
-declared indexes and safely recreates indexes whose stored type no longer
-matches the model declaration. Historical list-style declarations such as
-`['status', 'category']` remain supported, but their types are inferred; use
-the field-to-type map when a filter value must remain numeric or boolean.
+Collection initialization and model-backed retrieval create missing declared
+indexes and safely recreate indexes whose stored type no longer matches the
+model declaration before filters are built. Historical list-style declarations
+such as `['status', 'category']` remain supported, but their types are inferred;
+use the field-to-type map when a filter value must remain numeric or boolean.
 
 ### Vector Search
 

@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Existing Qdrant payload schemas** — vector collection initialization now
   applies typed `getQdrantIndexes()` declarations to existing collections,
   creates missing declared indexes with the authoritative type, and recreates
-  incompatible indexes before filtered retrieval. Legacy untyped index lists
-  remain supported.
+  incompatible indexes. Model-backed searches also reconcile these declarations
+  automatically before filtered retrieval, including auto-indexed and legacy
+  collections. Legacy untyped index lists remain supported.
 - **Documentation coverage gate** — recently added assistant runtime, realtime
   voice SDK, and 3.0 upgrade guides are included in the federation-enabled
   coverage matrix.

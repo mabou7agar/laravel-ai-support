@@ -109,8 +109,9 @@ public function getQdrantIndexes(): array
 }
 ```
 
-These typed declarations apply to existing collections as well as newly
-created collections. During collection initialization the package creates
-missing declared indexes and reconciles incompatible existing types, preventing
-Qdrant from comparing a numeric payload against a string filter. Legacy
-list-style declarations remain supported with inferred types.
+These typed declarations apply to existing collections as well as newly created
+collections. During collection initialization and model-backed retrieval the
+package creates missing declared indexes and reconciles incompatible existing
+types before filters are built, preventing Qdrant from comparing a numeric
+payload against a string filter. Legacy list-style declarations remain
+supported with inferred types.
