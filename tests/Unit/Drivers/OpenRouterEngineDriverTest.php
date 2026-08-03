@@ -26,6 +26,7 @@ class OpenRouterEngineDriverTest extends UnitTestCase
                     'prompt_tokens' => 100,
                     'completion_tokens' => 10,
                     'total_tokens' => 110,
+                    'cost' => 0.0042,
                     'prompt_tokens_details' => [
                         'cached_tokens' => 80,
                         'cache_write_tokens' => 20,
@@ -48,6 +49,7 @@ class OpenRouterEngineDriverTest extends UnitTestCase
             'cache_creation_tokens' => 20,
         ], $response->getUsage());
         $this->assertSame(110, $response->getTokensUsed());
+        $this->assertSame(0.0042, $response->getProviderCostUsd());
     }
 
     public function test_generate_text_normalizes_absent_cache_usage_to_zero(): void

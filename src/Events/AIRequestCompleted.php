@@ -37,7 +37,8 @@ class AIRequestCompleted
 
         // Set cost and credits properties (use property_exists to avoid errors)
         $this->creditsUsed = property_exists($response, 'creditsUsed') ? ($response->creditsUsed ?? 0) : 0;
-        $this->cost = $this->creditsUsed * 0.001; // Calculate cost from credits
+        $this->providerCostUsd = $response->getProviderCostUsd();
+        $this->cost = $this->providerCostUsd ?? ($this->creditsUsed * 0.001);
 
         // Set status properties
         $this->success = method_exists($response, 'isSuccessful') ? $response->isSuccessful() : true;
@@ -56,6 +57,7 @@ class AIRequestCompleted
     public int $totalTokens;
     public float $responseTime;
     public float $cost;
+    public ?float $providerCostUsd;
     public float $creditsUsed;  // Changed from int to float
     public bool $success;
     public string $finishReason;
@@ -84,6 +86,7 @@ class AIRequestCompleted
             'execution_time' => $this->executionTime,
             'tokens_used' => $this->response->tokensUsed,
             'credits_used' => $this->response->creditsUsed,
+            'provider_cost_usd' => $this->providerCostUsd,
             'content_length' => strlen($this->response->content),
             'has_files' => !empty($this->response->files),
             'finish_reason' => $this->response->finishReason,
@@ -109,9 +112,10 @@ class AIRequestCompleted
     {
         return [
             'credits_used' => $this->response->creditsUsed,
+            'provider_cost_usd' => $this->providerCostUsd,
             'tokens_used' => $this->response->tokensUsed,
             'model_cost_index' => $this->request->model->creditIndex(),
-            'estimated_cost' => $this->response->creditsUsed * 0.001, // Example cost calculation
+            'estimated_cost' => $this->response->creditsUsed * 0.001,
         ];
     }
 }

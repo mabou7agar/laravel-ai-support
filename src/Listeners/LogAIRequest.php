@@ -59,6 +59,7 @@ class LogAIRequest
             'model' => $event->request->model->value,
             'success' => $event->response->success,
             'credits_used' => $event->response->getCreditsUsed(),
+            'provider_cost_usd' => $event->providerCostUsd,
             'processing_time' => $event->executionTime,
             'content_length' => strlen($event->response->content),
             'error' => $event->response->error,

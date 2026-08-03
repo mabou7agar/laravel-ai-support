@@ -547,6 +547,32 @@ class AIResponse implements \JsonSerializable
     }
 
     /**
+     * Return the provider-reported upstream cost when the driver exposes it.
+     *
+     * OpenRouter includes this as `usage.cost`. Some drivers normalize it to
+     * `provider_cost_usd`, while media responses may retain the raw usage
+     * envelope in metadata. Keeping all three locations readable makes this
+     * accessor backward-compatible with existing drivers and stored responses.
+     */
+    public function getProviderCostUsd(): ?float
+    {
+        $candidates = [
+            $this->usage['provider_cost_usd'] ?? null,
+            $this->usage['cost'] ?? null,
+            $this->metadata['usage']['provider_cost_usd'] ?? null,
+            $this->metadata['usage']['cost'] ?? null,
+        ];
+
+        foreach ($candidates as $cost) {
+            if (is_numeric($cost) && (float) $cost >= 0.0) {
+                return (float) $cost;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get the tokens used for this response
      */
     public function getTokensUsed(): int

@@ -418,6 +418,16 @@ class AIEngineServiceProvider extends ServiceProvider
 
         // Logging listeners
         $events->listen(
+            \LaravelAIEngine\Events\AIRequestStarted::class,
+            [\LaravelAIEngine\Listeners\LogAIRequest::class, 'handleStarted']
+        );
+
+        $events->listen(
+            \LaravelAIEngine\Events\AIRequestCompleted::class,
+            [\LaravelAIEngine\Listeners\LogAIRequest::class, 'handleCompleted']
+        );
+
+        $events->listen(
             \LaravelAIEngine\Events\AIStreamingError::class,
             [\LaravelAIEngine\Listeners\StreamingLoggingListener::class, 'handleStreamingError']
         );

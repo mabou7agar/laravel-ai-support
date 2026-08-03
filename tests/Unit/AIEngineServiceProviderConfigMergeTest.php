@@ -5,6 +5,8 @@ namespace LaravelAIEngine\Tests\Unit;
 use Illuminate\Support\ServiceProvider;
 use LaravelAIEngine\AIEngineServiceProvider;
 use LaravelAIEngine\Drivers\FalAI\FalAIEngineDriver;
+use LaravelAIEngine\Events\AIRequestCompleted;
+use LaravelAIEngine\Events\AIRequestStarted;
 use LaravelAIEngine\Support\Config\AIEngineConfigDefaults;
 use LaravelAIEngine\Services\Drivers\DriverRegistry;
 use LaravelAIEngine\Services\UnifiedEngineManager;
@@ -46,6 +48,14 @@ class AIEngineServiceProviderConfigMergeTest extends UnitTestCase
     public function test_ai_engine_alias_resolves_unified_manager(): void
     {
         $this->assertInstanceOf(UnifiedEngineManager::class, $this->app->make('ai-engine'));
+    }
+
+    public function test_request_cost_logging_listeners_are_registered(): void
+    {
+        $events = $this->app->make('events');
+
+        $this->assertNotEmpty($events->getListeners(AIRequestStarted::class));
+        $this->assertNotEmpty($events->getListeners(AIRequestCompleted::class));
     }
 
     public function test_assistant_client_publish_tag_includes_chat_and_voice_modules(): void
