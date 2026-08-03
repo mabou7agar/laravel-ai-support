@@ -138,16 +138,33 @@ class DynamicModelResolver
             return 'video';
         }
 
-        if (array_intersect($capabilities, ['image_generation', 'image_editing', 'text_to_image', 'vision', 'image_analysis'])) {
+        // Content type describes the generated OUTPUT, not accepted inputs.
+        // Vision/image-analysis models accept image input but normally return
+        // text; classifying them as image routes multimodal analysis through an
+        // image-generation transport and asks providers for image output.
+        if (array_intersect($capabilities, ['image_generation', 'image_editing', 'text_to_image'])) {
             return 'image';
         }
 
-        if (array_intersect($capabilities, ['audio_generation', 'tts', 'transcription', 'speech_to_text', 'text_to_speech'])) {
+        if (array_intersect($capabilities, ['audio_generation', 'tts', 'text_to_speech'])) {
             return 'audio';
         }
 
-        if (array_intersect($capabilities, ['chat', 'completion', 'text_generation'])) {
+        if (array_intersect($capabilities, [
+            'chat',
+            'completion',
+            'text_generation',
+            'transcription',
+            'speech_to_text',
+        ])) {
             return 'text';
+        }
+
+        // Preserve media-only provider contracts (notably legacy FAL analysis
+        // models) that intentionally account by image units. Chat-capable
+        // multimodal models have already resolved to text above.
+        if (array_intersect($capabilities, ['vision', 'image_analysis'])) {
+            return 'image';
         }
 
         return null;

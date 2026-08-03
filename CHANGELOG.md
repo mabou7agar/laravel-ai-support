@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.4] — 2026-08-03
+
+### Fixed
+
+- **Multimodal chat output routing** — vision and image-analysis capabilities
+  are treated as accepted input types when a model also supports chat, keeping
+  the generated output as text. Image-generation models and legacy media-only
+  providers preserve their existing image output contracts.
+
 ## [3.1.2] — 2026-08-03
 
 ### Fixed
