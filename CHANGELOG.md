@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] — 2026-08-03
+
+### Fixed
+
+- **Concurrent image accounting** — pooled image generation now uses the same
+  aggregate credit preflight, per-image deduction, request events, usage
+  accumulation, and provider-cost logging as sequential generation. Mixed
+  owner/engine/model batches safely retain the sequential path.
+
+## [3.1.1] — 2026-08-03
+
+### Added
+
+- **Provider-reported request costs** — normalized AI responses, completion
+  events, and request logs expose the provider's USD cost when available.
+- **Request lifecycle logging registration** — request-started and
+  request-completed listeners are registered by the package provider.
+
 ## [3.1.0] — 2026-08-02
 
 ### Added

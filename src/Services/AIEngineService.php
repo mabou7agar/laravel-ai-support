@@ -581,27 +581,146 @@ class AIEngineService
             return [$this->generateImage($requests[0])];
         }
 
-        // The concurrent path posts the whole batch through ONE driver, so it only
-        // applies when every request targets the same engine (the normal case — a
-        // build fills a section's slots with one image engine). A mixed batch falls
-        // back to sequential so each request routes to its own driver.
-        $engine = $requests[0]->engine;
-        $sameEngine = array_reduce(
-            $requests,
-            static fn (bool $carry, AIRequest $request): bool => $carry && $request->engine === $engine,
+        $resolved = array_map(
+            fn (AIRequest $request): AIRequest => $this->prepareConcurrentImageRequest($request),
+            $requests
+        );
+
+        // A pooled request shares one driver and one aggregate credit preflight.
+        // Keep it to one owner/engine/model so entity-specific ledgers and custom
+        // lifecycle handlers can authorize the exact total before provider spend.
+        // Incompatible batches retain the established sequential behavior.
+        $first = $resolved[0];
+        $poolCompatible = array_reduce(
+            $resolved,
+            static fn (bool $carry, AIRequest $request): bool => $carry
+                && $request->engine->value === $first->engine->value
+                && $request->model->value === $first->model->value
+                && $request->userId === $first->userId,
             true
         );
 
-        if ($sameEngine) {
-            $driver = $this->getDriver($this->requestRouteResolver->resolve($requests[0])->engine);
+        if ($poolCompatible) {
+            $driver = $this->getDriver($first->engine);
             if (method_exists($driver, 'generateImagesConcurrently')) {
-                return $driver->generateImagesConcurrently($requests);
+                foreach ($resolved as $request) {
+                    $driver->validateRequest($request);
+                }
+
+                return $this->runConcurrentImageBatch($driver, $resolved);
             }
         }
 
         // Sequential fallback (a driver with no pool path — e.g. OpenAI — or a
-        // mixed-engine batch).
+        // mixed owner/engine/model batch).
         return array_map(fn (AIRequest $request): AIResponse => $this->generateImage($request), $requests);
+    }
+
+    private function prepareConcurrentImageRequest(AIRequest $request): AIRequest
+    {
+        if ($request->model->getContentType() !== 'image') {
+            throw new AIEngineException('The specified model is not suitable for image generation');
+        }
+
+        $request = $this->requestRouteResolver->resolve($request);
+
+        if (!$request->userId && $this->isAuthenticatedSafely()) {
+            $request = $request->withUserId($this->resolveUserId());
+        }
+
+        if ($this->scopeOptions instanceof AIScopeOptionsService) {
+            $request = $request->withMetadata(
+                $this->scopeOptions->merge($request->userId, $request->getMetadata())
+            );
+        }
+
+        return $request;
+    }
+
+    /**
+     * Apply the same credit, event, usage, and observability lifecycle as
+     * generate(), while leaving only the provider round-trips concurrent.
+     *
+     * @param array<int, AIRequest> $requests
+     * @return array<int, AIResponse>
+     */
+    private function runConcurrentImageBatch(EngineDriverInterface $driver, array $requests): array
+    {
+        $startedAt = microtime(true);
+        $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
+        $creditsPerRequest = array_map(
+            fn (AIRequest $request): float => $this->creditManager->calculateCredits($request),
+            $requests
+        );
+        $totalCredits = array_sum($creditsPerRequest);
+        $ownerId = $requests[0]->userId;
+
+        if (
+            $creditsEnabled
+            && $ownerId
+            && !$this->creditManager->hasCreditsForAmount($ownerId, $requests[0], $totalCredits)
+        ) {
+            throw new InsufficientCreditsException('Insufficient credits for this image batch');
+        }
+
+        $requestIds = [];
+        foreach ($requests as $index => $request) {
+            $requestIds[$index] = uniqid('ai_req_');
+            Event::dispatch(new AIRequestStarted(
+                request: $request,
+                requestId: $requestIds[$index],
+                metadata: $request->metadata
+            ));
+        }
+
+        try {
+            /** @var array<int, AIResponse> $responses */
+            $responses = array_values($driver->generateImagesConcurrently($requests));
+        } catch (\Throwable $exception) {
+            $responses = array_map(
+                static fn (AIRequest $request): AIResponse => AIResponse::error(
+                    $exception->getMessage(),
+                    $request->getEngine(),
+                    $request->getModel()
+                ),
+                $requests
+            );
+        }
+
+        $completed = [];
+        foreach ($requests as $index => $request) {
+            $response = $responses[$index] ?? AIResponse::error(
+                'Concurrent image driver did not return a response for request #' . $index,
+                $request->getEngine(),
+                $request->getModel()
+            );
+            $creditsUsed = $creditsPerRequest[$index];
+
+            CreditManager::accumulate($creditsUsed);
+
+            if ($creditsEnabled && $response->success && $request->userId) {
+                $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+            }
+
+            if ($response->success) {
+                $response = $response->withUsage(
+                    tokensUsed: $response->tokensUsed,
+                    creditsUsed: $creditsUsed
+                );
+            }
+
+            Event::dispatch(new AIRequestCompleted(
+                request: $request,
+                response: $response,
+                requestId: $requestIds[$index],
+                executionTime: microtime(true) - $startedAt,
+                metadata: array_merge($request->metadata, $response->metadata)
+            ));
+
+            $completed[$index] = $response;
+        }
+
+        return array_values($completed);
     }
 
     /**
