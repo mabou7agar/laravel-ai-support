@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.7] — 2026-08-04
+
+### Added
+
+- **Closed progressive-disclosure rosters** — hosts with a confident,
+  fully scoped per-request tool roster can disable the `find_tools` recovery
+  path for that turn. The default remains enabled for backward compatibility.
+
+### Fixed
+
+- **Exact tool discovery expansion** — an exact registered tool-name query now
+  returns only that tool instead of also returning unrelated tools that share
+  namespace terms and inflating the next planner state.
+
 ## [3.1.6] — 2026-08-04
 
 ### Added

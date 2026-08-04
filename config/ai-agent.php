@@ -388,6 +388,11 @@ return [
             // A per-request options.tool_selection.disclosure_full_tools override wins,
             // so one agent can tune its own hot core without changing the global default.
             'disclosure_full_tools' => null,
+            // Progressive disclosure normally exposes find_tools as a recovery
+            // path. A host with a confident, fully scoped per-request roster may
+            // disable it for that turn to prevent unrelated schema discovery.
+            // Per-request options.tool_selection.find_tools_enabled wins.
+            'find_tools_enabled' => (bool) env('AI_AGENT_FIND_TOOLS_ENABLED', true),
             // Under 'progressive', deferred (name + summary) tools show only the first
             // ~N chars of their description — a one-line summary — since full tool
             // descriptions are often multi-paragraph. The full text + parameters are

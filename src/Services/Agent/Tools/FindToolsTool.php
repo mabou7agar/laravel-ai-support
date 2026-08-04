@@ -49,6 +49,18 @@ class FindToolsTool extends AgentTool
         $limit = max(1, min(25, (int) ($parameters['limit'] ?? 8)));
         $terms = $this->terms($query);
 
+        // An exact registered tool-name request is unambiguous. Returning every
+        // other tool that shares namespace words (for example "theme_builder")
+        // bloats the next planner state without adding useful capability.
+        if ($this->tools->has($query) && $query !== $this->getName()) {
+            $tool = $this->tools->get($query);
+
+            return ActionResult::success(
+                'Loaded 1 tool schema.',
+                ['found' => 1, 'tools' => [$tool->toArray()]],
+            );
+        }
+
         $scored = [];
         foreach ($this->tools->all() as $name => $tool) {
             if ($name === $this->getName()) {

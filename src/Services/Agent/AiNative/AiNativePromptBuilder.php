@@ -415,7 +415,10 @@ class AiNativePromptBuilder
         // and keeping them verbatim defeats the point of deferring. The full description
         // and parameters are recoverable via find_tools, so nothing is lost.
         if ($this->progressiveDisclosure($options)) {
-            if ($this->tools->has('find_tools') && !isset($tools['find_tools'])) {
+            if ($this->findToolsEnabled($options)
+                && $this->tools->has('find_tools')
+                && !isset($tools['find_tools'])
+            ) {
                 $tools['find_tools'] = $this->tools->get('find_tools');
             }
 
@@ -492,6 +495,21 @@ class AiNativePromptBuilder
             : (string) config('ai-agent.ai_native.tool_selection.disclosure', 'full');
 
         return $disclosure === 'progressive';
+    }
+
+    /**
+     * Hosts with a confident intent-scoped roster can close the discovery path
+     * for one turn. The default stays enabled for backward compatibility.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function findToolsEnabled(array $options = []): bool
+    {
+        $perRequest = $options['tool_selection']['find_tools_enabled'] ?? null;
+
+        return $perRequest !== null
+            ? (bool) $perRequest
+            : (bool) config('ai-agent.ai_native.tool_selection.find_tools_enabled', true);
     }
 
     /**

@@ -69,8 +69,9 @@ class FindToolsToolTest extends TestCase
 
     public function test_exact_tool_name_is_ranked_first(): void
     {
-        $result = $this->registry()->get('find_tools')->execute(['query' => 'find_customer', 'limit' => 1], new UnifiedActionContext('s'));
+        $result = $this->registry()->get('find_tools')->execute(['query' => 'find_customer'], new UnifiedActionContext('s'));
 
+        $this->assertSame(1, $result->data['found'] ?? null);
         $this->assertSame('find_customer', $result->data['tools'][0]['name'] ?? null);
     }
 
@@ -100,6 +101,28 @@ class FindToolsToolTest extends TestCase
         // find_tools keeps its full schema so the planner knows how to call it.
         $this->assertArrayHasKey('find_tools', $docs);
         $this->assertArrayHasKey('parameters', $docs['find_tools']);
+    }
+
+    public function test_per_request_can_disable_find_tools_for_a_closed_roster(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.disclosure', 'progressive');
+
+        $builder = new AiNativePromptBuilder($this->registry(), app(AgentSkillRegistry::class));
+        $method = new \ReflectionMethod($builder, 'toolDocuments');
+        $method->setAccessible(true);
+
+        $docs = collect($method->invoke($builder, 'create an invoice', [], [
+            'tool_selection' => [
+                'disclosure' => 'progressive',
+                'exposed_tools' => ['create_invoice'],
+                'disclosure_full_tools' => ['create_invoice'],
+                'find_tools_enabled' => false,
+            ],
+        ]))->keyBy('name');
+
+        $this->assertArrayHasKey('create_invoice', $docs);
+        $this->assertArrayHasKey('parameters', $docs['create_invoice']);
+        $this->assertArrayNotHasKey('find_tools', $docs);
     }
 
     public function test_hybrid_disclosure_keeps_hot_core_full_and_defers_the_rest(): void
