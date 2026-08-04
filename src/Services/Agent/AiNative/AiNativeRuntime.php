@@ -269,6 +269,14 @@ class AiNativeRuntime
             $step++
         ) {
             if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
+                $completed = $this->finalizeAllowlistedOutcomeAtDeadline(
+                    $context,
+                    $state,
+                    $options,
+                );
+                if ($completed instanceof AgentResponse) {
+                    return $completed;
+                }
                 $this->stateStore->put($context, $state);
 
                 return $this->responses->final($context, $state, $this->runtimeText(
@@ -622,6 +630,7 @@ class AiNativeRuntime
         array &$state,
         array $options,
         array $outcome,
+        array $metadata = [],
     ): AgentResponse {
         $closing = trim((string) ($options['auto_finalize_message'] ?? ''));
         if ($closing === '') {
@@ -633,7 +642,50 @@ class AiNativeRuntime
         return $this->responses->final($context, $state, $closing, [
             'last_tool_outcome' => $outcome,
             'auto_finalized' => true,
+            ...$metadata,
         ]);
+    }
+
+    /**
+     * The absolute deadline may be crossed inside a slow host tool. When that
+     * tool succeeded and the host explicitly declared it a terminal outcome,
+     * return the saved success instead of a contradictory timeout failure.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $options
+     */
+    private function finalizeAllowlistedOutcomeAtDeadline(
+        UnifiedActionContext $context,
+        array &$state,
+        array $options,
+    ): ?AgentResponse {
+        $outcome = is_array($state['last_turn_outcome'] ?? null)
+            ? $state['last_turn_outcome']
+            : null;
+        if ($outcome === null
+            || ($outcome['success'] ?? false) !== true
+            || ($outcome['needs_user_input'] ?? false) === true
+        ) {
+            return null;
+        }
+
+        $allowedTools = array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($options['auto_finalize_tools'] ?? []),
+        )));
+        if ($allowedTools === []
+            || ! in_array((string) ($outcome['tool'] ?? ''), $allowedTools, true)
+        ) {
+            return null;
+        }
+
+        return $this->finalizeSuccessfulToolOutcome(
+            $context,
+            $state,
+            $options,
+            $outcome,
+            ['deadline_recovered' => true],
+        );
     }
 
     /**

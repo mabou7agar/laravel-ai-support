@@ -3192,6 +3192,33 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(1, $toolLog['lookup_customer']);
     }
 
+    public function test_deadline_after_successful_allowlisted_tool_returns_saved_success(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 3);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'Slow preview'],
+                'message' => 'Preparing the preview.',
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process('Prepare it', new UnifiedActionContext('ai-native-deadline-after-success', 77), [
+            'turn_deadline_seconds' => 0.01,
+            'auto_finalize_tools' => ['lookup_customer'],
+            'auto_finalize_message' => 'Prepared the preview.',
+        ]);
+
+        $this->assertTrue($response->success);
+        $this->assertFalse($response->needsUserInput);
+        $this->assertSame('Prepared the preview.', $response->message);
+        $this->assertTrue($response->data['deadline_recovered'] ?? false);
+        $this->assertCount(1, $toolLog['lookup_customer']);
+    }
+
     public function test_repeat_guard_ignores_tools_the_host_did_not_declare_single_shot(): void
     {
         // The guard is scoped to the host's auto_finalize_tools list: without
@@ -3316,6 +3343,9 @@ class AiNativeRuntimeTest extends UnitTestCase
             public function execute(array $parameters, UnifiedActionContext $context): ActionResult
             {
                 $this->log['lookup_customer'][] = $parameters;
+                if (($parameters['query'] ?? null) === 'Slow preview') {
+                    usleep(20_000);
+                }
                 if (str_contains((string) ($parameters['query'] ?? ''), 'Failing Missing')) {
                     return ActionResult::failure('Customer not found.', ['found' => false]);
                 }

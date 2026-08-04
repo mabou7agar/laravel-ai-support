@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.8] — 2026-08-04
+
+### Fixed
+
+- **Successful tool deadline recovery** — when a host-allowlisted terminal tool
+  completes after crossing the turn deadline, the runtime now returns that
+  durable success instead of a contradictory timeout response.
+
 ## [3.1.7] — 2026-08-04
 
 ### Added
