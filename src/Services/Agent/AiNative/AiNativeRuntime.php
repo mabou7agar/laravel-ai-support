@@ -252,6 +252,20 @@ class AiNativeRuntime
             (array) ($options['non_outcome_tools'] ?? []),
         ), static fn (string $tool): bool => $tool !== '')), true);
         $succeededNonOutcomeTools = [];
+        // Optional host-declared workflow sequence. The planner still owns all
+        // arguments, but cannot repeat a completed stage or jump over a required
+        // predecessor. Rejected plans receive focused feedback and a bounded
+        // replacement-step allowance, so a single bad selection does not consume
+        // the workflow's actual tool budget.
+        $requiredToolSequence = array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($options['required_tool_sequence'] ?? []),
+        ), static fn (string $tool): bool => $tool !== ''));
+        $sequenceCorrectionAllowance = max(
+            0,
+            (int) ($options['tool_sequence_correction_allowance'] ?? 0),
+        );
+        $sequenceCorrections = 0;
 
         $forcedRagFailure = $this->executeForcedRag($message, $context, $state, $options);
         if ($forcedRagFailure instanceof AgentResponse) {
@@ -265,7 +279,9 @@ class AiNativeRuntime
 
         for (
             $step = 0;
-            $step < $baseMaxSteps + min($nonOutcomeStepAllowance, count($succeededNonOutcomeTools));
+            $step < $baseMaxSteps
+                + min($nonOutcomeStepAllowance, count($succeededNonOutcomeTools))
+                + min($sequenceCorrectionAllowance, $sequenceCorrections);
             $step++
         ) {
             if ($turnDeadline !== null && microtime(true) >= $turnDeadline) {
@@ -283,6 +299,12 @@ class AiNativeRuntime
                     'ai-engine::runtime.responses.turn_deadline_exceeded',
                     'This request is taking longer than a single turn allows. The work done so far is saved — ask me to continue, or try a smaller request.',
                 ), ['error_code' => 'turn_deadline_exceeded', 'deadline_exceeded' => true]);
+            }
+            foreach ($this->successfulTurnToolNames($state) as $successfulTool) {
+                $turnSucceededTools[$successfulTool] = true;
+                if (isset($nonOutcomeTools[$successfulTool])) {
+                    $succeededNonOutcomeTools[$successfulTool] = true;
+                }
             }
             $this->compactStateForPlanner($state, $context, $options);
 
@@ -340,7 +362,13 @@ class AiNativeRuntime
 
             $this->notifyActivity($options, 'thinking', ['step' => $step]);
 
-            $plan = $this->nextPlan($message, $context, $state, $options, $step);
+            $plannerOptions = $this->optionsForRequiredToolSequence(
+                $options,
+                $requiredToolSequence,
+                $turnSucceededTools,
+                $state,
+            );
+            $plan = $this->nextPlan($message, $context, $state, $plannerOptions, $step);
             $this->rememberPlanPayload($state, $plan, $options);
             $this->captureReasoning($state, $plan, $options);
             $this->capturePlanTimeline($state, $plan, $options);
@@ -381,6 +409,39 @@ class AiNativeRuntime
 
             if ($action === 'tool_call') {
                 $planTool = trim((string) ($plan['tool'] ?? $plan['tool_name'] ?? ''));
+                $nextSequenceTool = null;
+                foreach ($requiredToolSequence as $sequenceTool) {
+                    if (! isset($turnSucceededTools[$sequenceTool])) {
+                        $nextSequenceTool = $sequenceTool;
+                        break;
+                    }
+                }
+                if ($nextSequenceTool !== null
+                    && $planTool !== ''
+                    && in_array($planTool, $requiredToolSequence, true)
+                    && $planTool !== $nextSequenceTool
+                ) {
+                    $state['runtime_feedback'][] = [
+                        'reason' => isset($turnSucceededTools[$planTool])
+                            ? 'repeat_completed_sequence_tool'
+                            : 'out_of_order_sequence_tool',
+                        'message' => "The host workflow requires {$nextSequenceTool} next. "
+                            . "Do not call {$planTool} now; preserve completed work and call {$nextSequenceTool} with the available context.",
+                        'required_tools' => [$nextSequenceTool],
+                        'rejected_tool' => $planTool,
+                    ];
+                    $sequenceCorrections++;
+                    $this->stateStore->put($context, $state);
+                    $this->notifyNewRuntimeFeedback(
+                        $options,
+                        $state,
+                        count((array) ($state['runtime_feedback'] ?? [])) - 1,
+                        $step,
+                        $action,
+                    );
+
+                    continue;
+                }
                 $singleShotTools = array_map(
                     static fn (mixed $tool): string => trim((string) $tool),
                     (array) ($options['auto_finalize_tools'] ?? []),
@@ -435,6 +496,33 @@ class AiNativeRuntime
 
                     continue;
                 }
+            }
+
+            $nextSequenceTool = null;
+            foreach ($requiredToolSequence as $sequenceTool) {
+                if (! isset($turnSucceededTools[$sequenceTool])) {
+                    $nextSequenceTool = $sequenceTool;
+                    break;
+                }
+            }
+            if ($nextSequenceTool !== null) {
+                $state['runtime_feedback'][] = [
+                    'reason' => 'final_before_required_tool_sequence',
+                    'message' => "The host workflow requires {$nextSequenceTool} next. "
+                        . "Do not finish yet; preserve completed work and call {$nextSequenceTool} with the available context.",
+                    'required_tools' => [$nextSequenceTool],
+                ];
+                $sequenceCorrections++;
+                $this->stateStore->put($context, $state);
+                $this->notifyNewRuntimeFeedback(
+                    $options,
+                    $state,
+                    count((array) ($state['runtime_feedback'] ?? [])) - 1,
+                    $step,
+                    'final',
+                );
+
+                continue;
             }
 
             $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
@@ -875,7 +963,176 @@ class AiNativeRuntime
             return ['action' => 'ask_user', 'message' => $response->getError() ?? $this->runtimeText('ai-engine::runtime.responses.runtime_failed', 'AI runtime failed.')];
         }
 
-        return $transport->parse($response);
+        return $this->guardPlanToolExposure(
+            $transport->parse($response),
+            $transportOptions,
+        );
+    }
+
+    /**
+     * Provider-native function calling is not an authorization boundary: some
+     * compatible providers can return a function name that was not present in
+     * the request's tools payload. A host-provided exposed_tools roster is a
+     * closed per-turn capability set, so reject the complete parallel plan
+     * before any tool executes when one returned name falls outside it.
+     *
+     * @param array<string, mixed> $plan
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function guardPlanToolExposure(array $plan, array $options): array
+    {
+        if (($plan['action'] ?? null) !== 'tool_call') {
+            return $plan;
+        }
+
+        $selection = (array) ($options['tool_selection'] ?? []);
+        if (! array_key_exists('exposed_tools', $selection)) {
+            return $plan;
+        }
+
+        $allowed = array_flip(array_values(array_filter(array_map(
+            static fn (mixed $tool): string => trim((string) $tool),
+            (array) ($selection['exposed_tools'] ?? []),
+        ), static fn (string $tool): bool => $tool !== '')));
+        $calls = is_array($plan['tool_calls'] ?? null)
+            ? array_values(array_filter($plan['tool_calls'], 'is_array'))
+            : [[
+                'tool' => $plan['tool'] ?? '',
+                'arguments' => $plan['arguments'] ?? [],
+            ]];
+
+        foreach ($calls as $call) {
+            $tool = trim((string) ($call['tool'] ?? ''));
+            if ($tool !== '' && isset($allowed[$tool])) {
+                continue;
+            }
+
+            return [
+                'action' => 'ask_user',
+                'message' => $this->runtimeText(
+                    'ai-engine::runtime.responses.tool_unavailable',
+                    'I could not safely complete that action because the selected capability is unavailable.',
+                ),
+                'data' => [
+                    'error_code' => 'ai_native.tool_not_exposed',
+                ],
+            ];
+        }
+
+        return $plan;
+    }
+
+    /**
+     * A host-declared sequence is a closed workflow, not a suggestion. Expose
+     * only its next incomplete tool to the planner and, when native function
+     * calling supports it, force that exact function. The runtime guard below
+     * remains the fail-safe for providers that ignore or do not support
+     * tool_choice.
+     *
+     * @param array<string, mixed> $options
+     * @param list<string> $requiredToolSequence
+     * @param array<string, bool> $turnSucceededTools
+     * @param array<string, mixed> $state
+     * @return array<string, mixed>
+     */
+    private function optionsForRequiredToolSequence(
+        array $options,
+        array $requiredToolSequence,
+        array $turnSucceededTools,
+        array $state = [],
+    ): array {
+        if ($requiredToolSequence === []
+            || ($options['enforce_required_tool_sequence_choice'] ?? true) === false
+        ) {
+            return $options;
+        }
+
+        foreach ($this->successfulTurnToolNames($state) as $successfulTool) {
+            $turnSucceededTools[$successfulTool] = true;
+        }
+
+        $nextTool = null;
+        foreach ($requiredToolSequence as $tool) {
+            if (! isset($turnSucceededTools[$tool])) {
+                $nextTool = $tool;
+                break;
+            }
+        }
+        if ($nextTool === null) {
+            return $options;
+        }
+
+        $selection = (array) ($options['tool_selection'] ?? []);
+        $selection['exposed_tools'] = [$nextTool];
+        $selection['disclosure_full_tools'] = [$nextTool];
+        $selection['find_tools_enabled'] = false;
+
+        $options['tools'] = [$nextTool];
+        $options['tool_selection'] = $selection;
+        $options['native_tool_choice'] = [
+            'type' => 'function',
+            'function' => ['name' => $nextTool],
+        ];
+
+        return $options;
+    }
+
+    /**
+     * Recover the successful tool ledger from authoritative turn outcomes.
+     * Some continuation paths execute and record a tool before returning to
+     * this loop, so relying only on the direct tool-call branch can leave the
+     * required sequence one step behind.
+     *
+     * @param array<string, mixed> $state
+     * @return list<string>
+     */
+    private function successfulTurnToolNames(array $state): array
+    {
+        $turnOutcomeCount = max(0, (int) ($state['turn_outcome_count'] ?? 0));
+        if ($turnOutcomeCount === 0) {
+            return [];
+        }
+
+        $outcomes = array_slice(
+            (array) ($state['recent_outcomes'] ?? []),
+            -$turnOutcomeCount,
+        );
+        $tools = [];
+
+        foreach ($outcomes as $outcome) {
+            $tool = trim((string) ($outcome['tool'] ?? ''));
+            if ($tool === ''
+                || ($outcome['success'] ?? false) !== true
+                || ($outcome['needs_user_input'] ?? false) === true
+            ) {
+                continue;
+            }
+
+            $tools[$tool] = true;
+        }
+
+        // tool_results is the planner-facing turn ledger and survives state
+        // compaction even when recent_outcomes has already been projected into
+        // the context snapshot. Read the same current-turn tail as a fallback.
+        $results = array_slice(
+            (array) ($state['tool_results'] ?? []),
+            -$turnOutcomeCount,
+        );
+        foreach ($results as $entry) {
+            $tool = trim((string) ($entry['tool'] ?? ''));
+            $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+            if ($tool === ''
+                || ($result['success'] ?? false) !== true
+                || (($result['data']['needs_user_input'] ?? false) === true)
+            ) {
+                continue;
+            }
+
+            $tools[$tool] = true;
+        }
+
+        return array_keys($tools);
     }
 
     /**

@@ -3253,6 +3253,148 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(2, $toolLog['lookup_customer'], 'un-declared tools keep their repeat behavior');
     }
 
+    public function test_required_tool_sequence_rejects_repeat_and_grants_bounded_correction_step(): void
+    {
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'page'],
+                'message' => 'Creating the page.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'page again'],
+                'message' => 'Creating the page again.',
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_product',
+                'arguments' => ['query' => 'sections'],
+                'message' => 'Composing the sections.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'The ordered workflow completed.',
+                'data' => [],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process(
+            'Create then compose',
+            new UnifiedActionContext('ai-native-required-sequence', 77),
+            [
+                'max_steps' => 3,
+                'required_tool_sequence' => ['lookup_customer', 'lookup_product'],
+                'tool_sequence_correction_allowance' => 1,
+                'enforce_required_tool_sequence_choice' => false,
+            ],
+        );
+
+        $this->assertSame('The ordered workflow completed.', $response->message);
+        $this->assertCount(1, $toolLog['lookup_customer']);
+        $this->assertCount(1, $toolLog['lookup_product']);
+        $this->assertSame(
+            'repeat_completed_sequence_tool',
+            $response->metadata['ai_native']['runtime_feedback'][0]['reason'] ?? null,
+        );
+        $this->assertSame(
+            ['lookup_product'],
+            $response->metadata['ai_native']['runtime_feedback'][0]['required_tools'] ?? null,
+        );
+    }
+
+    public function test_required_tool_sequence_exposes_and_forces_only_the_next_tool(): void
+    {
+        $toolLog = [];
+        $runtime = $this->runtime([], $toolLog);
+        $method = new \ReflectionMethod($runtime, 'optionsForRequiredToolSequence');
+        $method->setAccessible(true);
+
+        $initial = $method->invoke(
+            $runtime,
+            [
+                'tools' => ['lookup_customer', 'lookup_product', 'create_invoice'],
+                'tool_selection' => [
+                    'exposed_tools' => ['lookup_customer', 'lookup_product', 'create_invoice'],
+                    'disclosure_full_tools' => ['lookup_customer', 'lookup_product'],
+                    'find_tools_enabled' => true,
+                ],
+            ],
+            ['lookup_customer', 'lookup_product'],
+            [],
+            [
+                'turn_outcome_count' => 1,
+                'tool_results' => [[
+                    'tool' => 'lookup_customer',
+                    'result' => ['success' => true],
+                ]],
+            ],
+        );
+
+        $this->assertSame(['lookup_product'], $initial['tools']);
+        $this->assertSame(['lookup_product'], $initial['tool_selection']['exposed_tools']);
+        $this->assertSame(['lookup_product'], $initial['tool_selection']['disclosure_full_tools']);
+        $this->assertFalse($initial['tool_selection']['find_tools_enabled']);
+        $this->assertSame([
+            'type' => 'function',
+            'function' => ['name' => 'lookup_product'],
+        ], $initial['native_tool_choice']);
+    }
+
+    public function test_required_tool_sequence_rejects_early_final_after_a_successful_stage(): void
+    {
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_customer',
+                'arguments' => ['query' => 'page'],
+                'message' => 'Creating the page.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'Stopped after page creation.',
+                'data' => [],
+            ],
+            [
+                'action' => 'tool_call',
+                'tool' => 'lookup_product',
+                'arguments' => ['query' => 'sections'],
+                'message' => 'Composing the sections.',
+            ],
+            [
+                'action' => 'final',
+                'message' => 'The ordered workflow completed.',
+                'data' => [],
+            ],
+        ], $toolLog);
+
+        $response = $runtime->process(
+            'Create then compose',
+            new UnifiedActionContext('ai-native-required-sequence-early-final', 77),
+            [
+                'max_steps' => 3,
+                'required_tool_sequence' => ['lookup_customer', 'lookup_product'],
+                'tool_sequence_correction_allowance' => 1,
+            ],
+        );
+
+        $this->assertSame('The ordered workflow completed.', $response->message);
+        $this->assertCount(1, $toolLog['lookup_customer']);
+        $this->assertCount(1, $toolLog['lookup_product']);
+        $this->assertSame(
+            'final_before_required_tool_sequence',
+            $response->metadata['ai_native']['runtime_feedback'][0]['reason'] ?? null,
+        );
+        $this->assertSame(
+            ['lookup_product'],
+            $response->metadata['ai_native']['runtime_feedback'][0]['required_tools'] ?? null,
+        );
+    }
+
     public function test_successful_non_outcome_tool_grants_a_bounded_extra_step(): void
     {
         $toolLog = [];

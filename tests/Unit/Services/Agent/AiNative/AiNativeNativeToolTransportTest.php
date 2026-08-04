@@ -218,6 +218,80 @@ class AiNativeNativeToolTransportTest extends UnitTestCase
         ));
     }
 
+    public function test_runtime_rejects_an_unexposed_native_function_before_any_parallel_tool_executes(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 1);
+
+        $executed = [];
+        $registry = new ToolRegistry();
+        foreach (['allowed_tool', 'hidden_tool'] as $name) {
+            $registry->register($name, new class($name, $executed) extends AgentTool {
+                public function __construct(
+                    private readonly string $name,
+                    private array &$executed,
+                ) {
+                }
+
+                public function getName(): string
+                {
+                    return $this->name;
+                }
+
+                public function getDescription(): string
+                {
+                    return 'Test tool.';
+                }
+
+                public function getParameters(): array
+                {
+                    return [];
+                }
+
+                public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+                {
+                    $this->executed[] = $this->name;
+
+                    return ActionResult::success('Executed.');
+                }
+            });
+        }
+
+        $ai = Mockery::mock(AIEngineService::class);
+        $ai->shouldReceive('generate')
+            ->once()
+            ->andReturn($this->nativeParallelResponse([
+                ['name' => 'allowed_tool', 'arguments' => []],
+                ['name' => 'hidden_tool', 'arguments' => []],
+            ]));
+
+        $runtime = new AiNativeRuntime(
+            $ai,
+            $registry,
+            app(AgentSkillRegistry::class),
+            app(IntentSignalService::class)
+        );
+
+        $response = $runtime->process(
+            'Run the tools',
+            new UnifiedActionContext('native-tools-exposure-guard', 77),
+            [
+                'planner_transport' => 'native_tools',
+                'parallel_tools' => true,
+                'tool_selection' => [
+                    'disclosure' => 'full',
+                    'exposed_tools' => ['allowed_tool'],
+                ],
+            ],
+        );
+
+        $this->assertTrue($response->needsUserInput);
+        $this->assertSame([], $executed);
+        $this->assertSame(
+            'ai_native.tool_not_exposed',
+            $response->data['error_code'] ?? null,
+        );
+    }
+
     public function test_auto_transport_uses_native_tools_from_request_capabilities(): void
     {
         $captured = null;
@@ -275,6 +349,35 @@ class AiNativeNativeToolTransportTest extends UnitTestCase
             'name' => $name,
             'arguments' => $arguments,
             'raw' => $raw,
+        ])->withFinishReason('tool_calls');
+    }
+
+    /**
+     * @param list<array{name: string, arguments: array<string, mixed>}> $calls
+     */
+    private function nativeParallelResponse(array $calls): AIResponse
+    {
+        $raw = array_values(array_map(
+            static fn (array $call, int $index): array => [
+                'id' => 'call_parallel_' . $index,
+                'type' => 'function',
+                'function' => [
+                    'name' => $call['name'],
+                    'arguments' => json_encode($call['arguments']),
+                ],
+            ],
+            $calls,
+            array_keys($calls),
+        ));
+        $first = $calls[0];
+
+        return AIResponse::success('', 'openai', 'gpt-4o', [
+            'tool_calls' => $raw,
+        ])->withFunctionCall([
+            'id' => $raw[0]['id'],
+            'name' => $first['name'],
+            'arguments' => $first['arguments'],
+            'raw' => $raw[0],
         ])->withFinishReason('tool_calls');
     }
 }
