@@ -163,6 +163,28 @@ return array_replace_recursive($defaults, [
     ],
     'credits' => [
         'enabled' => env('AI_ENGINE_CREDITS_ENABLED', data_get($defaults, 'credits.enabled', true)),
+        'retail_pricing' => [
+            'enabled' => env(
+                'AI_CREDITS_RETAIL_PRICING_ENABLED',
+                data_get($defaults, 'credits.retail_pricing.enabled', false)
+            ),
+            'usd_per_credit' => (float) env(
+                'AI_CREDITS_RETAIL_USD_PER_CREDIT',
+                data_get($defaults, 'credits.retail_pricing.usd_per_credit', 0.001)
+            ),
+            'target_gross_margin_percent' => (float) env(
+                'AI_CREDITS_TARGET_GROSS_MARGIN_PERCENT',
+                data_get($defaults, 'credits.retail_pricing.target_gross_margin_percent', 0.0)
+            ),
+            'provider_funding_fee_percent' => (float) env(
+                'AI_CREDITS_PROVIDER_FUNDING_FEE_PERCENT',
+                data_get($defaults, 'credits.retail_pricing.provider_funding_fee_percent', 0.0)
+            ),
+            'rounding_increment_credits' => (float) env(
+                'AI_CREDITS_ROUNDING_INCREMENT',
+                data_get($defaults, 'credits.retail_pricing.rounding_increment_credits', 1.0)
+            ),
+        ],
     ],
     'data_query' => [
         // Built-in structured count/list/filter tool ("data_query") the router

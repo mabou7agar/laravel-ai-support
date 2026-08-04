@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Unit\Services;
 
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Config;
 use LaravelAIEngine\Contracts\EngineDriverInterface;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
@@ -88,6 +89,40 @@ final class AIEngineServiceConcurrentImageTest extends TestCase
         }
     }
 
+    public function test_concurrent_images_settle_against_real_provider_cost(): void
+    {
+        Event::fake();
+        Config::set('ai-engine.credits.retail_pricing', [
+            'enabled' => true,
+            'usd_per_credit' => 0.001,
+            'target_gross_margin_percent' => 25.0,
+            'provider_funding_fee_percent' => 5.5,
+            'rounding_increment_credits' => 0.01,
+        ]);
+
+        $user = $this->createTestUser();
+        $credits = Mockery::mock(CreditManager::class);
+        $credits->shouldReceive('calculateCredits')->twice()->andReturn(0.12);
+        $credits->shouldReceive('hasCreditsForAmount')
+            ->once()
+            ->with((string) $user->id, Mockery::type(AIRequest::class), 0.24)
+            ->andReturnTrue();
+        $credits->shouldReceive('deductCredits')
+            ->twice()
+            ->with((string) $user->id, Mockery::type(AIRequest::class), 9.46)
+            ->andReturnTrue();
+
+        $responses = $this->service(
+            $credits,
+            new ConcurrentImageTestDriver(0.006719)
+        )->generateImagesConcurrently($this->requests((string) $user->id, 2));
+
+        self::assertSame([9.46, 9.46], array_map(
+            static fn (AIResponse $response): float => $response->getCreditsUsed(),
+            $responses
+        ));
+    }
+
     /**
      * @return array<int, AIRequest>
      */
@@ -128,16 +163,20 @@ final class ConcurrentImageTestDriver implements EngineDriverInterface
 {
     public int $batchCalls = 0;
 
+    public function __construct(
+        private readonly float $providerCostUsd = 0.01
+    ) {}
+
     public function generateImagesConcurrently(array $requests): array
     {
         $this->batchCalls++;
 
         return array_map(
-            static fn (AIRequest $request): AIResponse => AIResponse::success(
+            fn (AIRequest $request): AIResponse => AIResponse::success(
                 'image',
                 $request->getEngine(),
                 $request->getModel(),
-                ['usage' => ['provider_cost_usd' => 0.01]]
+                ['usage' => ['provider_cost_usd' => $this->providerCostUsd]]
             ),
             $requests
         );

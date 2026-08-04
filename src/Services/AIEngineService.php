@@ -26,7 +26,8 @@ class AIEngineService
         protected ?ConversationManager $conversationManager = null,
         protected ?Drivers\DriverRegistry $driverRegistry = null,
         protected ?RequestRouteResolver $requestRouteResolver = null,
-        protected ?AIScopeOptionsService $scopeOptions = null
+        protected ?AIScopeOptionsService $scopeOptions = null,
+        protected ?ProviderCostCreditService $providerCostCredits = null
     ) {
         $this->conversationManager = $conversationManager ?? app(ConversationManager::class);
         $this->driverRegistry = $driverRegistry ?? app(Drivers\DriverRegistry::class);
@@ -34,6 +35,7 @@ class AIEngineService
         $this->scopeOptions = $scopeOptions ?? (app()->bound(AIScopeOptionsService::class)
             ? app(AIScopeOptionsService::class)
             : null);
+        $this->providerCostCredits ??= app(ProviderCostCreditService::class);
     }
 
     /**
@@ -126,7 +128,7 @@ class AIEngineService
         $response = $this->normalizeTranscriptionResponseIfRequested($response, $request);
 
         // Calculate credits for this request (always, for accumulation)
-        $creditsUsed = $this->creditManager->calculateCredits($request);
+        $creditsUsed = $this->billableCredits($request, $response);
 
         // Always accumulate credits (for cross-node tracking)
         CreditManager::accumulate($creditsUsed);
@@ -694,7 +696,9 @@ class AIEngineService
                 $request->getEngine(),
                 $request->getModel()
             );
-            $creditsUsed = $creditsPerRequest[$index];
+            $creditsUsed = $this->providerCostCredits
+                ->quote($creditsPerRequest[$index], $response)
+                ->billableCredits;
 
             CreditManager::accumulate($creditsUsed);
 
@@ -820,7 +824,7 @@ class AIEngineService
             $response = $this->normalizeTranscriptionResponseIfRequested($response, $request);
         }
 
-        $creditsUsed = $this->creditManager->calculateCredits($request);
+        $creditsUsed = $this->billableCredits($request, $response);
         CreditManager::accumulate($creditsUsed);
 
         if ($creditsEnabled && $response->success && $request->userId) {
@@ -845,6 +849,13 @@ class AIEngineService
         ));
 
         return $response;
+    }
+
+    private function billableCredits(AIRequest $request, AIResponse $response): float
+    {
+        return $this->providerCostCredits
+            ->quote($this->creditManager->calculateCredits($request), $response)
+            ->billableCredits;
     }
 
     private function normalizeTranscriptionResponseIfRequested(AIResponse $response, AIRequest $sourceRequest): AIResponse
