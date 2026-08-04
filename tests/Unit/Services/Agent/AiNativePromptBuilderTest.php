@@ -373,6 +373,35 @@ class AiNativePromptBuilderTest extends UnitTestCase
         $this->assertStringContainsString('a brand new ask', $prompt);
     }
 
+    public function test_truncated_turn_context_without_request_fence_is_not_replayed(): void
+    {
+        $tools = new ToolRegistry();
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([]);
+
+        $ctx = new UnifiedActionContext('prompt-truncated-turn-context');
+        $ctx->conversationHistory = [
+            [
+                'role' => 'user',
+                'content' => 'TURN CONTEXT — STALE_PAGE_MAP_SHOULD_NOT_REPLAY...',
+                'is_truncated' => true,
+                'original_length' => 8000,
+            ],
+            [
+                'role' => 'user',
+                'content' => 'A normal earlier request remains useful.',
+                'is_truncated' => true,
+            ],
+        ];
+
+        $prompt = (new AiNativePromptBuilder($tools, $skills))
+            ->build('fresh request', $ctx, []);
+
+        $this->assertStringNotContainsString('STALE_PAGE_MAP_SHOULD_NOT_REPLAY', $prompt);
+        $this->assertStringContainsString('A normal earlier request remains useful.', $prompt);
+        $this->assertStringContainsString('fresh request', $prompt);
+    }
+
     private function tool(string $name): AgentTool
     {
         return new class($name) extends AgentTool {

@@ -48,11 +48,14 @@ class AiNativePromptBuilderApprovalTest extends UnitTestCase
     /** Build a prompt with one param-heavy tool present, under the given options. */
     private function buildWithTool(array $options): string
     {
+        $description = 'Paint a wall a color (e.g. blue) while preserving the existing trim. '
+            . str_repeat('Detailed operational guidance that is not needed to call this tool. ', 8)
+            . 'LONG_DESCRIPTION_TAIL';
         $tool = Mockery::mock(\LaravelAIEngine\Services\Agent\Tools\AgentTool::class);
         $tool->shouldReceive('getName')->andReturn('paint_wall');
-        $tool->shouldReceive('getDescription')->andReturn('Paint a wall a color.');
+        $tool->shouldReceive('getDescription')->andReturn($description);
         $tool->shouldReceive('getParameters')->andReturn(['color' => ['type' => 'string', 'description' => 'UNIQUE_PARAM_MARKER']]);
-        $tool->shouldReceive('toArray')->andReturn(['name' => 'paint_wall', 'description' => 'Paint a wall a color.', 'parameters' => ['color' => ['type' => 'string', 'description' => 'UNIQUE_PARAM_MARKER']]]);
+        $tool->shouldReceive('toArray')->andReturn(['name' => 'paint_wall', 'description' => $description, 'parameters' => ['color' => ['type' => 'string', 'description' => 'UNIQUE_PARAM_MARKER']]]);
 
         $tools = Mockery::mock(ToolRegistry::class);
         $tools->shouldReceive('all')->andReturn(['paint_wall' => $tool]);
@@ -82,8 +85,42 @@ class AiNativePromptBuilderApprovalTest extends UnitTestCase
 
         // Name + description stay; the param schema is deferred to find_tools.
         $this->assertStringContainsString('paint_wall', $prompt);
-        $this->assertStringContainsString('Paint a wall a color.', $prompt);
+        $this->assertStringContainsString('Paint a wall a color', $prompt);
         $this->assertStringNotContainsString('UNIQUE_PARAM_MARKER', $prompt);
+    }
+
+    public function test_native_transport_can_omit_duplicate_tool_documents_from_text_prompt(): void
+    {
+        $prompt = $this->buildWithTool([
+            '_planner_transport' => 'native_tools',
+            'tool_selection' => ['embed_native_documents' => false],
+        ]);
+
+        $this->assertStringContainsString(
+            'Available tools are provided through native function schemas.',
+            $prompt
+        );
+        $this->assertStringNotContainsString('paint_wall', $prompt);
+        $this->assertStringNotContainsString('UNIQUE_PARAM_MARKER', $prompt);
+    }
+
+    public function test_native_transport_keeps_duplicate_tool_documents_by_default_for_compatibility(): void
+    {
+        $prompt = $this->buildWithTool(['_planner_transport' => 'native_tools']);
+
+        $this->assertStringContainsString('paint_wall', $prompt);
+        $this->assertStringContainsString('UNIQUE_PARAM_MARKER', $prompt);
+    }
+
+    public function test_full_schema_tool_description_can_be_capped_without_trimming_parameters(): void
+    {
+        $prompt = $this->buildWithTool([
+            'tool_selection' => ['full_schema_description_max_chars' => 80],
+        ]);
+
+        $this->assertStringContainsString('e.g. blue) while preserving', $prompt);
+        $this->assertStringNotContainsString('LONG_DESCRIPTION_TAIL', $prompt);
+        $this->assertStringContainsString('UNIQUE_PARAM_MARKER', $prompt);
     }
 
     public function test_per_request_exposed_tools_bounds_the_prompt_roster(): void

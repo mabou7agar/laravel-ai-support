@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.6] — 2026-08-04
+
+### Added
+
+- **Native tool prompt compaction** — native function transports can opt out of
+  repeating callable tool documents in planner text while retaining complete
+  provider function schemas. Full-schema descriptions can also be bounded
+  independently without trimming parameter contracts.
+
+### Fixed
+
+- **Truncated enriched history replay** — explicitly truncated `TURN CONTEXT`
+  entries that lost their user-request fence are omitted from subsequent
+  prompts instead of replaying stale runtime and page context.
+
 ## [3.1.4] — 2026-08-03
 
 ### Fixed

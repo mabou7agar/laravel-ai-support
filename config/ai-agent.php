@@ -394,6 +394,18 @@ return [
             // still recoverable via find_tools. 0 disables truncation (full description).
             // A per-request options.tool_selection.summary_max_chars override wins.
             'summary_max_chars' => (int) env('AI_AGENT_TOOL_SUMMARY_MAX_CHARS', 180),
+            // Native function transports already send full tool schemas through the
+            // provider's tools/functions payload. Keep the legacy duplicate prompt
+            // documents by default; hosts can set false per run after verifying their
+            // native transport, while prompt_json always retains embedded schemas.
+            'embed_native_documents' => (bool) env('AI_AGENT_EMBED_NATIVE_TOOL_DOCUMENTS', true),
+            // Optional cap for descriptions attached to FULL-schema tools, including
+            // native function definitions. Parameters remain complete. Zero preserves
+            // legacy descriptions; hosts with essay-sized tool manuals can opt in.
+            'full_schema_description_max_chars' => (int) env(
+                'AI_AGENT_FULL_SCHEMA_DESCRIPTION_MAX_CHARS',
+                0
+            ),
         ],
         'confirmation_summary' => [
             'enabled' => env('AI_AGENT_AI_NATIVE_CONFIRMATION_SUMMARY', true),

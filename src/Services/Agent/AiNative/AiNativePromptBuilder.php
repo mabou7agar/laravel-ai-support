@@ -42,6 +42,18 @@ class AiNativePromptBuilder
                 ? (bool) $options['parallel_tools']
                 : (bool) config('ai-agent.ai_native.parallel_tools', false)
         );
+        $embedNativeToolDocuments = ! $nativeToolTransport || $this->embedNativeToolDocuments($options);
+        $toolPromptBlocks = $embedNativeToolDocuments
+            ? [
+                $this->progressiveDisclosure($options)
+                    ? 'Available tools JSON (a tool listed with a "parameters" field is ready to call directly; a tool shown as name + summary only must be loaded with find_tools to get its parameters before you use it):'
+                    : 'Available tools JSON:',
+                $this->encodeStaticDocuments($this->toolDocuments($message, $state, $options), $options),
+            ]
+            : [
+                'Available tools are provided through native function schemas.',
+                'Use the declared functions directly. Their parameter schemas are authoritative and are intentionally not duplicated in this text prompt.',
+            ];
 
         $lines = [
             'AI_NATIVE_AGENT_RUNTIME',
@@ -83,10 +95,7 @@ class AiNativePromptBuilder
             ]),
             'Available skills JSON:',
             $this->encodeStaticDocuments($this->skillDocuments(), $options),
-            $this->progressiveDisclosure($options)
-                ? 'Available tools JSON (a tool listed with a "parameters" field is ready to call directly; a tool shown as name + summary only must be loaded with find_tools to get its parameters before you use it):'
-                : 'Available tools JSON:',
-            $this->encodeStaticDocuments($this->toolDocuments($message, $state, $options), $options),
+            ...$toolPromptBlocks,
             // Conversation, snapshot and runtime state are the UNCACHED per-step
             // body — compact encoding (no pretty-print) cuts their ~20-30%
             // whitespace tax on every planner step. Skills/tools are compact by
@@ -415,14 +424,14 @@ class AiNativePromptBuilder
 
             return array_values(array_map(
                 fn ($tool): array => ($tool->getName() === 'find_tools' || isset($full[$tool->getName()]))
-                    ? $tool->toArray()
+                    ? $this->fullToolDocument($tool, $options)
                     : ['name' => $tool->getName(), 'description' => $this->summarizeDescription((string) $tool->getDescription(), $cap)],
                 $tools
             ));
         }
 
         return array_values(array_map(
-            static fn ($tool): array => $tool->toArray(),
+            fn ($tool): array => $this->fullToolDocument($tool, $options),
             $tools
         ));
     }
@@ -486,6 +495,23 @@ class AiNativePromptBuilder
     }
 
     /**
+     * Native function transports already send the callable tool documents in the
+     * provider's functions/tools payload. Hosts may opt out of serializing those
+     * same documents into the text prompt a second time. The default remains true
+     * for backward compatibility; prompt-json transport always embeds documents.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function embedNativeToolDocuments(array $options = []): bool
+    {
+        $perRequest = $options['tool_selection']['embed_native_documents'] ?? null;
+
+        return $perRequest !== null
+            ? (bool) $perRequest
+            : (bool) config('ai-agent.ai_native.tool_selection.embed_native_documents', true);
+    }
+
+    /**
      * Tool names that keep their FULL parameter schema even under progressive
      * disclosure — the "hot core" the planner may call directly, with no
      * find_tools round-trip. A per-request override
@@ -525,6 +551,65 @@ class AiNativePromptBuilder
             : (int) config('ai-agent.ai_native.tool_selection.summary_max_chars', 180);
 
         return max(0, $value);
+    }
+
+    /**
+     * Cap descriptions that accompany full parameter schemas. This is separate
+     * from deferred-tool summaries: native providers bill function descriptions,
+     * and a tool can carry an essay-sized operational manual even though its
+     * parameter schema already expresses the callable contract.
+     *
+     * Zero preserves the complete description for backward compatibility.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function fullSchemaDescriptionMaxChars(array $options = []): int
+    {
+        $perRequest = $options['tool_selection']['full_schema_description_max_chars'] ?? null;
+        $value = is_numeric($perRequest)
+            ? (int) $perRequest
+            : (int) config('ai-agent.ai_native.tool_selection.full_schema_description_max_chars', 0);
+
+        return max(0, $value);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fullToolDocument(mixed $tool, array $options): array
+    {
+        $document = $tool->toArray();
+        $cap = $this->fullSchemaDescriptionMaxChars($options);
+
+        if ($cap > 0 && isset($document['description'])) {
+            $document['description'] = $this->truncateDescription(
+                (string) $document['description'],
+                $cap
+            );
+        }
+
+        return $document;
+    }
+
+    /**
+     * Bound a full-schema description without treating abbreviations such as
+     * "e.g." as sentence boundaries. Parameter schemas remain complete, so this
+     * only removes prose beyond the configured provider-token budget.
+     */
+    private function truncateDescription(string $description, int $cap): string
+    {
+        $description = trim((string) preg_replace('/\s+/u', ' ', $description));
+        if ($cap <= 0 || mb_strlen($description) <= $cap) {
+            return $description;
+        }
+
+        $head = mb_substr($description, 0, $cap);
+        $lastSpace = mb_strrpos($head, ' ');
+        if ($lastSpace !== false && $lastSpace >= 40) {
+            $head = mb_substr($head, 0, $lastSpace);
+        }
+
+        return rtrim($head) . '…';
     }
 
     /**
@@ -648,11 +733,15 @@ class AiNativePromptBuilder
 
         $stripFence = $this->stripTurnContextFromHistory();
 
-        return array_values(array_map(
+        $documents = array_map(
             function (array $message) use ($stripFence): array {
                 $content = (string) ($message['content'] ?? '');
                 if ($stripFence && ($message['role'] ?? null) === 'user') {
                     $content = $this->withoutTurnContextFence($content);
+                }
+
+                if ($stripFence && $this->isUnrecoverableTruncatedTurnContext($message, $content)) {
+                    return [];
                 }
 
                 $document = [
@@ -671,6 +760,11 @@ class AiNativePromptBuilder
                 return $document;
             },
             array_slice($messages, -12)
+        );
+
+        return array_values(array_filter(
+            $documents,
+            static fn (array $document): bool => $document !== []
         ));
     }
 
@@ -706,6 +800,28 @@ class AiNativePromptBuilder
         $request = trim(substr($content, (int) $offset + strlen((string) $marker)));
 
         return $request !== '' ? $request : $content;
+    }
+
+    /**
+     * UnifiedActionContext truncates long history entries before persistence. If
+     * a host-enriched TURN CONTEXT message is cut before its final "User request"
+     * fence, replaying it contributes only stale page/runtime preamble and cannot
+     * recover the user's request. The fresh Latest user message remains present,
+     * so discard only explicitly truncated fenced-context entries.
+     *
+     * @param array<string, mixed> $message
+     */
+    private function isUnrecoverableTruncatedTurnContext(array $message, string $content): bool
+    {
+        if (($message['is_truncated'] ?? false) !== true) {
+            return false;
+        }
+
+        if (! str_starts_with(ltrim($content), 'TURN CONTEXT')) {
+            return false;
+        }
+
+        return preg_match('/\n\s*User request(?:\s*\([^)\n]{0,80}\))?\s*:\s*/u', $content) !== 1;
     }
 
     /**
