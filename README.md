@@ -424,6 +424,16 @@ Register providers in the host app:
 
 Then the host app can sync `AgentCapabilityRegistry::documents()` to Qdrant, Neo4j, Redis, or any other memory layer using its own command/service. Keep domain knowledge in the app provider; keep reusable contracts and registry behavior in this package.
 
+## Agent Turn Routing and Retrieval Policy
+
+AI-native turns expose generic, host-overridable routing and retrieval contracts while preserving
+existing behavior through passthrough defaults. Hosts may provide precomputed turn/retrieval
+decisions, scope `find_tools` discovery to the turn's exposed tool roster, and add multilingual
+discovery aliases without weakening execution-time authorization.
+
+See [Agent Turn Routing and Retrieval Policy](docs/agent-turn-routing.mdx) for extension points,
+failure behavior, telemetry, and backward-compatibility guarantees.
+
 ## Action Framework
 
 For app-wide CRUD and action flows, the package owns the reusable action framework and the host app owns domain services, permissions, DTOs, repositories, and database writes.

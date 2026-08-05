@@ -71,6 +71,26 @@ abstract class AgentTool
         return [];
     }
 
+    /**
+     * Multilingual or domain aliases used only for tool discovery. They do not
+     * grant capability or bypass the per-turn exposure policy.
+     *
+     * @return array<int, string>
+     */
+    public function getDiscoveryAliases(): array
+    {
+        return [];
+    }
+
+    /**
+     * Version of the optional discovery/capability metadata contract.
+     * Existing tools inherit v1 without being filtered or otherwise changed.
+     */
+    public function getMetadataSchemaVersion(): string
+    {
+        return '1';
+    }
+
     public function getToolKind(): ?string
     {
         return null;

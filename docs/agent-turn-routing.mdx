@@ -1,0 +1,79 @@
+---
+title: Agent Turn Routing and Retrieval Policy
+---
+
+# Agent Turn Routing and Retrieval Policy
+
+Laravel AI Engine prepares every AI-native turn with two generic decisions:
+
+1. `AgentTurnRouterContract` describes the route, confidence, requested capabilities, and retrieval mode.
+2. `AgentRetrievalPolicyContract` records whether retrieval is required, skipped, degraded, unavailable, denied, or managed by the host.
+
+The package defaults are deliberately backward compatible. `PassthroughAgentTurnRouter`
+and `HostManagedAgentRetrievalPolicy` preserve the host application's existing routing and
+retrieval behavior. A host may bind either contract to an application-specific implementation:
+
+```php
+use App\AI\Routing\ApplicationRetrievalPolicy;
+use App\AI\Routing\ApplicationTurnRouter;
+use LaravelAIEngine\Contracts\AgentRetrievalPolicyContract;
+use LaravelAIEngine\Contracts\AgentTurnRouterContract;
+
+$this->app->bind(AgentTurnRouterContract::class, ApplicationTurnRouter::class);
+$this->app->bind(AgentRetrievalPolicyContract::class, ApplicationRetrievalPolicy::class);
+```
+
+Hosts that already classified a turn can pass the decisions through runtime options without
+asking the package to classify it again:
+
+```php
+use LaravelAIEngine\DTOs\AgentRetrievalDecisionDTO;
+use LaravelAIEngine\DTOs\AgentTurnDecisionDTO;
+
+$options['turn_decision'] = (new AgentTurnDecisionDTO(
+    route: 'update_selected_resource',
+    confidence: 0.98,
+    reason: 'The host matched an explicit selection.',
+    retrievalMode: 'none',
+))->toArray();
+
+$options['retrieval_decision'] = (new AgentRetrievalDecisionDTO(
+    status: AgentRetrievalDecisionDTO::SKIPPED,
+    mode: 'none',
+    reason: 'The selected resource already supplies authoritative state.',
+))->toArray();
+```
+
+The AI-native runtime emits a `turn_prepared` activity with decision status, counts, duration-safe
+metadata, and a hash/byte count for the reason. It does not log the user prompt or the decision
+reason text.
+
+## Retrieval failure behavior
+
+Retrieval decisions are telemetry and orchestration inputs; they do not fabricate knowledge. A host
+should return `degraded` or `unavailable` when a retriever fails and set `fallback_used` only when a
+real fallback supplied context. Whether to clarify, continue without retrieval, or stop is a host
+domain decision. The package's default policy remains host-managed and fail-soft.
+
+## Per-turn tool discovery scope
+
+`find_tools` now asks `ToolExposurePolicyContract` which registered tools may be disclosed for the
+current turn. The default `AllowListedToolExposurePolicy` reads
+`requestOptions.tool_selection.exposed_tools`; when no explicit list is supplied, it preserves the
+existing all-registered-tools behavior.
+
+Tool classes may add multilingual discovery terms without changing their public serialized schema:
+
+```php
+public function getDiscoveryAliases(): array
+{
+    return ['إنشاء فاتورة', 'create billing invoice'];
+}
+```
+
+Aliases improve Unicode-aware discovery ranking only. They never grant permission. Execution-time
+tool policy and application authorization must still validate every call; a routing or discovery
+decision is not an authorization decision.
+
+`AgentTool::getMetadataSchemaVersion()` currently returns `1`. The hook is additive and is not
+included in `AgentTool::toArray()`, preserving the existing serialized tool contract.

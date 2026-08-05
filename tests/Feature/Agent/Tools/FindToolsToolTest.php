@@ -15,10 +15,15 @@ use LaravelAIEngine\Tests\TestCase;
 
 class FindToolsToolTest extends TestCase
 {
-    private function tool(string $name, string $description): AgentTool
+    /** @param array<int, string> $aliases */
+    private function tool(string $name, string $description, array $aliases = []): AgentTool
     {
-        return new class($name, $description) extends AgentTool {
-            public function __construct(private string $n, private string $d)
+        return new class($name, $description, $aliases) extends AgentTool {
+            public function __construct(
+                private string $n,
+                private string $d,
+                private array $aliases,
+            )
             {
             }
 
@@ -35,6 +40,11 @@ class FindToolsToolTest extends TestCase
             public function getParameters(): array
             {
                 return ['value' => ['type' => 'string', 'required' => true]];
+            }
+
+            public function getDiscoveryAliases(): array
+            {
+                return $this->aliases;
             }
 
             public function execute(array $parameters, UnifiedActionContext $context): ActionResult
@@ -80,6 +90,50 @@ class FindToolsToolTest extends TestCase
         $result = $this->registry()->get('find_tools')->execute(['query' => ''], new UnifiedActionContext('s'));
 
         $this->assertFalse($result->success);
+    }
+
+    public function test_discovery_never_returns_a_tool_outside_the_turn_allowlist(): void
+    {
+        $context = new UnifiedActionContext('scoped-tools');
+        $context->requestOptions = [
+            'tool_selection' => [
+                'exposed_tools' => ['find_customer'],
+            ],
+        ];
+
+        $result = $this->registry()->get('find_tools')->execute(
+            ['query' => 'create_invoice'],
+            $context,
+        );
+
+        $this->assertTrue($result->success);
+        $this->assertSame(0, $result->data['found'] ?? null);
+        $this->assertSame([], $result->data['tools'] ?? null);
+    }
+
+    public function test_unicode_aliases_support_arabic_and_code_switched_discovery(): void
+    {
+        $registry = $this->registry();
+        $registry->register(
+            'create_invoice',
+            $this->tool(
+                'create_invoice',
+                'Create a draft invoice.',
+                ['إنشاء فاتورة', 'اعمل invoice'],
+            ),
+        );
+
+        $arabic = $registry->get('find_tools')->execute(
+            ['query' => 'إنشاء فاتورة'],
+            new UnifiedActionContext('arabic-tools'),
+        );
+        $mixed = $registry->get('find_tools')->execute(
+            ['query' => 'اعمل invoice'],
+            new UnifiedActionContext('mixed-tools'),
+        );
+
+        $this->assertSame('create_invoice', $arabic->data['tools'][0]['name'] ?? null);
+        $this->assertSame('create_invoice', $mixed->data['tools'][0]['name'] ?? null);
     }
 
     public function test_progressive_disclosure_renders_tools_compactly_but_find_tools_full(): void

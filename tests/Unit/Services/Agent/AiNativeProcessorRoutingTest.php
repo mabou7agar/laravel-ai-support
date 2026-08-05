@@ -35,7 +35,13 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
         $native = Mockery::mock(AiNativeRuntime::class);
         $native->shouldReceive('process')
             ->once()
-            ->with('create invoice', $context, Mockery::type('array'))
+            ->with('create invoice', $context, Mockery::on(
+                static fn (array $options): bool =>
+                    ($options['turn_decision']['route'] ?? null) === 'passthrough'
+                    && ($options['turn_decision']['retrieval_mode'] ?? null) === 'host_managed'
+                    && ($options['retrieval_decision']['status'] ?? null) === 'host_managed'
+                    && ($options['retrieval_decision']['mode'] ?? null) === 'host_managed',
+            ))
             ->andReturn(AgentResponse::conversational('AI native handled it.', $context));
 
         $finalizer = Mockery::mock(AgentResponseFinalizer::class);
@@ -56,6 +62,54 @@ class AiNativeProcessorRoutingTest extends UnitTestCase
 
         $this->assertTrue($response->success);
         $this->assertSame('AI native handled it.', $response->message);
+    }
+
+    public function test_precomputed_turn_and_retrieval_decisions_are_preserved(): void
+    {
+        $context = new UnifiedActionContext('precomputed-turn', 42);
+        $contextManager = Mockery::mock(ContextManager::class);
+        $contextManager->shouldReceive('getOrCreate')->once()->andReturn($context);
+
+        $native = Mockery::mock(AiNativeRuntime::class);
+        $native->shouldReceive('process')
+            ->once()
+            ->with('build a page', $context, Mockery::on(
+                static fn (array $options): bool =>
+                    ($options['turn_decision']['route'] ?? null) === 'page_build'
+                    && ($options['retrieval_decision']['status'] ?? null) === 'required'
+                    && ($options['retrieval_decision']['mode'] ?? null) === 'domain_catalog',
+            ))
+            ->andReturn(AgentResponse::conversational('Prepared.', $context));
+
+        $finalizer = Mockery::mock(AgentResponseFinalizer::class);
+        $finalizer->shouldReceive('finalize')
+            ->once()
+            ->andReturnUsing(fn (UnifiedActionContext $ctx, AgentResponse $response) => $response);
+
+        $processor = new LaravelAgentProcessor(
+            $contextManager,
+            $finalizer,
+            Mockery::mock(NodeSessionManager::class),
+            Mockery::mock(AgentExecutionDispatcher::class),
+            $native,
+        );
+
+        $response = $processor->process('build a page', 'precomputed-turn', 42, [
+            'turn_decision' => [
+                'route' => 'page_build',
+                'confidence' => 0.99,
+                'retrieval_mode' => 'domain_catalog',
+                'reason' => 'Catalog composition requested.',
+            ],
+            'retrieval_decision' => [
+                'status' => 'required',
+                'mode' => 'domain_catalog',
+                'required' => true,
+                'reason' => 'Catalog composition requested.',
+            ],
+        ]);
+
+        $this->assertSame('Prepared.', $response->message);
     }
 
     public function test_processor_routes_unrelated_chat_to_ai_native_without_skill_state(): void

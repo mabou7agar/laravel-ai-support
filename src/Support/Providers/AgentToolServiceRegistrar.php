@@ -81,7 +81,10 @@ class AgentToolServiceRegistrar
             // The prompt builder only lists find_tools under progressive disclosure and
             // hides it in full mode, so unconditional registration is invisible otherwise.
             if (!$registry->has('find_tools')) {
-                $registry->register('find_tools', new \LaravelAIEngine\Services\Agent\Tools\FindToolsTool($registry));
+                $registry->register('find_tools', new \LaravelAIEngine\Services\Agent\Tools\FindToolsTool(
+                    $registry,
+                    $app->make(\LaravelAIEngine\Contracts\ToolExposurePolicyContract::class),
+                ));
             }
 
             // Config-declared resources: expose Eloquent models as find_<name>/create_<name>

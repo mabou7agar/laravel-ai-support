@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\Tools;
 
+use LaravelAIEngine\Contracts\ToolExposurePolicyContract;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
@@ -16,8 +17,13 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
  */
 class FindToolsTool extends AgentTool
 {
-    public function __construct(private readonly ToolRegistry $tools)
-    {
+    private readonly ToolExposurePolicyContract $exposure;
+
+    public function __construct(
+        private readonly ToolRegistry $tools,
+        ?ToolExposurePolicyContract $exposure = null,
+    ) {
+        $this->exposure = $exposure ?? new AllowListedToolExposurePolicy();
     }
 
     public function getName(): string
@@ -48,11 +54,19 @@ class FindToolsTool extends AgentTool
 
         $limit = max(1, min(25, (int) ($parameters['limit'] ?? 8)));
         $terms = $this->terms($query);
+        $allowed = array_flip($this->exposure->allowedToolNames(
+            $context,
+            array_keys($this->tools->all()),
+            $context->requestOptions,
+        ));
 
         // An exact registered tool-name request is unambiguous. Returning every
         // other tool that shares namespace words (for example "theme_builder")
         // bloats the next planner state without adding useful capability.
-        if ($this->tools->has($query) && $query !== $this->getName()) {
+        if ($this->tools->has($query)
+            && $query !== $this->getName()
+            && isset($allowed[$query])
+        ) {
             $tool = $this->tools->get($query);
 
             return ActionResult::success(
@@ -63,10 +77,16 @@ class FindToolsTool extends AgentTool
 
         $scored = [];
         foreach ($this->tools->all() as $name => $tool) {
-            if ($name === $this->getName()) {
+            if ($name === $this->getName() || ! isset($allowed[$name])) {
                 continue;
             }
-            $score = $this->score($name, (string) $tool->getDescription(), $query, $terms);
+            $score = $this->score(
+                $name,
+                (string) $tool->getDescription(),
+                $tool->getDiscoveryAliases(),
+                $query,
+                $terms,
+            );
             if ($score > 0) {
                 $scored[$name] = $score;
             }
@@ -92,8 +112,14 @@ class FindToolsTool extends AgentTool
     /**
      * @param array<int, string> $terms
      */
-    private function score(string $name, string $description, string $query, array $terms): int
-    {
+    /** @param array<int, string> $aliases */
+    private function score(
+        string $name,
+        string $description,
+        array $aliases,
+        string $query,
+        array $terms,
+    ): int {
         $lowerName = mb_strtolower($name);
         // Exact tool-name request wins.
         if ($lowerName === mb_strtolower($query)) {
@@ -102,11 +128,16 @@ class FindToolsTool extends AgentTool
 
         $nameHay = ' ' . str_replace('_', ' ', $lowerName) . ' ';
         $descHay = mb_strtolower($description);
+        $aliasHay = ' ' . mb_strtolower(implode(' ', $aliases)) . ' ';
         $score = 0;
         foreach ($terms as $term) {
             if (str_contains($nameHay, ' ' . $term . ' ')) {
                 $score += 3;
             } elseif (str_contains($nameHay, $term)) {
+                $score += 2;
+            } elseif (str_contains($aliasHay, ' ' . $term . ' ')) {
+                $score += 3;
+            } elseif (str_contains($aliasHay, $term)) {
                 $score += 2;
             } elseif (str_contains($descHay, $term)) {
                 $score += 1;
@@ -121,11 +152,11 @@ class FindToolsTool extends AgentTool
      */
     private function terms(string $query): array
     {
-        $tokens = preg_split('/[^a-z0-9]+/i', mb_strtolower($query)) ?: [];
+        $tokens = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($query)) ?: [];
 
         return array_values(array_unique(array_filter(
             $tokens,
-            static fn (string $t): bool => strlen($t) >= 2
+            static fn (string $t): bool => mb_strlen($t) >= 2
         )));
     }
 }

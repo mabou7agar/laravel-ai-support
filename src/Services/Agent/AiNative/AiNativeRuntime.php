@@ -186,6 +186,7 @@ class AiNativeRuntime
             // AgentResponse metadata['plan'] by the response factory.
             $state['plan_timeline'] = ['steps' => [], 'current' => 0];
         }
+        $this->notifyTurnPreparation($options);
         if ($this->confirmationIntent->isApproval($message)
             && ($state['task_frame']['status'] ?? null) === 'completed'
             && (array) data_get($state, 'task_frame.completed_writes', []) !== []) {
@@ -1286,6 +1287,38 @@ class AiNativeRuntime
         } catch (\Throwable) {
             // Observability must never break the agentic loop.
         }
+    }
+
+    /**
+     * Emit content-safe routing, retrieval, and tool-scope decisions. Reasons
+     * are represented by byte counts and fingerprints because host routers may
+     * include customer wording in their explanations.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function notifyTurnPreparation(array $options): void
+    {
+        $turn = (array) ($options['turn_decision'] ?? []);
+        $retrieval = (array) ($options['retrieval_decision'] ?? []);
+        $selection = (array) ($options['tool_selection'] ?? []);
+        $reason = trim((string) ($retrieval['reason'] ?? $turn['reason'] ?? ''));
+
+        $this->notifyActivity($options, 'turn_prepared', [
+            'route' => $turn['route'] ?? 'passthrough',
+            'confidence' => isset($turn['confidence']) ? (float) $turn['confidence'] : 0.0,
+            'retrieval_status' => $retrieval['status'] ?? 'host_managed',
+            'retrieval_mode' => $retrieval['mode'] ?? 'host_managed',
+            'retrieval_required' => (bool) ($retrieval['required'] ?? false),
+            'retrieval_authoritative' => (bool) ($retrieval['authoritative'] ?? false),
+            'retrieval_fallback_used' => (bool) ($retrieval['fallback_used'] ?? false),
+            'reason_bytes' => strlen($reason),
+            'reason_fingerprint' => $reason !== '' ? substr(hash('sha256', $reason), 0, 16) : null,
+            'exposed_tool_count' => count((array) ($selection['exposed_tools'] ?? [])),
+            'full_schema_tool_count' => count((array) ($selection['disclosure_full_tools'] ?? [])),
+            'find_tools_enabled' => array_key_exists('find_tools_enabled', $selection)
+                ? (bool) $selection['find_tools_enabled']
+                : null,
+        ]);
     }
 
     /**

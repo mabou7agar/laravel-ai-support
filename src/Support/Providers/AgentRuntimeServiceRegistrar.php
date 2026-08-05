@@ -58,7 +58,9 @@ class AgentRuntimeServiceRegistrar
                 : null,
             $app->make(\LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher::class),
             $app->make(\LaravelAIEngine\Services\Agent\AiNative\AiNativeRuntime::class),
-            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextSynchronizer::class)
+            $app->make(\LaravelAIEngine\Services\Agent\ConversationContextSynchronizer::class),
+            $app->make(\LaravelAIEngine\Contracts\AgentTurnRouterContract::class),
+            $app->make(\LaravelAIEngine\Contracts\AgentRetrievalPolicyContract::class)
         ));
         $app->singleton(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime::class, fn ($app) => new \LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime(
             $app->make(\LaravelAIEngine\Services\Agent\Runtime\LaravelAgentProcessor::class)

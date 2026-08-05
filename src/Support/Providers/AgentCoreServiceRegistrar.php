@@ -8,6 +8,24 @@ class AgentCoreServiceRegistrar
 {
     public static function register($app): void
     {
+        if (! $app->bound(\LaravelAIEngine\Contracts\AgentTurnRouterContract::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\AgentTurnRouterContract::class,
+                fn () => new \LaravelAIEngine\Services\Agent\Routing\PassthroughAgentTurnRouter(),
+            );
+        }
+        if (! $app->bound(\LaravelAIEngine\Contracts\AgentRetrievalPolicyContract::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\AgentRetrievalPolicyContract::class,
+                fn () => new \LaravelAIEngine\Services\Agent\Routing\HostManagedAgentRetrievalPolicy(),
+            );
+        }
+        if (! $app->bound(\LaravelAIEngine\Contracts\ToolExposurePolicyContract::class)) {
+            $app->singleton(
+                \LaravelAIEngine\Contracts\ToolExposurePolicyContract::class,
+                fn () => new \LaravelAIEngine\Services\Agent\Tools\AllowListedToolExposurePolicy(),
+            );
+        }
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentManifestService::class, fn () => new \LaravelAIEngine\Services\Agent\AgentManifestService());
         $app->singleton(\LaravelAIEngine\Services\Agent\AgentManifestEditorService::class, fn ($app) => new \LaravelAIEngine\Services\Agent\AgentManifestEditorService(
             $app->make(\LaravelAIEngine\Services\Agent\AgentManifestService::class)

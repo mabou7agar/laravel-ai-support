@@ -19,6 +19,12 @@ use LaravelAIEngine\Services\Agent\ConversationContextSynchronizer;
 use LaravelAIEngine\Services\Agent\Execution\AgentExecutionDispatcher;
 use LaravelAIEngine\Contracts\Federation\NodeSessionContract;
 use LaravelAIEngine\DTOs\RoutingTrace;
+use LaravelAIEngine\Contracts\AgentRetrievalPolicyContract;
+use LaravelAIEngine\Contracts\AgentTurnRouterContract;
+use LaravelAIEngine\DTOs\AgentRetrievalDecisionDTO;
+use LaravelAIEngine\DTOs\AgentTurnDecisionDTO;
+use LaravelAIEngine\Services\Agent\Routing\HostManagedAgentRetrievalPolicy;
+use LaravelAIEngine\Services\Agent\Routing\PassthroughAgentTurnRouter;
 
 /**
  * Native Laravel agent runtime processor.
@@ -31,13 +37,17 @@ class LaravelAgentProcessor
         protected ?NodeSessionContract $nodeSession = null,
         protected ?AgentExecutionDispatcher $executionDispatcher = null,
         protected ?AiNativeRuntime $aiNativeRuntime = null,
-        protected ?ConversationContextSynchronizer $conversationContextSynchronizer = null
+        protected ?ConversationContextSynchronizer $conversationContextSynchronizer = null,
+        protected ?AgentTurnRouterContract $turnRouter = null,
+        protected ?AgentRetrievalPolicyContract $retrievalPolicy = null,
     ) {
         $this->executionDispatcher ??= app(AgentExecutionDispatcher::class);
         $this->aiNativeRuntime ??= app()->bound(AiNativeRuntime::class)
             ? app(AiNativeRuntime::class)
             : null;
         $this->conversationContextSynchronizer ??= new ConversationContextSynchronizer();
+        $this->turnRouter ??= new PassthroughAgentTurnRouter();
+        $this->retrievalPolicy ??= new HostManagedAgentRetrievalPolicy();
     }
 
     public function process(
@@ -221,12 +231,50 @@ class LaravelAgentProcessor
             );
         }
 
+        // Generic turn preparation is intentionally additive. Existing callers
+        // receive passthrough/host-managed decisions, preserving the exact
+        // runtime path while giving opted-in hosts a standard, observable
+        // contract for routing and retrieval.
+        $options = $this->withTurnPreparation($message, $context, $options);
+        $context->requestOptions = $options;
+
         // AiNative owns every turn that is not an active routed_to_node continuation.
         return $this->finalizeDirect(
             $context,
             $this->aiNativeRuntime()->process($message, $context, $options),
             $options
         );
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    protected function withTurnPreparation(
+        string $message,
+        UnifiedActionContext $context,
+        array $options,
+    ): array {
+        try {
+            $turn = is_array($options['turn_decision'] ?? null)
+                ? AgentTurnDecisionDTO::fromArray($options['turn_decision'])
+                : $this->turnRouter->route($message, $context, $options);
+        } catch (\Throwable) {
+            $turn = AgentTurnDecisionDTO::passthrough('Turn router unavailable; preserved host-managed behavior.');
+        }
+
+        try {
+            $retrieval = is_array($options['retrieval_decision'] ?? null)
+                ? AgentRetrievalDecisionDTO::fromArray($options['retrieval_decision'])
+                : $this->retrievalPolicy->decide($turn, $context, $options);
+        } catch (\Throwable) {
+            $retrieval = AgentRetrievalDecisionDTO::hostManaged();
+        }
+
+        $options['turn_decision'] = $turn->toArray();
+        $options['retrieval_decision'] = $retrieval->toArray();
+
+        return $options;
     }
 
     protected function goalAgentRequested(array $options): bool
