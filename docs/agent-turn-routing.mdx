@@ -75,5 +75,48 @@ Aliases improve Unicode-aware discovery ranking only. They never grant permissio
 tool policy and application authorization must still validate every call; a routing or discovery
 decision is not an authorization decision.
 
-`AgentTool::getMetadataSchemaVersion()` currently returns `1`. The hook is additive and is not
-included in `AgentTool::toArray()`, preserving the existing serialized tool contract.
+## Versioned capability metadata
+
+Tools may expose optional discovery hints without changing their native tool schema:
+
+```php
+public function getCapabilities(): array
+{
+    return ['invoice.send'];
+}
+
+public function getDomains(): array
+{
+    return ['billing'];
+}
+
+public function getCostClass(): ?string
+{
+    return 'low';
+}
+
+public function getLatencyClass(): ?string
+{
+    return 'interactive';
+}
+
+public function getRequirements(): array
+{
+    return ['authenticated_customer'];
+}
+
+public function getOutcomes(): array
+{
+    return ['invoice_sent'];
+}
+```
+
+`AgentTool::getCapabilityMetadata()` returns a versioned
+`AgentToolCapabilityMetadataDTO`. `find_tools` includes it under
+`capability_metadata`, and semantic selection embeds aliases, capabilities,
+domains, and outcomes. Empty inherited values mean “unspecified”; consumers
+must not treat them as a denial or silently filter legacy tools.
+
+`AgentTool::toArray()` deliberately remains unchanged. Discovery uses the
+separate `toDiscoveryArray()` representation so existing package consumers keep
+the same native tool payload.

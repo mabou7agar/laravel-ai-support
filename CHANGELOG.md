@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-08-05
+
+### Added
+
+- **Versioned tool capability metadata** — tools may declare domains, cost and
+  latency classes, requirements, and outcomes through additive discovery
+  metadata. Legacy tools default to unspecified metadata and are never filtered
+  merely because they do not override the new hooks.
+
+### Changed
+
+- **Metadata-aware semantic discovery** — semantic tool embeddings now include
+  multilingual aliases, capabilities, domains, and outcomes. `find_tools`
+  returns the versioned metadata alongside the full schema while the existing
+  native `AgentTool::toArray()` payload remains unchanged.
+
 ## [3.1.8] — 2026-08-04
 
 ### Fixed
@@ -890,7 +906,8 @@ before a 3.0 removal.
 
 ---
 
-[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.34...HEAD
+[Unreleased]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v3.2.0...v3.3.0
 [2.2.34]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v2.2.33...v2.2.34
 [2.2.33]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.5.0...v2.2.33
 [1.5.0]: https://github.com/m-tech-stack/laravel-ai-engine/compare/v1.4.0...v1.5.0

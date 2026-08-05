@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\DTOs\ActionResult;
+use LaravelAIEngine\DTOs\AgentToolCapabilityMetadataDTO;
 use LaravelAIEngine\Services\Localization\LocaleResourceService;
 
 abstract class AgentTool
@@ -91,6 +92,47 @@ abstract class AgentTool
         return '1';
     }
 
+    /** @return array<int, string> */
+    public function getDomains(): array
+    {
+        return [];
+    }
+
+    public function getCostClass(): ?string
+    {
+        return null;
+    }
+
+    public function getLatencyClass(): ?string
+    {
+        return null;
+    }
+
+    /** @return array<int, string> */
+    public function getRequirements(): array
+    {
+        return [];
+    }
+
+    /** @return array<int, string> */
+    public function getOutcomes(): array
+    {
+        return [];
+    }
+
+    public function getCapabilityMetadata(): AgentToolCapabilityMetadataDTO
+    {
+        return new AgentToolCapabilityMetadataDTO(
+            schemaVersion: $this->getMetadataSchemaVersion(),
+            capabilities: $this->getCapabilities(),
+            domains: $this->getDomains(),
+            costClass: $this->getCostClass(),
+            latencyClass: $this->getLatencyClass(),
+            requires: $this->getRequirements(),
+            outcomes: $this->getOutcomes(),
+        );
+    }
+
     public function getToolKind(): ?string
     {
         return null;
@@ -153,6 +195,22 @@ abstract class AgentTool
             'entity_type' => $this->getEntityType(),
             'relations' => $this->getRelations(),
             'requires_confirmation' => $this->requiresConfirmation(),
+        ];
+    }
+
+    /**
+     * Full schema used by progressive tool discovery.
+     *
+     * Kept separate from toArray() so the long-standing native-tool payload
+     * remains byte-for-byte compatible for existing package consumers.
+     *
+     * @return array<string, mixed>
+     */
+    public function toDiscoveryArray(): array
+    {
+        return [
+            ...$this->toArray(),
+            'capability_metadata' => $this->getCapabilityMetadata()->toArray(),
         ];
     }
 }

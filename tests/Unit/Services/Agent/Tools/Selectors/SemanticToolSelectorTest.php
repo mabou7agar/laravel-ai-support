@@ -90,4 +90,56 @@ class SemanticToolSelectorTest extends UnitTestCase
 
         $this->assertSame($tools, (new SemanticToolSelector($embeddings))->select($tools, 'create an invoice', [], []));
     }
+
+    public function test_embedding_document_includes_multilingual_aliases_and_capability_metadata(): void
+    {
+        $embedded = [];
+        $embeddings = Mockery::mock(EmbeddingService::class);
+        $embeddings->shouldReceive('embed')->andReturnUsing(static function (string $text) use (&$embedded): array {
+            $embedded[] = $text;
+
+            return [1.0, 0.0];
+        });
+        $embeddings->shouldReceive('cosineSimilarity')->andReturn(1.0);
+
+        $tool = new class {
+            public function getDescription(): string
+            {
+                return 'Create a customer invoice.';
+            }
+
+            public function getDiscoveryAliases(): array
+            {
+                return ['إنشاء فاتورة'];
+            }
+
+            public function getCapabilities(): array
+            {
+                return ['invoice.create'];
+            }
+
+            public function getDomains(): array
+            {
+                return ['billing'];
+            }
+
+            public function getOutcomes(): array
+            {
+                return ['invoice_created'];
+            }
+        };
+
+        (new SemanticToolSelector($embeddings))->select(
+            ['create_invoice' => $tool],
+            'أنشئ فاتورة',
+            [],
+            [],
+        );
+
+        $toolDocument = implode("\n", $embedded);
+        $this->assertStringContainsString('إنشاء فاتورة', $toolDocument);
+        $this->assertStringContainsString('invoice.create', $toolDocument);
+        $this->assertStringContainsString('billing', $toolDocument);
+        $this->assertStringContainsString('invoice_created', $toolDocument);
+    }
 }

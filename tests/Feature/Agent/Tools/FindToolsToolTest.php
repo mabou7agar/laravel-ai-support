@@ -75,6 +75,74 @@ class FindToolsToolTest extends TestCase
         $this->assertNotContains('translate_text', $names);
         // The point of find_tools: the result carries the FULL parameter schema.
         $this->assertArrayHasKey('parameters', $result->data['tools'][0]);
+        $this->assertSame('1', $result->data['tools'][0]['capability_metadata']['schema_version'] ?? null);
+        $this->assertSame([], $result->data['tools'][0]['capability_metadata']['domains'] ?? null);
+    }
+
+    public function test_discovery_metadata_is_additive_without_changing_native_tool_shape(): void
+    {
+        $tool = new class extends AgentTool {
+            public function getName(): string
+            {
+                return 'send_invoice';
+            }
+
+            public function getDescription(): string
+            {
+                return 'Send an invoice.';
+            }
+
+            public function getParameters(): array
+            {
+                return [];
+            }
+
+            public function getCapabilities(): array
+            {
+                return ['invoice.send'];
+            }
+
+            public function getDomains(): array
+            {
+                return ['billing'];
+            }
+
+            public function getCostClass(): ?string
+            {
+                return 'low';
+            }
+
+            public function getLatencyClass(): ?string
+            {
+                return 'interactive';
+            }
+
+            public function getRequirements(): array
+            {
+                return ['authenticated_customer'];
+            }
+
+            public function getOutcomes(): array
+            {
+                return ['invoice_sent'];
+            }
+
+            public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+            {
+                return ActionResult::success('ok');
+            }
+        };
+
+        $this->assertArrayNotHasKey('capability_metadata', $tool->toArray());
+        $this->assertSame([
+            'schema_version' => '1',
+            'capabilities' => ['invoice.send'],
+            'domains' => ['billing'],
+            'cost_class' => 'low',
+            'latency_class' => 'interactive',
+            'requires' => ['authenticated_customer'],
+            'outcomes' => ['invoice_sent'],
+        ], $tool->toDiscoveryArray()['capability_metadata']);
     }
 
     public function test_exact_tool_name_is_ranked_first(): void

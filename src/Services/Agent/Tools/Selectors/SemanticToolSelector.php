@@ -82,8 +82,23 @@ class SemanticToolSelector implements ToolSelectorContract
      */
     private function toolVector(string $name, object $tool): array
     {
-        $text = str_replace('_', ' ', $name) . ': ' . $tool->getDescription();
-        $key = 'ai-engine:tool-embedding:' . sha1($name . '|' . $tool->getDescription());
+        $parts = [
+            str_replace('_', ' ', $name),
+            $tool->getDescription(),
+        ];
+        foreach (['getDiscoveryAliases', 'getCapabilities', 'getDomains', 'getOutcomes'] as $method) {
+            if (method_exists($tool, $method)) {
+                $values = array_values(array_filter(
+                    (array) $tool->{$method}(),
+                    static fn (mixed $value): bool => is_string($value) && trim($value) !== '',
+                ));
+                if ($values !== []) {
+                    $parts[] = implode(' ', $values);
+                }
+            }
+        }
+        $text = implode(': ', $parts);
+        $key = 'ai-engine:tool-embedding:' . sha1($text);
 
         return Cache::rememberForever($key, fn (): array => $this->embeddings->embed($text));
     }

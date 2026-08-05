@@ -71,7 +71,7 @@ class FindToolsTool extends AgentTool
 
             return ActionResult::success(
                 'Loaded 1 tool schema.',
-                ['found' => 1, 'tools' => [$tool->toArray()]],
+                ['found' => 1, 'tools' => [$tool->toDiscoveryArray()]],
             );
         }
 
@@ -99,7 +99,7 @@ class FindToolsTool extends AgentTool
         foreach ($matches as $name) {
             $tool = $this->tools->get($name);
             if ($tool !== null) {
-                $toolDocs[] = $tool->toArray();
+                $toolDocs[] = $tool->toDiscoveryArray();
             }
         }
 
