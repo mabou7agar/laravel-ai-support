@@ -29,6 +29,7 @@ class AIEngineConfigDefaultsTest extends UnitTestCase
         $this->assertSame(0.25, $defaults['credits']['additional_input_unit_rates']['fal_ai']['default']['image'] ?? null);
         $this->assertSame(0.5, $defaults['credits']['additional_input_unit_rates']['fal_ai']['models']['fal-ai/kling-video/o3/standard/image-to-video']['image'] ?? null);
         $this->assertSame(0.75, $defaults['credits']['additional_input_unit_rates']['fal_ai']['models']['bytedance/seedance-2.0/reference-to-video']['image'] ?? null);
+        $this->assertSame('estimate_floor', $defaults['credits']['retail_pricing']['settlement_mode'] ?? null);
     }
 
     public function test_defaults_class_returns_full_config_tree(): void

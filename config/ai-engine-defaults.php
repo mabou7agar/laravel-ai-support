@@ -1106,11 +1106,12 @@ return [
         'currency' => env('AI_CREDITS_CURRENCY', 'MyCredits'),
 
         // Optionally settle successful requests against provider-reported USD
-        // cost. The request estimate remains a floor, so enabling this never
-        // discounts existing charges. It only prevents undercharging when the
-        // provider's real cost exceeds the static model estimate.
+        // cost. The backward-compatible estimate_floor mode keeps the request
+        // estimate as a billing floor. provider_cost treats reported USD as the
+        // source of truth and falls back to the estimate only when USD is absent.
         'retail_pricing' => [
             'enabled' => env('AI_CREDITS_RETAIL_PRICING_ENABLED', false),
+            'settlement_mode' => env('AI_CREDITS_RETAIL_SETTLEMENT_MODE', 'estimate_floor'),
             'usd_per_credit' => (float) env('AI_CREDITS_RETAIL_USD_PER_CREDIT', 0.001),
             'target_gross_margin_percent' => (float) env('AI_CREDITS_TARGET_GROSS_MARGIN_PERCENT', 0.0),
             'provider_funding_fee_percent' => (float) env('AI_CREDITS_PROVIDER_FUNDING_FEE_PERCENT', 0.0),

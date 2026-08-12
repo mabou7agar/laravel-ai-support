@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Authoritative provider-cost settlement** — credit retail pricing now accepts
+  the opt-in `provider_cost` settlement mode. When a successful response reports
+  provider USD usage, billing uses that real cost plus the configured funding
+  fee, margin, and rounding policy; estimates remain the fallback for providers
+  that do not report a cost. The default `estimate_floor` mode preserves existing
+  applications unchanged.
+
 ## [3.3.0] — 2026-08-05
 
 ### Added
