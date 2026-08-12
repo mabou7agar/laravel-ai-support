@@ -168,6 +168,12 @@ return array_replace_recursive($defaults, [
                 'AI_CREDITS_RETAIL_PRICING_ENABLED',
                 data_get($defaults, 'credits.retail_pricing.enabled', false)
             ),
+            // estimate_floor preserves legacy charges. provider_cost settles a
+            // successful request from provider-reported USD whenever available.
+            'settlement_mode' => env(
+                'AI_CREDITS_RETAIL_SETTLEMENT_MODE',
+                data_get($defaults, 'credits.retail_pricing.settlement_mode', 'estimate_floor')
+            ),
             'usd_per_credit' => (float) env(
                 'AI_CREDITS_RETAIL_USD_PER_CREDIT',
                 data_get($defaults, 'credits.retail_pricing.usd_per_credit', 0.001)

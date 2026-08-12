@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Services;
 use InvalidArgumentException;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\ProviderCostCreditQuote;
+use LaravelAIEngine\Enums\ProviderCostSettlementMode;
 
 final class ProviderCostCreditService
 {
@@ -47,7 +48,11 @@ final class ProviderCostCreditService
         $minimumRetail = $loadedProviderCost / (1.0 - ($targetMargin / 100.0));
         $rawProviderCredits = $minimumRetail / $usdPerCredit;
         $providerCostCredits = $this->roundUp($rawProviderCredits, $roundingIncrement);
-        $billableCredits = max($estimatedCredits, $providerCostCredits);
+        $settlementMode = $this->settlementMode();
+        $billableCredits = match ($settlementMode) {
+            ProviderCostSettlementMode::ProviderCost => $providerCostCredits,
+            ProviderCostSettlementMode::EstimateFloor => max($estimatedCredits, $providerCostCredits),
+        };
 
         return new ProviderCostCreditQuote(
             estimatedCredits: $estimatedCredits,
@@ -56,13 +61,25 @@ final class ProviderCostCreditService
             minimumRetailUsd: $minimumRetail,
             providerCostCredits: $providerCostCredits,
             billableCredits: round($billableCredits, 8),
-            usedProviderCost: $providerCostCredits > $estimatedCredits,
+            usedProviderCost: $settlementMode === ProviderCostSettlementMode::ProviderCost
+                || $providerCostCredits > $estimatedCredits,
         );
     }
 
     private function enabled(): bool
     {
         return (bool) config('ai-engine.credits.retail_pricing.enabled', false);
+    }
+
+    private function settlementMode(): ProviderCostSettlementMode
+    {
+        $configuredMode = (string) config(
+            'ai-engine.credits.retail_pricing.settlement_mode',
+            ProviderCostSettlementMode::EstimateFloor->value,
+        );
+
+        return ProviderCostSettlementMode::tryFrom($configuredMode)
+            ?? ProviderCostSettlementMode::EstimateFloor;
     }
 
     private function validatePolicy(
