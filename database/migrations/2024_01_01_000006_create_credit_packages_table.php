@@ -11,6 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Applications that adopted the credit lifecycle before this package
+        // migration may already own these tables. Treat that schema as the
+        // canonical installation instead of failing a fresh migration run.
+        if (Schema::hasTable('credit_packages')) {
+            return;
+        }
+
         Schema::create('credit_packages', function (Blueprint $table) {
             $table->id();
             $table->string('owner_type'); // Tenant, Workspace, User
