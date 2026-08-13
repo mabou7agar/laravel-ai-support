@@ -354,6 +354,8 @@ class AIEngineService
      */
     public function stream(AIRequest $request): \Generator
     {
+        $startTime = microtime(true);
+        $requestId = uniqid('ai_req_');
         $request = $this->requestRouteResolver->resolve($request);
         $originalEngine = $request->engine;
 
@@ -362,12 +364,24 @@ class AIEngineService
             $request = $request->withUserId($this->resolveUserId());
         }
 
+        if ($this->scopeOptions instanceof AIScopeOptionsService) {
+            $request = $request->withMetadata(
+                $this->scopeOptions->merge($request->userId, $request->getMetadata())
+            );
+        }
+
         // Check credits before processing (if enabled)
         // Credits are only managed on the master node to avoid double-deduction
         $creditsEnabled = config('ai-engine.credits.enabled', false) && $this->shouldProcessCredits();
         if ($creditsEnabled && $request->userId && !$this->creditManager->hasCredits($request->userId, $request)) {
             throw new InsufficientCreditsException('Insufficient credits for this request');
         }
+
+        Event::dispatch(new AIRequestStarted(
+            request: $request,
+            requestId: $requestId,
+            metadata: $request->metadata
+        ));
 
         // Get failover engines from config
         $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
@@ -402,16 +416,46 @@ class AIEngineService
                 // Validate the request
                 $driver->validateRequest($request);
 
-                // Stream the response
-                yield from $driver->stream($request);
-
-                // Deduct credits after streaming (if enabled)
-                if ($creditsEnabled && $request->userId) {
-                    $this->creditManager->deductCredits($request->userId, $request);
+                // Drivers may return the completed AIResponse from their
+                // Generator while continuing to yield plain string chunks.
+                // This keeps the streaming API backward-compatible and lets
+                // usage-aware drivers settle against provider-reported cost.
+                $content = '';
+                $stream = $driver->stream($request);
+                foreach ($stream as $chunk) {
+                    $content .= (string) $chunk;
+                    yield $chunk;
+                }
+                $response = $stream->getReturn();
+                if (!$response instanceof AIResponse) {
+                    $response = AIResponse::success(
+                        $content,
+                        $request->getEngine(),
+                        $request->getModel(),
+                    );
                 }
 
-                // If we got here, streaming was successful
-                return;
+                $creditsUsed = $this->billableCredits($request, $response);
+                CreditManager::accumulate($creditsUsed);
+
+                // Deduct credits after streaming (if enabled)
+                if ($creditsEnabled && $request->userId && $response->isSuccessful()) {
+                    $this->creditManager->deductCredits($request->userId, $request, $creditsUsed);
+                }
+
+                $response = $response->withUsage(
+                    tokensUsed: $response->getTokensUsed(),
+                    creditsUsed: $creditsUsed,
+                );
+                Event::dispatch(new AIRequestCompleted(
+                    request: $request,
+                    response: $response,
+                    requestId: $requestId,
+                    executionTime: microtime(true) - $startTime,
+                    metadata: array_merge($request->metadata, $response->getMetadata()),
+                ));
+
+                return $response;
 
             } catch (InsufficientCreditsException $e) {
                 // Re-throw InsufficientCreditsException immediately - don't failover

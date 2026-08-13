@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use LaravelAIEngine\Drivers\OpenRouter\OpenRouterEngineDriver;
 use LaravelAIEngine\DTOs\AIRequest;
+use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\Enums\EngineEnum;
 use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Tests\UnitTestCase;
@@ -478,6 +479,7 @@ class OpenRouterEngineDriverTest extends UnitTestCase
             'https://openrouter.ai/api/v1/chat/completions' => Http::response(
                 "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n"
                 . "data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\n"
+                . "data: {\"id\":\"gen-1\",\"model\":\"openai/gpt-4o-mini\",\"provider\":\"OpenAI\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12,\"cost\":0.0012}}\n\n"
                 . "data: [DONE]\n\n",
                 200,
                 ['Content-Type' => 'text/event-stream']
@@ -485,15 +487,22 @@ class OpenRouterEngineDriverTest extends UnitTestCase
         ]);
 
         $driver = new OpenRouterEngineDriver(['api_key' => 'or-key']);
-        $chunks = iterator_to_array($driver->stream(new AIRequest(
+        $stream = $driver->stream(new AIRequest(
             prompt: 'Stream this.',
             engine: EngineEnum::OPENROUTER,
             model: 'openai/gpt-4o-mini'
-        )));
+        ));
+        $chunks = iterator_to_array($stream);
+        $response = $stream->getReturn();
 
         $this->assertSame(['Hello', ' world'], $chunks);
+        $this->assertInstanceOf(AIResponse::class, $response);
+        $this->assertSame('Hello world', $response->getContent());
+        $this->assertSame(12, $response->getTokensUsed());
+        $this->assertSame(0.0012, $response->getProviderCostUsd());
 
-        Http::assertSent(fn ($request): bool => $request->data()['stream'] === true);
+        Http::assertSent(fn ($request): bool => $request->data()['stream'] === true
+            && data_get($request->data(), 'stream_options.include_usage') === true);
     }
 
     public function test_openrouter_maps_tools_and_structured_output_to_chat_payload(): void
