@@ -732,13 +732,17 @@ class OpenRouterEngineDriver extends BaseEngineDriver
     {
         $payload = $this->buildChatCompletionPayload($request, $this->buildMessages($request));
         $payload['stream'] = true;
+        $payload['stream_options'] = array_merge(
+            (array) ($payload['stream_options'] ?? []),
+            ['include_usage' => true],
+        );
 
         $response = $this->postJson('/chat/completions', $payload, ['stream' => true]);
         if (!$response->successful()) {
             throw new \RuntimeException($response->json()['error']['message'] ?? $response->body());
         }
 
-        yield from $this->parseStreamingResponse($response);
+        return yield from $this->parseStreamingResponse($response, $request);
     }
 
     /**
@@ -1134,9 +1138,13 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             ->post($this->baseUrl . $path, $payload);
     }
 
-    protected function parseStreamingResponse(Response $response): \Generator
+    protected function parseStreamingResponse(Response $response, AIRequest $request): \Generator
     {
         $buffer = '';
+        $content = '';
+        $usage = [];
+        $metadata = [];
+        $finishReason = null;
         $body = $response->toPsrResponse()->getBody();
 
         while (!$body->eof()) {
@@ -1152,7 +1160,7 @@ class OpenRouterEngineDriver extends BaseEngineDriver
 
                 $payload = trim(substr($line, 5));
                 if ($payload === '[DONE]') {
-                    return;
+                    break 2;
                 }
 
                 $data = json_decode($payload, true);
@@ -1160,14 +1168,26 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                     continue;
                 }
 
+                $usage = is_array($data['usage'] ?? null) ? $data['usage'] : $usage;
+                $metadata = array_filter([
+                    'model' => $data['model'] ?? ($metadata['model'] ?? null),
+                    'openrouter_id' => $data['id'] ?? ($metadata['openrouter_id'] ?? null),
+                    'provider' => $data['provider'] ?? ($metadata['provider'] ?? null),
+                ], static fn (mixed $value): bool => $value !== null && $value !== '');
+                $finishReason = isset($data['choices'][0]['finish_reason'])
+                    ? (string) $data['choices'][0]['finish_reason']
+                    : $finishReason;
+
                 $delta = $data['choices'][0]['delta'] ?? [];
-                $content = $this->stringifyContent($delta['content'] ?? '');
-                if ($content !== '') {
-                    yield $content;
+                $chunk = $this->stringifyContent($delta['content'] ?? '');
+                if ($chunk !== '') {
+                    $content .= $chunk;
+                    yield $chunk;
                 }
 
                 $audio = $delta['audio'] ?? null;
                 if (is_array($audio) && is_string($audio['transcript'] ?? null) && $audio['transcript'] !== '') {
+                    $content .= $audio['transcript'];
                     yield $audio['transcript'];
                 }
             }
@@ -1179,13 +1199,38 @@ class OpenRouterEngineDriver extends BaseEngineDriver
                 $payload = trim(substr($line, 5));
                 if ($payload !== '[DONE]') {
                     $data = json_decode($payload, true);
-                    $content = $this->stringifyContent($data['choices'][0]['delta']['content'] ?? '');
-                    if ($content !== '') {
-                        yield $content;
+                    if (is_array($data)) {
+                        $usage = is_array($data['usage'] ?? null) ? $data['usage'] : $usage;
+                        $metadata = array_filter([
+                            'model' => $data['model'] ?? ($metadata['model'] ?? null),
+                            'openrouter_id' => $data['id'] ?? ($metadata['openrouter_id'] ?? null),
+                            'provider' => $data['provider'] ?? ($metadata['provider'] ?? null),
+                        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+                        $finishReason = isset($data['choices'][0]['finish_reason'])
+                            ? (string) $data['choices'][0]['finish_reason']
+                            : $finishReason;
+                        $chunk = $this->stringifyContent($data['choices'][0]['delta']['content'] ?? '');
+                        if ($chunk !== '') {
+                            $content .= $chunk;
+                            yield $chunk;
+                        }
                     }
                 }
             }
         }
+
+        $aiResponse = AIResponse::success(
+            $content,
+            $request->getEngine(),
+            $request->getModel(),
+            [...$metadata, 'usage' => $usage],
+        )->withFinishReason($finishReason);
+
+        if ($detailedUsage = $this->extractDetailedUsage(['usage' => $usage], 'openai')) {
+            $aiResponse = $aiResponse->withDetailedUsage($detailedUsage);
+        }
+
+        return $aiResponse;
     }
 
     /**
