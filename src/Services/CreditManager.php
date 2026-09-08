@@ -214,7 +214,7 @@ class CreditManager
     /**
      * Deduct MyCredits from user
      */
-    public function deductCredits(string $userId, AIRequest $request, float $actualCreditsUsed = null): bool
+    public function deductCredits(string $userId, AIRequest $request, ?float $actualCreditsUsed = null): bool
     {
         $creditsToDeduct = $actualCreditsUsed ?? $this->calculateCredits($request);
 

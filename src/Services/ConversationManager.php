@@ -121,7 +121,7 @@ class ConversationManager
 
     public function getConversationContext(
         string $conversationId,
-        int $maxMessages = null
+        ?int $maxMessages = null
     ): array {
         $conversation = $this->getConversation($conversationId);
 
