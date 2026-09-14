@@ -824,10 +824,18 @@ AI_ENGINE_GENERATE_API_PREFIX=api/v1/ai/generate
 AI_ENGINE_REQUEST_PROVIDER_PRIORITY=native;openrouter;anthropic;gemini;deepseek;ollama
 ```
 
-Inject your own middleware into package API routes:
+Package API routes require an authenticated user by default (Sanctum guard when
+configured). Change the auth middleware, or disable it when your host protects the routes:
 
 ```env
-AI_ENGINE_API_APPEND_MIDDLEWARE=auth:sanctum
+AI_ENGINE_API_AUTH_MIDDLEWARE=auth:api
+# AI_ENGINE_API_AUTH_MIDDLEWARE=none
+```
+
+Inject additional middleware into package API routes:
+
+```env
+AI_ENGINE_API_APPEND_MIDDLEWARE=throttle:60,1
 AI_ENGINE_API_GENERATE_MIDDLEWARE=throttle:30,1
 # For multiple middlewares, separate with semicolon:
 # AI_ENGINE_API_GENERATE_MIDDLEWARE=auth:sanctum;throttle:30,1

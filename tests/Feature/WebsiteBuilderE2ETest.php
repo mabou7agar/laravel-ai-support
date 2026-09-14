@@ -24,6 +24,7 @@ class WebsiteBuilderE2ETest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->authenticateApi();
         $this->outputDir = sys_get_temp_dir() . '/ai-engine-e2e-' . bin2hex(random_bytes(5));
         config()->set('ai-engine.design.output_path', $this->outputDir);
     }

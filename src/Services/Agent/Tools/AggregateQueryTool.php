@@ -112,12 +112,12 @@ class AggregateQueryTool extends DataQueryTool
         $entities = $this->entities();
         $match = $this->resolveAggregateEntity($entityParam, $query, $entities, $operation);
         if ($match === null) {
-            $known = implode(', ', array_keys($entities));
+            $known = $this->entityListForPrompt($entities);
 
             return ActionResult::needsUserInput(
                 $known === ''
                     ? $this->localize('ai-engine::runtime.tools.no_data_models', 'No queryable data models are configured.')
-                    : $this->localize('ai-engine::runtime.tools.which_entity_calculate', 'I can analyze: :entities. Which one?', [':entities' => $known])
+                    : $this->localize('ai-engine::runtime.tools.which_entity_calculate', 'I can analyze: :entities. Which one?', ['entities' => $known])
             );
         }
 
@@ -156,7 +156,7 @@ class AggregateQueryTool extends DataQueryTool
             }
 
             return ActionResult::needsUserInput(
-                $this->localize('ai-engine::runtime.tools.which_metric', 'Which value should I use? Options: :options.', [':options' => implode(', ', $aggregatable)])
+                $this->localize('ai-engine::runtime.tools.which_metric', 'Which value should I use? Options: :options.', ['options' => implode(', ', $aggregatable)])
             );
         }
 

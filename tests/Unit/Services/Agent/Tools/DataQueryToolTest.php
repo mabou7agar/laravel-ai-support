@@ -152,6 +152,30 @@ class DataQueryToolTest extends TestCase
         $this->assertStringContainsString('blocked', strtolower((string) ($r->error ?? $r->message)));
     }
 
+    public function test_unknown_entity_prompt_lists_entities_instead_of_raw_placeholder(): void
+    {
+        $r = $this->tool()->execute(['query' => 'how many spaceships'], new UnifiedActionContext('dq', 'u1'));
+
+        $this->assertFalse($r->success);
+        $this->assertStringNotContainsString(':entities', (string) $r->message);
+        $this->assertStringContainsString('widget', (string) $r->message);
+    }
+
+    public function test_unknown_entity_prompt_bounds_a_large_entity_list(): void
+    {
+        $models = [];
+        foreach (range(1, 30) as $i) {
+            $models["gadget_{$i}"] = ['class' => DqWidget::class, 'aliases' => ["gadget{$i}"]];
+        }
+        config()->set('ai-engine.data_query.models', $models);
+
+        $r = $this->tool()->execute(['query' => 'how many spaceships'], new UnifiedActionContext('dq', 'u1'));
+
+        $this->assertStringContainsString('gadget 1, gadget 2', (string) $r->message);
+        $this->assertStringContainsString('(+18 more)', (string) $r->message);
+        $this->assertStringNotContainsString('gadget 30', (string) $r->message);
+    }
+
     public function test_public_model_is_queryable_without_scope(): void
     {
         config()->set('ai-engine.data_query.models.widget.public', true);

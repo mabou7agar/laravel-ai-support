@@ -10,6 +10,13 @@ use LaravelAIEngine\Tests\TestCase;
 
 class GoalAgentApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_rag_chat_endpoint_executes_goal_agent_sub_agents_end_to_end(): void
     {
         Config::set('ai-agent.sub_agents', [

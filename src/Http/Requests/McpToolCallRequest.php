@@ -20,6 +20,7 @@ class McpToolCallRequest extends FormRequest
             'session_id' => ['nullable', 'string', 'max:255'],
             'user_id' => ['nullable', 'string', 'max:255'],
             'metadata' => ['nullable', 'array'],
+            'approved' => ['nullable', 'boolean'],
         ];
     }
 }

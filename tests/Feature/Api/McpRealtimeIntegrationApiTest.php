@@ -24,12 +24,12 @@ class McpRealtimeIntegrationApiTest extends TestCase
     {
         $this->registerEchoTool();
 
-        $this->getJson('/api/v1/ai/mcp/tools')
+        $this->authenticateApi()->getJson('/api/v1/ai/mcp/tools')
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonFragment(['name' => 'echo_tool']);
 
-        $this->postJson('/api/v1/ai/mcp/tools/echo_tool/call', [
+        $this->authenticateApi('user-7')->postJson('/api/v1/ai/mcp/tools/echo_tool/call', [
             'arguments' => ['text' => 'hello'],
             'session_id' => 'mcp-api-session',
             'user_id' => 'user-7',
@@ -45,7 +45,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
     {
         $this->registerEchoTool();
 
-        $this->postJson('/api/v1/ai/realtime/tools/dispatch', [
+        $this->authenticateApi('user-8')->postJson('/api/v1/ai/realtime/tools/dispatch', [
             'event' => [
                 'id' => 'call_api_1',
                 'name' => 'echo_tool',
@@ -81,7 +81,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             }
         });
 
-        $this->postJson('/api/v1/ai/realtime/tools/dispatch', [
+        $this->authenticateApi('user-8')->postJson('/api/v1/ai/realtime/tools/dispatch', [
             'event' => [
                 'id' => 'call_skill_1',
                 'name' => 'skill.create_invoice',
@@ -96,7 +96,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             ->assertJsonPath('data.result.output.data.skill_id', 'create_invoice')
             ->assertJsonPath('data.result.output.data.message', 'Create an invoice for Ahmed');
 
-        $this->postJson('/api/v1/ai/realtime/tools/dispatch', [
+        $this->authenticateApi('user-8')->postJson('/api/v1/ai/realtime/tools/dispatch', [
             'event' => [
                 'id' => 'call_skill_2',
                 'name' => 'skill_create_invoice',
@@ -150,7 +150,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             }
         });
 
-        $this->postJson('/api/v1/ai/realtime/tools/dispatch', [
+        $this->authenticateApi('user-8')->postJson('/api/v1/ai/realtime/tools/dispatch', [
             'event' => [
                 'id' => 'call_input_1',
                 'name' => 'collect_invoice_details',
@@ -185,7 +185,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
 
         $this->app->instance(ChatService::class, $chat);
 
-        $this->postJson('/api/v1/ai/realtime/tools/dispatch', [
+        $this->authenticateApi('user-8')->postJson('/api/v1/ai/realtime/tools/dispatch', [
             'event' => [
                 'id' => 'call_agent_chat_1',
                 'name' => 'agent_chat',
@@ -207,7 +207,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
 
     public function test_realtime_session_api_returns_openai_voice_descriptor(): void
     {
-        $response = $this->postJson('/api/v1/ai/realtime/sessions', [
+        $response = $this->authenticateApi()->postJson('/api/v1/ai/realtime/sessions', [
             'provider' => 'openai',
             'model' => 'gpt-realtime',
             'mode' => 'voice_chat',
@@ -237,7 +237,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             'default_agent_name' => 'laravel-agent',
         ]);
 
-        $this->postJson('/api/v1/ai/realtime/sessions', [
+        $this->authenticateApi()->postJson('/api/v1/ai/realtime/sessions', [
             'provider' => 'livekit',
             'model' => 'voice-pipeline',
             'transport' => 'livekit',
@@ -269,7 +269,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             'allowed_rooms' => ['room-a', 'room-b'],
         ]);
 
-        $this->postJson('/api/v1/ai/realtime/sessions', [
+        $this->authenticateApi()->postJson('/api/v1/ai/realtime/sessions', [
             'provider' => 'livekit',
             'transport' => 'livekit',
             'metadata' => [
@@ -292,7 +292,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             ]),
         ]);
 
-        $this->postJson('/api/v1/ai/realtime/sessions', [
+        $this->authenticateApi()->postJson('/api/v1/ai/realtime/sessions', [
             'provider' => 'openai',
             'model' => 'gpt-realtime',
             'voice' => 'marin',
@@ -318,7 +318,7 @@ class McpRealtimeIntegrationApiTest extends TestCase
             }
         });
 
-        $this->postJson('/api/v1/ai/realtime/sdp', [
+        $this->authenticateApi()->postJson('/api/v1/ai/realtime/sdp', [
             'provider' => 'openai',
             'model' => 'gpt-realtime',
             'voice' => 'marin',

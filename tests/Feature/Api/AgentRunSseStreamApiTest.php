@@ -32,7 +32,7 @@ class AgentRunSseStreamApiTest extends TestCase
             ['message' => 'Done']
         );
 
-        $response = $this->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100");
+        $response = $this->authenticateApi()->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100");
 
         $response->assertOk();
         $this->assertStringContainsString('text/event-stream', (string) $response->headers->get('Content-Type'));
@@ -106,7 +106,7 @@ class AgentRunSseStreamApiTest extends TestCase
 
         $this->app->instance(AgentRunRepository::class, $repository);
 
-        $response = $this->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100");
+        $response = $this->authenticateApi()->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100");
 
         $response->assertOk();
         $content = $response->streamedContent();
@@ -150,7 +150,7 @@ class AgentRunSseStreamApiTest extends TestCase
         Log::shouldReceive('channel')->andReturn($logChannel);
         Log::shouldReceive('warning', 'info', 'debug', 'error', 'notice', 'log')->andReturnNull();
 
-        $this->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100&last_event_id=missing-event-id")
+        $this->authenticateApi()->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?timeout=1&poll=100&last_event_id=missing-event-id")
             ->assertOk()
             ->streamedContent();
 
@@ -184,7 +184,7 @@ class AgentRunSseStreamApiTest extends TestCase
         Log::shouldReceive('warning', 'info', 'debug', 'error', 'notice', 'log')->andReturnNull();
 
         $start = microtime(true);
-        $this->get("/api/v1/ai/agent-runs/{$run->uuid}/stream")
+        $this->authenticateApi()->get("/api/v1/ai/agent-runs/{$run->uuid}/stream")
             ->assertOk()
             ->streamedContent();
         $elapsed = microtime(true) - $start;
@@ -202,7 +202,7 @@ class AgentRunSseStreamApiTest extends TestCase
             'status' => AIAgentRun::STATUS_RUNNING,
         ]);
 
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}/stream")
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}/stream")
             ->assertNotFound();
     }
 
@@ -236,7 +236,7 @@ class AgentRunSseStreamApiTest extends TestCase
             'status' => AIAgentRun::STATUS_COMPLETED,
         ]);
 
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}/stream")
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}/stream")
             ->assertForbidden();
     }
 }

@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-09-15
+
+### Security
+
+- **Package API routes require authentication by default.** Every `api/v1/*` group except
+  `health` and the signature-verified provider webhooks now runs `AuthenticateApiRequest`
+  (the `sanctum` guard when configured, otherwise the default guard) and answers anonymous
+  calls with a JSON 401. Previously routes such as `/api/v1/ai/mcp/tools/{tool}/call` were
+  anonymous unless the host appended middleware. Override with
+  `AI_ENGINE_API_AUTH_MIDDLEWARE` (semicolon list) or disable with `none` only when the host
+  protects the routes itself. The FAL catalog webhook keeps its URL and route name but moved
+  outside the authenticated group.
+- **Request identity comes from the authenticated user.** Agent chat, MCP tool calls,
+  realtime dispatch, model council, image operations, and file analysis ignore a body
+  `user_id`, and MCP/realtime ignore scope keys (`workspace_id`, `tenant_id`, ...) in
+  caller metadata. Trusted server-to-server hosts can restore the old behaviour with
+  `AI_ENGINE_API_TRUST_REQUEST_IDENTITY=true`.
+- **MCP tool calls honour the execution policy and confirmation.** A tool denied by
+  `ai-agent.execution_policy.tool_deny` returns `policy_blocked`; a tool that requires
+  confirmation returns `approval_required` (HTTP 202) until the call sends `approved: true`.
+- **Generic create tools stay inside the caller scope.** `ModelBackedUpsertTool` now applies
+  the resource scope to its `updateOrCreate` match, so a same-named record in another
+  tenant is never matched, overwritten, or re-stamped.
+- **Generic show tools withhold sensitive columns.** Without an explicit column list,
+  `GenericModelDetailTool` respects model `$hidden`/`$visible` and withholds credential-like
+  columns (`*password*`, `*secret*`, `*_token`, `api_key`, ...), for the record and its
+  relation rows. Override the patterns via `ai-engine.agent_tools.sensitive_column_patterns`.
+
+### Fixed
+
+- `data_query` / `aggregate_data` no longer show a raw `:entities` / `:options` placeholder;
+  `AgentTool::localize()` accepts placeholder keys with or without the leading colon and
+  applies replacements to the English fallback too.
+- The "which entity?" prompt from `data_query` / `aggregate_data` lists at most 12 entity
+  names plus a "(+N more)" count (`ai-engine.data_query.prompt_entity_limit`) instead of
+  every configured model.
+
+### Upgrade notes
+
+- Clients calling the package API must authenticate (e.g. a Sanctum token). Hosts that
+  relied on anonymous access plus body `user_id` should authenticate callers, or set both
+  `AI_ENGINE_API_AUTH_MIDDLEWARE=none` and `AI_ENGINE_API_TRUST_REQUEST_IDENTITY=true`
+  behind their own gateway.
+- `McpAppToolAdapter::callTool()` gained an optional `bool $approved = false` argument;
+  callers executing confirmation-required tools must pass `true` after obtaining approval.
+
 ### Added
 
 - **Authoritative provider-cost settlement** — credit retail pricing now accepts

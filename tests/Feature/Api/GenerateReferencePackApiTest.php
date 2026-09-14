@@ -8,6 +8,13 @@ use Mockery;
 
 class GenerateReferencePackApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_preview_endpoint_submits_async_job(): void
     {
         $service = Mockery::mock(FalAsyncReferencePackGenerationService::class);
@@ -18,7 +25,7 @@ class GenerateReferencePackApiTest extends TestCase
                 $this->assertSame('character', $options['entity_type']);
                 $this->assertTrue($options['preview_only']);
                 $this->assertSame('mina-preview', $options['save_as']);
-                $this->assertNull($userId);
+                $this->assertSame('1', $userId);
 
                 return true;
             })
@@ -81,7 +88,7 @@ class GenerateReferencePackApiTest extends TestCase
                 $this->assertSame('Keep the blue styling direction consistent across every view.', $options['look_payload']['instruction']);
                 $this->assertSame('strict_stored', $options['look_mode']);
                 $this->assertTrue($options['strict_stored_looks']);
-                $this->assertNull($userId);
+                $this->assertSame('1', $userId);
 
                 return true;
             })
@@ -123,7 +130,7 @@ class GenerateReferencePackApiTest extends TestCase
                 $this->assertCount(2, $options['selected_looks']);
                 $this->assertSame('business-street-look', $options['selected_looks'][0]['id']);
                 $this->assertSame('airport-disguise', $options['selected_looks'][1]['id']);
-                $this->assertNull($userId);
+                $this->assertSame('1', $userId);
 
                 return true;
             })

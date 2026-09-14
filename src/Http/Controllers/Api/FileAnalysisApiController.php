@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Http\Requests\AnalyzeFileRequest;
+use LaravelAIEngine\Http\Support\ApiRequestIdentity;
 use LaravelAIEngine\Services\FileAnalysisService;
 
 class FileAnalysisApiController extends Controller
@@ -28,7 +29,7 @@ class FileAnalysisApiController extends Controller
                 $request->input('model', 'gpt-4o'),
                 $request->boolean('use_rag', true),
                 $request->ragCollections(),
-                $request->input('user_id') ?? $request->user()?->getAuthIdentifier()
+                ApiRequestIdentity::userId($request, $request->input('user_id'))
             );
 
             return response()->json([

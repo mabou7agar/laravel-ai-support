@@ -11,6 +11,13 @@ use Mockery;
 
 class GenerateTtsApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_tts_endpoint_uses_saved_character_voice_profile(): void
     {
         app(FalCharacterStore::class)->save([

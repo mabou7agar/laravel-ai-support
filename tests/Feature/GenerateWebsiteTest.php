@@ -11,6 +11,13 @@ use Mockery;
 
 class GenerateWebsiteTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

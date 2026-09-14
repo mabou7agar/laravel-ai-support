@@ -114,6 +114,15 @@ abstract class TestCase extends Orchestra
         }
     }
 
+    /**
+     * Authenticate API requests as a lightweight user. The package API routes require an
+     * authenticated user by default, and request identity comes from that user.
+     */
+    protected function authenticateApi(int|string $id = 1): static
+    {
+        return $this->actingAs(new \Illuminate\Auth\GenericUser(['id' => $id]));
+    }
+
     protected function createTestUser(array $attributes = []): User
     {
         $user = new User();
