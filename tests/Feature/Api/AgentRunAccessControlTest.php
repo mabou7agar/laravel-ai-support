@@ -74,11 +74,11 @@ class AgentRunAccessControlTest extends TestCase
         ]);
 
         // Default fail-closed: a run with no user_id is not public.
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}")->assertForbidden();
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}")->assertForbidden();
 
         // Opt-in exposes anonymous runs.
         config()->set('ai-agent.event_stream.access.allow_anonymous_runs', true);
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}")
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}")
             ->assertOk()
             ->assertJsonPath('data.run.uuid', $run->uuid);
     }

@@ -43,7 +43,7 @@ class AgentChatAsyncRunApiTest extends TestCase
 
         $this->app->instance(AgentChatRunService::class, $service);
 
-        $this->postJson('/api/v1/agent/chat', [
+        $this->authenticateApi('user-async')->postJson('/api/v1/agent/chat', [
             'message' => 'Create invoice from this conversation',
             'session_id' => 'async-chat-api',
             'user_id' => 'user-async',
@@ -92,7 +92,7 @@ class AgentChatAsyncRunApiTest extends TestCase
         $this->app->instance(AgentChatRunService::class, $service);
         $this->app->instance(ChatService::class, $chat);
 
-        $this->postJson('/api/v1/agent/chat', [
+        $this->authenticateApi('user-auto')->postJson('/api/v1/agent/chat', [
             'message' => 'Plan this work with sub agents',
             'session_id' => 'auto-chat-api',
             'user_id' => 'user-auto',
@@ -134,7 +134,7 @@ class AgentChatAsyncRunApiTest extends TestCase
         $this->app->instance(AgentChatRunService::class, $service);
         $this->app->instance(ChatService::class, $chat);
 
-        $this->postJson('/api/v1/agent/chat', [
+        $this->authenticateApi('user-auto')->postJson('/api/v1/agent/chat', [
             'message' => 'Hi',
             'session_id' => 'auto-sync-chat-api',
             'user_id' => 'user-auto',
@@ -197,7 +197,7 @@ class AgentChatAsyncRunApiTest extends TestCase
         $this->app->instance(AgentChatRunService::class, $service);
         $this->app->instance(ChatService::class, $chat);
 
-        $this->postJson('/api/v1/agent/chat', [
+        $this->authenticateApi()->postJson('/api/v1/agent/chat', [
             'message' => 'Hi',
             'session_id' => 'explicit-sync-chat-api',
             'engine' => 'openai',
@@ -233,7 +233,7 @@ class AgentChatAsyncRunApiTest extends TestCase
         $this->app->instance(AgentChatRunService::class, $service);
         $this->app->instance(ChatService::class, $chat);
 
-        $this->postJson('/api/v1/agent/chat', [
+        $this->authenticateApi()->postJson('/api/v1/agent/chat', [
             'message' => 'Hi',
             'session_id' => 'async-disabled-chat-api',
             'engine' => 'openai',

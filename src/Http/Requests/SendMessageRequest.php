@@ -7,6 +7,7 @@ namespace LaravelAIEngine\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use LaravelAIEngine\DTOs\SendMessageDTO;
 use LaravelAIEngine\Enums\EngineEnum;
+use LaravelAIEngine\Http\Support\ApiRequestIdentity;
 
 class SendMessageRequest extends FormRequest
 {
@@ -141,7 +142,7 @@ class SendMessageRequest extends FormRequest
     {
         $validated = $this->validated();
         $executionMode = $validated['execution_mode'] ?? null;
-        $userId = $validated['user_id'] ?? auth()->user()?->getAuthIdentifier();
+        $userId = ApiRequestIdentity::userId($this, $validated['user_id'] ?? null);
         
         return new SendMessageDTO(
             message: $validated['message'],

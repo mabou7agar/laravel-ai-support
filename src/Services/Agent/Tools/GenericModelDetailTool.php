@@ -21,6 +21,12 @@ use LaravelAIEngine\DTOs\UnifiedActionContext;
  */
 class GenericModelDetailTool extends AgentTool
 {
+    public const SENSITIVE_COLUMN_PATTERNS = [
+        '/(^|_)(password|passwd|secret|api_key|apikey|private_key|otp)(_|$)/i',
+        '/(^|_)token$/i',
+        '/(^|_)two_factor(_|$)/i',
+    ];
+
     /** @var (Closure(UnifiedActionContext, array<string,mixed>): array<string,mixed>)|null */
     protected $scopeResolver;
 
@@ -129,7 +135,7 @@ class GenericModelDetailTool extends AgentTool
      */
     private function recordColumns(Model $record): array
     {
-        $columns = $this->returns !== [] ? $this->returns : array_keys($record->getAttributes());
+        $columns = $this->returns !== [] ? $this->returns : $this->visibleColumns($record);
         $payload = [];
         foreach ($columns as $column) {
             if ($column === 'id') {
@@ -155,10 +161,10 @@ class GenericModelDetailTool extends AgentTool
             $rows = $record->getRelation($relation);
             $rows = $rows instanceof Model ? collect([$rows]) : collect($rows);
 
-            $out[$relation] = $rows->map(static function (Model $row) use ($columns): array {
+            $out[$relation] = $rows->map(function (Model $row) use ($columns): array {
                 $attributes = $row->getAttributes();
                 if ($columns === []) {
-                    return array_merge(['id' => $row->getKey()], $attributes);
+                    return array_merge(['id' => $row->getKey()], array_intersect_key($attributes, array_flip($this->visibleColumns($row))));
                 }
                 $picked = [];
                 foreach ($columns as $column) {
@@ -174,6 +180,38 @@ class GenericModelDetailTool extends AgentTool
         }
 
         return $out;
+    }
+
+    /**
+     * Columns safe to expose when no explicit column list was configured: the model's
+     * $hidden/$visible rules apply, and credential-like columns are always withheld.
+     *
+     * @return array<int, string>
+     */
+    private function visibleColumns(Model $record): array
+    {
+        $columns = array_keys($record->getAttributes());
+        $visible = $record->getVisible();
+        if ($visible !== []) {
+            $columns = array_values(array_intersect($columns, $visible));
+        }
+
+        $hidden = $record->getHidden();
+        $patterns = (array) config('ai-engine.agent_tools.sensitive_column_patterns', self::SENSITIVE_COLUMN_PATTERNS);
+
+        return array_values(array_filter($columns, static function (string $column) use ($hidden, $patterns): bool {
+            if (in_array($column, $hidden, true)) {
+                return false;
+            }
+
+            foreach ($patterns as $pattern) {
+                if (@preg_match((string) $pattern, $column) === 1) {
+                    return false;
+                }
+            }
+
+            return true;
+        }));
     }
 
     /**

@@ -7,6 +7,13 @@ use LaravelAIEngine\Tests\TestCase;
 
 class EngineCatalogApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_models_endpoint_returns_flat_model_list(): void
     {
         AIModel::create([

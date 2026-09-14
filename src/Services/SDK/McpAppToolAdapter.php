@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\SDK;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Services\Agent\AgentExecutionPolicyService;
 use LaravelAIEngine\Services\Agent\AgentSkillRegistry;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 
@@ -12,7 +13,8 @@ class McpAppToolAdapter
 {
     public function __construct(
         protected ToolRegistry $tools,
-        protected ?AgentSkillRegistry $skills = null
+        protected ?AgentSkillRegistry $skills = null,
+        protected ?AgentExecutionPolicyService $policy = null
     ) {
     }
 
@@ -70,13 +72,33 @@ class McpAppToolAdapter
      * @param array<string, mixed> $arguments
      * @return array<string, mixed>
      */
-    public function callTool(string $name, array $arguments, UnifiedActionContext $context): array
+    public function callTool(string $name, array $arguments, UnifiedActionContext $context, bool $approved = false): array
     {
         $tool = $this->tools->get($name);
         if ($tool === null) {
             return [
                 'success' => false,
                 'error' => "Tool [{$name}] is not registered.",
+            ];
+        }
+
+        // Same gates as the agent loop and the realtime broker: the execution-policy
+        // deny-list applies, and a tool that requires confirmation needs explicit approval.
+        $metadata = is_array($context->metadata ?? null) ? $context->metadata : [];
+        if (!($this->policy ?? app(AgentExecutionPolicyService::class))->canUseTool($name, $metadata)) {
+            return [
+                'success' => false,
+                'status' => 'policy_blocked',
+                'error' => "Tool [{$name}] is blocked by execution policy.",
+            ];
+        }
+
+        if ($tool->requiresConfirmation() && !$approved) {
+            return [
+                'success' => false,
+                'status' => 'approval_required',
+                'message' => $tool->getConfirmationMessage() ?? "Approve tool [{$name}] before execution.",
+                'error' => "Tool [{$name}] requires approval.",
             ];
         }
 

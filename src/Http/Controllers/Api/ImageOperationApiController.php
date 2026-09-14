@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Http\Requests\ImageOperationRequest;
+use LaravelAIEngine\Http\Support\ApiRequestIdentity;
 use LaravelAIEngine\Services\Media\ImageOperationService;
 
 class ImageOperationApiController extends Controller
@@ -23,8 +24,7 @@ class ImageOperationApiController extends Controller
     {
         $validated = $request->validated();
 
-        $userId = $validated['user_id']
-            ?? $request->user()?->getAuthIdentifier();
+        $userId = ApiRequestIdentity::userId($request, $validated['user_id'] ?? null);
 
         $params = array_intersect_key($validated, array_flip([
             'image', 'mask', 'prompt', 'target_width', 'target_height',

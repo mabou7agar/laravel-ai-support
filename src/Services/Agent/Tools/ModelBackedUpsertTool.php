@@ -122,7 +122,14 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
         }
 
         $attributes = $this->existingColumnPayload($modelClass, $payload);
-        $record = $modelClass::query()->updateOrCreate($identity, $attributes);
+
+        // Match only inside the caller's scope. Without this, an identity like
+        // ['name' => 'Acme'] would find and overwrite another tenant's row, then
+        // re-stamp it with this caller's scope columns.
+        $scope = $this->scopeConstraints($modelClass, $context, $parameters);
+        $record = $modelClass::query()
+            ->where($scope)
+            ->updateOrCreate(array_merge($identity, $scope), $attributes);
         $created = $record->wasRecentlyCreated;
         $record = $record->fresh() ?: $record;
 
@@ -133,6 +140,24 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
                 'created' => $created,
             ], $this->recordPayload($record, $this->returnColumns()))
         );
+    }
+
+    /**
+     * Scope columns (e.g. workspace_id, created_by) that exist on the table and carry a value.
+     *
+     * @param class-string<Model> $modelClass
+     * @return array<string, mixed>
+     */
+    protected function scopeConstraints(string $modelClass, UnifiedActionContext $context, array $parameters): array
+    {
+        $constraints = [];
+        foreach ($this->scope($context, $parameters) as $column => $value) {
+            if ($value !== null && $value !== '' && $this->columnExists($modelClass, (string) $column)) {
+                $constraints[(string) $column] = $value;
+            }
+        }
+
+        return $constraints;
     }
 
     /**

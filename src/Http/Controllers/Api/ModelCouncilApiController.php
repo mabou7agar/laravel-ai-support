@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use LaravelAIEngine\Http\Requests\ModelCouncilRequest;
+use LaravelAIEngine\Http\Support\ApiRequestIdentity;
 use LaravelAIEngine\Services\ModelCouncilService;
 
 class ModelCouncilApiController extends Controller
@@ -23,8 +24,7 @@ class ModelCouncilApiController extends Controller
     {
         $validated = $request->validated();
 
-        $userId = $validated['user_id']
-            ?? $request->user()?->getAuthIdentifier();
+        $userId = ApiRequestIdentity::userId($request, $validated['user_id'] ?? null);
 
         try {
             $results = $this->council->run(

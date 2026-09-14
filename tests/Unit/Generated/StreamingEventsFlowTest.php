@@ -786,7 +786,7 @@ class StreamingEventsFlowTest extends TestCase
         Log::shouldReceive('channel')->andReturn($logChannel);
         Log::shouldReceive('warning', 'info', 'debug', 'error', 'notice', 'log')->andReturnNull();
 
-        $response = $this->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?last_event_id={$e2['id']}&timeout=1&poll=100");
+        $response = $this->authenticateApi()->get("/api/v1/ai/agent-runs/{$run->uuid}/stream?last_event_id={$e2['id']}&timeout=1&poll=100");
         $response->assertOk();
         $content = $response->streamedContent();
 

@@ -82,12 +82,12 @@ class DataQueryTool extends AgentTool
         $match = $this->resolveEntity($query, $entities);
 
         if ($match === null) {
-            $known = implode(', ', array_keys($entities));
+            $known = $this->entityListForPrompt($entities);
 
             return ActionResult::needsUserInput(
                 $known === ''
                     ? $this->localize('ai-engine::runtime.tools.no_data_models', 'No queryable data models are configured.')
-                    : $this->localize('ai-engine::runtime.tools.which_entity_lookup', 'I can look up: :entities. Which one, and do you want a count or a list?', [':entities' => $known])
+                    : $this->localize('ai-engine::runtime.tools.which_entity_lookup', 'I can look up: :entities. Which one, and do you want a count or a list?', ['entities' => $known])
             );
         }
 
@@ -185,6 +185,26 @@ class DataQueryTool extends AgentTool
         }
 
         return $entities;
+    }
+
+    /**
+     * A readable, bounded list of entity names for a "which one?" prompt. Hosts can expose
+     * hundreds of models; listing every one produces an unusable wall of text.
+     *
+     * @param array<string, array<string, mixed>> $entities
+     */
+    protected function entityListForPrompt(array $entities): string
+    {
+        $limit = max(1, (int) config('ai-engine.data_query.prompt_entity_limit', 12));
+        $names = array_map(
+            static fn (string $keyword): string => str_replace('_', ' ', $keyword),
+            array_keys($entities)
+        );
+
+        $shown = implode(', ', array_slice($names, 0, $limit));
+        $remaining = count($names) - $limit;
+
+        return $remaining > 0 ? "{$shown} (+{$remaining} more)" : $shown;
     }
 
     /**

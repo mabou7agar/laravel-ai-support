@@ -2,6 +2,41 @@
 
 Laravel AI Engine exposes powerful capabilities: hosted tools, web search, code execution, computer use, callbacks, generated files, vector retrieval, and app actions. Keep these capabilities explicit and scoped.
 
+## API Authentication And Identity
+
+Every package API group (`api/v1/agent`, `api/v1/ai/mcp`, `api/v1/ai/realtime`,
+`api/v1/ai/agent-runs`, generation, files, catalog, provider tools) requires an
+authenticated user by default. Only `api/v1/ai/health` and the provider webhooks, which
+verify their own shared secrets, are public. Anonymous calls get a JSON 401.
+
+```php
+'api' => [
+    'auth' => [
+        // null = AuthenticateApiRequest on the sanctum guard (or the default guard).
+        // A semicolon list overrides; 'none' disables (host must protect the routes).
+        'middleware' => env('AI_ENGINE_API_AUTH_MIDDLEWARE'),
+        'public_groups' => ['health'],
+    ],
+    'identity' => [
+        // false (default): user_id comes only from the authenticated user, and scope keys
+        // in caller metadata are dropped. Enable only for trusted server-to-server callers.
+        'trust_request_identity' => env('AI_ENGINE_API_TRUST_REQUEST_IDENTITY', false),
+        'scope_metadata_keys' => ['user_id', 'workspace_id', 'tenant_id', 'organization_id', 'team_id', 'owner_id', 'created_by'],
+    ],
+],
+```
+
+MCP tool calls (`POST /api/v1/ai/mcp/tools/{tool}/call`) apply the same execution policy
+as the agent loop, and a tool that requires confirmation is not executed until the call
+includes `"approved": true`.
+
+## Generic Model Tools
+
+`AiResource` tools apply the resource scope to every query, including the match used by
+`create_*` (find-or-create), so a record in another tenant is never updated. `show_*` tools
+without an explicit column list respect the model's `$hidden`/`$visible` and withhold
+credential-like columns; list columns explicitly to expose anything else.
+
 ## Hosted Tools
 
 Treat these tools as high-risk by default:

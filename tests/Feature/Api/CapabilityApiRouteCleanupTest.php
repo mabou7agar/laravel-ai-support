@@ -13,6 +13,13 @@ use LaravelAIEngine\Tests\TestCase;
 
 class CapabilityApiRouteCleanupTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_rag_controller_and_rag_api_routes_are_removed(): void
     {
         $this->assertFalse(class_exists('LaravelAIEngine\\Http\\Controllers\\Api\\RagChatApiController'));

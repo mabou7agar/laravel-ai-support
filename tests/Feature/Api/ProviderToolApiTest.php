@@ -15,6 +15,13 @@ use LaravelAIEngine\Tests\TestCase;
 
 class ProviderToolApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_provider_tool_approval_api_lists_and_resolves_pending_approvals(): void
     {
         $run = app(ProviderToolRunRepository::class)->create([

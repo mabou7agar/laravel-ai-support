@@ -20,9 +20,23 @@ abstract class AgentTool
      */
     protected function localize(string $key, string $fallback, array $replace = []): string
     {
-        $translated = app(LocaleResourceService::class)->translation($key, $replace);
+        // Laravel's translator expects bare placeholder names ('entities', not ':entities');
+        // accept both so a stray colon never leaks a raw ":entities" to the user.
+        $normalized = [];
+        foreach ($replace as $name => $value) {
+            $normalized[ltrim((string) $name, ':')] = $value;
+        }
 
-        return $translated !== '' ? $translated : $fallback;
+        $translated = app(LocaleResourceService::class)->translation($key, $normalized);
+        if ($translated !== '') {
+            return $translated;
+        }
+
+        foreach ($normalized as $name => $value) {
+            $fallback = str_replace(':' . $name, (string) $value, $fallback);
+        }
+
+        return $fallback;
     }
 
     abstract public function getName(): string;

@@ -12,6 +12,13 @@ use Mockery;
 
 class GenerateVideoApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_video_endpoint_defaults_to_seedance_text_to_video_for_text_only_requests(): void
     {
         $service = Mockery::mock(AIEngineService::class);
@@ -210,7 +217,7 @@ class GenerateVideoApiTest extends TestCase
             ->withArgs(function (string $prompt, array $options, ?string $userId): bool {
                 $this->assertSame('Create a neon city chase at night', $prompt);
                 $this->assertSame(EntityEnum::FAL_SEEDANCE_2_TEXT_TO_VIDEO, $options['model']);
-                $this->assertNull($userId);
+                $this->assertSame('1', $userId);
 
                 return true;
             })

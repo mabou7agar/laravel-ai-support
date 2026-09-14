@@ -11,6 +11,13 @@ use Mockery;
 
 class AgentChatResponsePresentationApiTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->authenticateApi();
+    }
+
     public function test_agent_chat_api_returns_response_points_and_suggestions(): void
     {
         $chat = Mockery::mock(ChatService::class);

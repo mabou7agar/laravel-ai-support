@@ -16,6 +16,7 @@ use LaravelAIEngine\Http\Controllers\Api\VectorStoreApiController;
 use LaravelAIEngine\Http\Controllers\Api\ProviderToolController;
 use LaravelAIEngine\Http\Controllers\Api\PricingController;
 use LaravelAIEngine\Http\Controllers\Api\RealtimeController;
+use LaravelAIEngine\Http\Middleware\AuthenticateApiRequest;
 use LaravelAIEngine\Http\Middleware\SetRequestLocaleMiddleware;
 use LaravelAIEngine\Http\Middleware\StandardizeApiResponseMiddleware;
 
@@ -37,9 +38,35 @@ $normalizeMiddleware = static function (array $middleware): array {
     return array_values(array_filter($items, static fn (string $item): bool => $item !== ''));
 };
 
-$resolveApiMiddleware = static function (string $group) use ($normalizeMiddleware): array {
-    $defaultStack = ['api', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class];
+$resolveAuthMiddleware = static function (string $group) use ($normalizeMiddleware): array {
+    if (in_array($group, (array) config('ai-engine.api.auth.public_groups', ['health']), true)) {
+        return [];
+    }
 
+    $configured = config('ai-engine.api.auth.middleware');
+    if ($configured === null) {
+        return [AuthenticateApiRequest::class . (config('auth.guards.sanctum') !== null ? ':sanctum' : '')];
+    }
+
+    if (is_string($configured)) {
+        $configured = trim($configured);
+        if ($configured === '' || strtolower($configured) === 'none') {
+            return [];
+        }
+        $configured = explode(';', $configured);
+    }
+
+    return $normalizeMiddleware((array) $configured);
+};
+
+$resolveApiMiddleware = static function (string $group) use ($normalizeMiddleware, $resolveAuthMiddleware): array {
+    $defaultStack = array_merge(
+        ['api'],
+        $resolveAuthMiddleware($group),
+        [SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class]
+    );
+
+    // A full replacement stack is owned by the host, including its authentication.
     $replace = config("ai-engine.api.middleware.replace.{$group}", []);
     $base = (is_array($replace) && $replace !== []) ? $replace : $defaultStack;
 
@@ -216,9 +243,12 @@ Route::prefix('api/v1/ai/provider-tools')
             ->name('artifacts.download');
         Route::post('/fal/catalog/execute', [ProviderToolController::class, 'executeFalCatalog'])
             ->name('fal.catalog.execute');
-        Route::post('/fal/catalog/webhook', [ProviderToolController::class, 'falCatalogWebhook'])
-            ->name('fal.catalog.webhook');
     });
+
+// Provider callback: authenticated by its shared webhook secret, not a user session.
+Route::post('api/v1/ai/provider-tools/fal/catalog/webhook', [ProviderToolController::class, 'falCatalogWebhook'])
+    ->middleware(['api', SetRequestLocaleMiddleware::class, StandardizeApiResponseMiddleware::class])
+    ->name('ai-engine.provider-tools.api.fal.catalog.webhook');
 
 Route::prefix('api/v1/ai/mcp')
     ->middleware($resolveApiMiddleware('generate'))

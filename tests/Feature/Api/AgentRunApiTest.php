@@ -55,24 +55,24 @@ class AgentRunApiTest extends TestCase
             ['trace_id' => 'trace-api']
         );
 
-        $this->getJson('/api/v1/ai/agent-runs?tenant_id=tenant-api')
+        $this->authenticateApi()->getJson('/api/v1/ai/agent-runs?tenant_id=tenant-api')
             ->assertOk()
             ->assertJsonPath('data.data.0.uuid', $run->uuid);
 
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}")
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}")
             ->assertOk()
             ->assertJsonPath('data.run.uuid', $run->uuid)
             ->assertJsonPath('data.events.0.name', 'routing.decided')
             ->assertJsonPath('data.citations.0.url', 'invoice://10');
 
-        $this->getJson("/api/v1/ai/agent-runs/{$run->uuid}/trace")
+        $this->authenticateApi()->getJson("/api/v1/ai/agent-runs/{$run->uuid}/trace")
             ->assertOk()
             ->assertJsonPath('data.trace_id', 'trace-api')
             ->assertJsonPath('data.steps.0.routing_decision.action', 'search_rag')
             ->assertJsonPath('data.citations.0.title', 'Invoice 10')
             ->assertJsonPath('data.events.0.name', 'routing.decided');
 
-        $this->getJson('/api/v1/ai/agent-runs/capabilities')
+        $this->authenticateApi()->getJson('/api/v1/ai/agent-runs/capabilities')
             ->assertOk()
             ->assertJsonPath('data.available.laravel.tools', true);
     }
@@ -108,7 +108,7 @@ class AgentRunApiTest extends TestCase
             ],
         ]);
 
-        $this->postJson("/api/v1/ai/agent-runs/{$run->uuid}/resume", [
+        $this->authenticateApi()->postJson("/api/v1/ai/agent-runs/{$run->uuid}/resume", [
             'message' => 'approved',
             'payload' => ['approved' => true],
         ])
@@ -125,7 +125,7 @@ class AgentRunApiTest extends TestCase
             'metadata' => ['langgraph_run_id' => 'lg-api-run'],
         ]);
 
-        $this->postJson("/api/v1/ai/agent-runs/{$cancelRun->uuid}/cancel", [
+        $this->authenticateApi()->postJson("/api/v1/ai/agent-runs/{$cancelRun->uuid}/cancel", [
             'reason' => 'User stopped it.',
         ])
             ->assertOk()

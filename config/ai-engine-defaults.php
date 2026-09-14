@@ -107,6 +107,27 @@ return [
             'enabled' => env('AI_ENGINE_GENERATE_API_ENABLED', true),
             'prefix' => env('AI_ENGINE_GENERATE_API_PREFIX', 'api/v1/ai/generate'),
         ],
+        // Authentication applied to every package API group except `health` and the
+        // signature-verified provider webhooks. Null resolves at route registration to the
+        // package's AuthenticateApiRequest middleware (JSON 401) on the `sanctum` guard when
+        // one is configured, otherwise the default guard.
+        // Set AI_ENGINE_API_AUTH_MIDDLEWARE to a semicolon list to override, or `none`
+        // to disable (only when the host protects these routes some other way).
+        'auth' => [
+            'middleware' => env('AI_ENGINE_API_AUTH_MIDDLEWARE'),
+            'public_groups' => ['health'],
+        ],
+
+        // Where request identity comes from. By default the authenticated user is the
+        // only source of user_id, and caller-supplied metadata cannot set scope keys.
+        // Enable trust_request_identity only for trusted server-to-server callers that
+        // are already authenticated upstream (the body user_id is then used when no
+        // user is authenticated, and metadata scope keys pass through).
+        'identity' => [
+            'trust_request_identity' => (bool) env('AI_ENGINE_API_TRUST_REQUEST_IDENTITY', false),
+            'scope_metadata_keys' => ['user_id', 'workspace_id', 'tenant_id', 'organization_id', 'team_id', 'owner_id', 'created_by'],
+        ],
+
         'middleware' => [
             // Append middleware to all package v1 API route groups.
             // Use semicolon separators so middleware params can keep commas.
