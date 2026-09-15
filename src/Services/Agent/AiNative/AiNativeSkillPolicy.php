@@ -148,7 +148,7 @@ class AiNativeSkillPolicy
         $requiredInputs = (array) ($plan['required_inputs'] ?? []);
         if ($requiredInputs !== []) {
             if ($this->hasRuntimeFeedback($state, 'final_tool_required_before_confirmation_question')
-                || !$this->onlyOptionalFinalToolInputs($requiredInputs, $requiredTools, (array) data_get($state, 'task_frame.current_payload', []))) {
+                || !$this->onlyOptionalFinalToolInputs($requiredInputs, $requiredTools, (array) data_get($state, 'task_frame.current_payload', []), $state)) {
                 return false;
             }
         }
@@ -389,51 +389,119 @@ class AiNativeSkillPolicy
 
     /**
      * True when the payload already holds every required parameter of the final tools and
-     * every requested input names a parameter those tools mark optional. Unknown names count
-     * as genuinely needed.
+     * nothing the plan asks for is one of those tools' required parameters: each requested
+     * input either names a parameter the tools mark optional, or names something that is
+     * not a parameter of any final tool at all (e.g. "currency" on an invoice tool that has
+     * no currency field). The tool cannot use such an answer, and its own validation still
+     * asks when something is genuinely missing. An input matching a required parameter
+     * keeps the question flowing, and so does a name the payload or schema holds as a nested
+     * field (items.*.product_name) or any question once the final tool itself has already
+     * reported a problem (its answer, not the planner's guess, is driving the question).
      *
      * @param array<int|string, mixed> $requiredInputs
      * @param array<int, string>       $finalTools
      * @param array<string, mixed>     $payload
+     * @param array<string, mixed>     $state
      */
-    private function onlyOptionalFinalToolInputs(array $requiredInputs, array $finalTools, array $payload): bool
+    private function onlyOptionalFinalToolInputs(array $requiredInputs, array $finalTools, array $payload, array $state = []): bool
     {
-        $optional = null;
+        $required = [];
+        $known = [];
+        $nested = $this->nestedKeys($payload);
+        foreach ((array) ($state['tool_results'] ?? []) as $entry) {
+            if (is_array($entry)
+                && ($entry['task_closed'] ?? false) !== true
+                && in_array((string) ($entry['tool'] ?? ''), $finalTools, true)
+                && (($entry['result']['success'] ?? false) !== true || ($entry['result']['data']['needs_user_input'] ?? false) === true)) {
+                return false;
+            }
+        }
         foreach ($finalTools as $toolName) {
             $tool = $this->tools->get($toolName);
             if ($tool === null) {
                 return false;
             }
 
-            $toolOptional = [];
-            foreach ($tool->getParameters() as $name => $definition) {
+            $parameters = $tool->getParameters();
+            if ($parameters === []) {
+                // A tool without a declared schema gives no basis to call a question useless.
+                return false;
+            }
+
+            foreach ($parameters as $name => $definition) {
+                $normalized = $this->normalizeInputName((string) $name);
+                $known[$normalized] = true;
+                if (is_array($definition)) {
+                    foreach (array_merge(array_keys((array) ($definition['properties'] ?? [])), array_keys((array) ($definition['items']['properties'] ?? []))) as $property) {
+                        $nested[$this->normalizeInputName((string) $property)] = true;
+                    }
+                }
                 if (!is_array($definition) || ($definition['required'] ?? false) !== true) {
-                    $toolOptional[] = mb_strtolower((string) $name);
                     continue;
                 }
 
+                $required[$normalized] = true;
                 $value = $payload[(string) $name] ?? null;
                 if ($value === null || $value === '' || $value === []) {
                     return false;
                 }
             }
-            $optional = $optional === null ? $toolOptional : array_values(array_intersect($optional, $toolOptional));
-        }
-
-        if ($optional === null || $optional === []) {
-            return false;
         }
 
         foreach ($requiredInputs as $input) {
             $name = is_array($input)
                 ? (string) ($input['name'] ?? $input['id'] ?? $input['field'] ?? '')
                 : (string) $input;
-            $name = mb_strtolower(trim($name));
-            if ($name === '' || !in_array($name, $optional, true)) {
+            $name = $this->normalizeInputName($name);
+            if ($name === '') {
                 return false;
+            }
+
+            if (isset($nested[$name])) {
+                return false;
+            }
+
+            // "customer" asks for the customer_id parameter.
+            foreach ([$name, $name . '_id', preg_replace('/_id$/', '', $name)] as $candidate) {
+                if (isset($required[$candidate])) {
+                    return false;
+                }
             }
         }
 
-        return true;
+        return $known !== [];
+    }
+
+    /**
+     * Normalized keys found below the top level of a payload (keys of list items and
+     * nested objects).
+     *
+     * @param array<mixed> $value
+     * @return array<string, true>
+     */
+    private function nestedKeys(array $value, bool $includeTopLevel = false, int $depth = 0): array
+    {
+        $keys = [];
+        if ($depth > 4) {
+            return $keys;
+        }
+
+        foreach ($value as $key => $child) {
+            if ($includeTopLevel && is_string($key)) {
+                $keys[$this->normalizeInputName($key)] = true;
+            }
+            if (is_array($child)) {
+                $keys += $this->nestedKeys($child, true, $depth + 1);
+            }
+        }
+
+        return $keys;
+    }
+
+    private function normalizeInputName(string $name): string
+    {
+        $name = mb_strtolower(trim($name));
+
+        return trim((string) preg_replace('/[\s\-.]+/u', '_', $name), '_');
     }
 }
