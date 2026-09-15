@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or Qdrant is not the selected vector driver. Set `AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true`
   to force it.
 
+- **Dependencies.** `openai-php/client` now allows `^0.8` through `^0.20` (0.11+ needs
+  PHP 8.2; PHP 8.1 keeps resolving 0.10). `MissingOpenAIClient` declares every resource
+  method with a `never` return type so it satisfies each release's `ClientContract`.
+  Minimums raised to `guzzlehttp/guzzle ^7.15.2` and `guzzlehttp/psr7 ^2.12.3`, which fix
+  the published cookie, redirect-Referer, proxy-header, host-confusion and CRLF advisories.
+
 ### Added
 
 - **Current Claude models.** `EntityEnum::CLAUDE_OPUS_5` (`claude-opus-5`) and
