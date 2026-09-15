@@ -102,6 +102,44 @@ class SkillScopedToolSelectorTest extends UnitTestCase
         $this->assertSame($tools, $selector->select($tools, 'just chatting', [], []));
     }
 
+    public function test_large_registry_without_a_skill_exposes_a_ranked_subset_plus_find_tools(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.always', ['search_knowledge']);
+        config()->set('ai-agent.ai_native.tool_selection.unscoped_limit', 5);
+
+        $matcher = Mockery::mock(AiNativeSkillMatcher::class);
+        $matcher->shouldReceive('selectedSkillIdForActiveTask')->andReturn('');
+        $matcher->shouldReceive('matchedSkillId')->andReturn(null);
+        $registry = Mockery::mock(AgentSkillRegistry::class);
+        $registry->shouldReceive('skills')->andReturn([]);
+
+        $names = ['search_knowledge'];
+        for ($i = 0; $i < 300; $i++) {
+            $names[] = "find_widget_{$i}";
+        }
+        $names[] = 'find_vendor_bill';
+        $names[] = 'show_vendor';
+        $tools = $this->tools($names);
+
+        $toolRegistry = new \LaravelAIEngine\Services\Agent\Tools\ToolRegistry();
+        $findTools = new \LaravelAIEngine\Services\Agent\Tools\FindToolsTool($toolRegistry);
+        $toolRegistry->register('find_tools', $findTools);
+
+        $selector = new SkillScopedToolSelector($registry, $matcher, $toolRegistry);
+
+        $selected = $selector->select($tools, 'how much do we owe each vendor?', [], []);
+        $this->assertSame(['search_knowledge', 'find_vendor_bill', 'show_vendor', 'find_tools'], array_keys($selected));
+
+        // A no-signal turn still gets a bounded slice, never all 303 tools.
+        $greeting = $selector->select($tools, 'hi', [], []);
+        $this->assertCount(6, $greeting);
+        $this->assertArrayHasKey('find_tools', $greeting);
+
+        // Small registries and the null opt-out keep the full set.
+        config()->set('ai-agent.ai_native.tool_selection.unscoped_limit', null);
+        $this->assertCount(303, $selector->select($tools, 'hi', [], []));
+    }
+
     public function test_falls_back_to_all_when_scope_would_be_empty(): void
     {
         $matcher = Mockery::mock(AiNativeSkillMatcher::class);

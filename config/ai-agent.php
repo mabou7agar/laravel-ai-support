@@ -398,6 +398,13 @@ return [
             // <= fallback_limit (unchanged behavior), otherwise core + the first fallback_limit
             // tools. Set to null to restore the legacy unbounded fail-open.
             'fallback_limit' => env('AI_AGENT_TOOL_SELECTION_FALLBACK_LIMIT', 50),
+            // skill_scoped strategy, turns where NO skill applies: registries larger than
+            // this expose the always-on core + the tools most relevant to the message
+            // (keyword ranked; a registration-order slice on no-signal turns) + find_tools
+            // so the planner can discover the rest. Previously every tool was sent (1,000+
+            // schemas on large hosts). null restores the unbounded fallback. Per-request:
+            // options.tool_selection.unscoped_limit.
+            'unscoped_limit' => env('AI_AGENT_TOOL_SELECTION_UNSCOPED_LIMIT', 40),
             // 'full' (default) injects each selected tool's full schema; 'progressive'
             // lists tools by name + summary only and registers a find_tools meta-tool the
             // planner calls to load a tool's full parameters on demand.
