@@ -501,7 +501,9 @@ return [
         ],
 
         'qdrant_self_check' => [
-            'enabled' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENABLED', true),
+            // Defaults to on only when Qdrant is actually configured (QDRANT_HOST or
+            // QDRANT_API_KEY set), so an unconfigured install never pings localhost:6333.
+            'enabled' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENABLED', env('QDRANT_HOST') !== null || env('QDRANT_API_KEY') !== null),
             'timeout_seconds' => (float) env('AI_ENGINE_QDRANT_SELF_CHECK_TIMEOUT', 5),
             'endpoint' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENDPOINT', '/collections'),
         ],
@@ -2174,7 +2176,9 @@ return [
     |
     */
     'graph' => [
-        'enabled' => env('AI_ENGINE_GRAPH_ENABLED', true),
+        // Off by default: the graph backend (Neo4j) is optional infrastructure.
+        // Enable only when AI_ENGINE_NEO4J_* points at a running instance.
+        'enabled' => env('AI_ENGINE_GRAPH_ENABLED', false),
         'backend' => env('AI_ENGINE_GRAPH_BACKEND', 'neo4j'),
         'reads_prefer_central_graph' => env('AI_ENGINE_GRAPH_READS_PREFER_CENTRAL', true),
         // When true, graph retrieval/snapshot queries that resolve to NO user scope

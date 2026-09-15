@@ -47,6 +47,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   planner works on Anthropic. Temperature is omitted for models that reject sampling
   parameters (Claude Opus 4.7+, Sonnet 5+).
 
+### Changed
+
+- **Graph (Neo4j) is off by default.** `ai-engine.graph.enabled` now defaults to
+  `AI_ENGINE_GRAPH_ENABLED=false`; set it to `true` when a Neo4j instance is configured.
+- **No Qdrant ping on boot for unconfigured installs.** The startup health gate's Qdrant
+  self-check (`infrastructure.qdrant_self_check.enabled`) now defaults to on only when
+  `QDRANT_HOST` or `QDRANT_API_KEY` is set, and is skipped when no Qdrant host is configured
+  or Qdrant is not the selected vector driver. Set `AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true`
+  to force it.
+
 ### Added
 
 - **Current Claude models.** `EntityEnum::CLAUDE_OPUS_5` (`claude-opus-5`) and
