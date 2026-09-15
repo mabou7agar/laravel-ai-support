@@ -1344,6 +1344,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Provider HTTP Retry
+    |--------------------------------------------------------------------------
+    |
+    | Shared retry policy for the chat provider drivers (OpenAI, Anthropic,
+    | Gemini, DeepSeek, OpenRouter, xAI). Only HTTP 429, retryable 5xx and
+    | connection errors are retried, with exponential backoff + jitter; a
+    | Retry-After header is honoured. Other 4xx (400/401/403/404/422) are never
+    | retried. Sleeping blocks the request worker (Octane/FPM), so each wait is
+    | capped by max_delay_ms and the whole call by max_total_delay_ms; a
+    | Retry-After above max_delay_ms returns the error immediately so engine
+    | failover can take over. max_attempts counts the first attempt.
+    |
+    */
+    'http' => [
+        'retry' => [
+            'enabled' => env('AI_ENGINE_HTTP_RETRY_ENABLED', true),
+            'max_attempts' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_ATTEMPTS', 3),
+            'base_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_BASE_DELAY_MS', 250),
+            'max_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_DELAY_MS', 2000),
+            'max_total_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_TOTAL_DELAY_MS', 4000),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Content Safety Configuration
     |--------------------------------------------------------------------------
     |

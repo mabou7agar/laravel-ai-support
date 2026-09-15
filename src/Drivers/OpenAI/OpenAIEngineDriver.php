@@ -32,7 +32,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
     {
         parent::__construct($config);
         
-        $this->httpClient = $httpClient ?? new Client([
+        $this->httpClient = $httpClient ?? \LaravelAIEngine\Support\Http\RetryPolicy::resolve()->guzzleClient([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
         ]);
@@ -44,7 +44,13 @@ class OpenAIEngineDriver extends BaseEngineDriver
                 ->withHttpClient($httpClient)
                 ->make();
         } else {
-            $this->openAIClient = OpenAI::client($this->getApiKey());
+            // Same client OpenAI::client() builds (no timeout, default base URL), plus the
+            // shared retry policy for 429 / 5xx / connection errors.
+            $this->openAIClient = OpenAI::factory()
+                ->withApiKey($this->getApiKey())
+                ->withHttpHeader('OpenAI-Beta', 'assistants=v2')
+                ->withHttpClient(\LaravelAIEngine\Support\Http\RetryPolicy::resolve()->guzzleClient())
+                ->make();
         }
     }
 

@@ -16,6 +16,7 @@ use LaravelAIEngine\Exceptions\AIEngineException;
 use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
 use LaravelAIEngine\Services\ProviderTools\ProviderToolRunService;
 use LaravelAIEngine\Services\SDK\ProviderToolPayloadMapper;
+use LaravelAIEngine\Support\Http\RetryPolicy;
 
 class AnthropicEngineDriver extends BaseEngineDriver
 {
@@ -25,7 +26,7 @@ class AnthropicEngineDriver extends BaseEngineDriver
     {
         parent::__construct($config);
         
-        $this->httpClient = $httpClient ?? new Client([
+        $this->httpClient = $httpClient ?? RetryPolicy::resolve()->guzzleClient([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
             'headers' => $this->buildHeaders(),

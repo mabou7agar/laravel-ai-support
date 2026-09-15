@@ -154,6 +154,27 @@ return array_replace_recursive($defaults, [
 
     /*
     |--------------------------------------------------------------------------
+    | Provider HTTP Retry
+    |--------------------------------------------------------------------------
+    |
+    | Retries only 429 / retryable 5xx / connection errors with capped
+    | exponential backoff + jitter and Retry-After support. Never retries other
+    | 4xx. Caps keep request workers (Octane) from blocking; see
+    | AIEngineConfigDefaults for the full description.
+    |
+    */
+    'http' => [
+        'retry' => [
+            'enabled' => env('AI_ENGINE_HTTP_RETRY_ENABLED', data_get($defaults, 'http.retry.enabled', true)),
+            'max_attempts' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_ATTEMPTS', data_get($defaults, 'http.retry.max_attempts', 3)),
+            'base_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_BASE_DELAY_MS', data_get($defaults, 'http.retry.base_delay_ms', 250)),
+            'max_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_DELAY_MS', data_get($defaults, 'http.retry.max_delay_ms', 2000)),
+            'max_total_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_TOTAL_DELAY_MS', data_get($defaults, 'http.retry.max_total_delay_ms', 4000)),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Runtime Feature Flags
     |--------------------------------------------------------------------------
     */

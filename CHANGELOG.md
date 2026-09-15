@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `ai-engine.error_handling.fallback_models.<engine>` (a model id, or a
   source-model => fallback map with `default`), then the engine's `default_model`, then its
   built-in default models — always matching the source model's content type.
+- **Bounded, transient-only HTTP retries for provider drivers.** New shared
+  `LaravelAIEngine\Support\Http\RetryPolicy` (Guzzle middleware + a Laravel HTTP client
+  wrapper) used by the OpenAI (incl. the openai-php client), Anthropic, Gemini, DeepSeek,
+  OpenRouter and xAI drivers. It retries only 429, retryable 5xx and connection errors with
+  exponential backoff + jitter, honours `Retry-After`, never retries other 4xx, and caps each
+  wait and the total sleep so Octane workers are not pinned. A `Retry-After` longer than the
+  cap returns the error at once so engine failover takes over. Configure under
+  `ai-engine.http.retry.{enabled,max_attempts,base_delay_ms,max_delay_ms,max_total_delay_ms}`
+  (defaults: on, 3 attempts, 250 ms base, 2 s per wait, 4 s total).
+- **`EngineProxy::withRetry()` no longer retries permanent provider errors** (400/401/403/...)
+  and each wait is capped by `ai-engine.http.retry.max_delay_ms` (was up to 4 s+ per attempt).
 
 ## [3.4.4] — 2026-09-15
 

@@ -24,7 +24,7 @@ class GeminiEngineDriver extends BaseEngineDriver
     {
         parent::__construct($config);
         
-        $this->httpClient = $httpClient ?? new Client([
+        $this->httpClient = $httpClient ?? \LaravelAIEngine\Support\Http\RetryPolicy::resolve()->guzzleClient([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
         ]);
