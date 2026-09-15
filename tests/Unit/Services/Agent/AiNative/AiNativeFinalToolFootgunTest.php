@@ -150,4 +150,18 @@ class AiNativeFinalToolFootgunTest extends UnitTestCase
             $state,
         ));
     }
+    public function test_a_message_for_a_different_skill_does_not_force_the_active_tasks_final_tool(): void
+    {
+        $invoice = new AgentSkillDefinition(id: 'invoice_create', name: 'Create Invoice', description: 'Invoices', triggers: ['create invoice'], tools: ['create_invoice'], metadata: ['final_tool' => 'create_invoice']);
+        $leads = new AgentSkillDefinition(id: 'lead_lookup', name: 'Leads', description: 'Leads', triggers: ['leads'], tools: ['data_query']);
+        $registry = Mockery::mock(AgentSkillRegistry::class);
+        $registry->shouldReceive('skills')->andReturn([$invoice, $leads]);
+        $policy = new AiNativeFinalToolPolicy($registry, new AiNativeSkillMatcher($registry), new AiNativeConfirmationIntent(app(IntentSignalService::class)));
+
+        // An invoice draft is open (its confirmation was just abandoned).
+        $state = ['task_frame' => ['active_objective' => 'invoice_create', 'status' => 'working', 'current_payload' => ['customer_name' => 'Acme']]];
+
+        self::assertFalse($policy->requirementApplies('How many leads do I have?', $state, []), 'A question for another skill must be answered, not forced into create_invoice.');
+        self::assertTrue($policy->requirementApplies('create invoice for Acme with 2 chairs', $state, []));
+    }
 }
