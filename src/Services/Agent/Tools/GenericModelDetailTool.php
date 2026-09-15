@@ -99,6 +99,13 @@ class GenericModelDetailTool extends AgentTool
             }
         }
 
+        // Planners often wrap identifiers: {"filters": {"customer_code": "C-1"}}.
+        foreach (['filters', 'where', 'criteria', 'search', 'conditions'] as $wrapper) {
+            if (is_array($parameters[$wrapper] ?? null)) {
+                $parameters += $parameters[$wrapper];
+            }
+        }
+
         $id = $parameters['id'] ?? null;
         $matchedBy = false;
         if (is_numeric($id)) {
@@ -126,8 +133,10 @@ class GenericModelDetailTool extends AgentTool
             return ActionResult::failure($this->localize('ai-engine::runtime.tools.record_not_found', 'Record was not found.'), ['found' => false, 'message' => 'No matching record was found.']);
         }
 
-        return ActionResult::success('Record loaded.', array_merge(
-            ['found' => true, 'record' => $this->recordColumns($record)],
+        // Say when no identifier was given, so the planner (and user) do not mistake "the most
+        // recent record" for a match on something they asked about.
+        return ActionResult::success($matchedBy ? 'Record loaded.' : 'No identifier was given, so this is the most recent record.', array_merge(
+            ['found' => true, 'matched_by' => $matchedBy ? 'identifier' : 'most_recent', 'record' => $this->recordColumns($record)],
             ['relations' => $this->relationRows($record)]
         ));
     }

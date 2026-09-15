@@ -79,6 +79,16 @@ class GenericModelDetailToolTest extends TestCase
         $result = $this->tool()->execute([], new UnifiedActionContext('s'));
 
         $this->assertSame($newest->id, $result->data['record']['id']);
+        $this->assertSame('most_recent', $result->data['matched_by']);
+        $this->assertStringContainsString('most recent', $result->message);
+
+        $byId = $this->tool()->execute(['id' => $newest->id], new UnifiedActionContext('s'));
+        $this->assertSame('identifier', $byId->data['matched_by']);
+
+        // An identifier wrapped in "filters" is a real match, not the most-recent fallback.
+        $older = $this->tool()->execute(['filters' => ['session_id' => 'older']], new UnifiedActionContext('s'));
+        $this->assertSame('identifier', $older->data['matched_by']);
+        $this->assertSame('older', $older->data['record']['session_id']);
     }
 
     public function test_reports_not_found(): void

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.3] — 2026-09-15
+
+### Fixed
+
+- **Read loops no longer end in "I need more information to continue."** When the planner
+  re-calls a tool with arguments that already succeeded this turn, the call still runs
+  (polling stays possible) but the planner is told it already holds the result. If a pure
+  read turn (no draft, nothing pending) still exhausts its steps that way, the runtime
+  answers from the lookup's record instead.
+- **`show_*` tools say when they fell back to the most recent record.** Results carry
+  `matched_by` (`identifier` or `most_recent`) and a message saying no identifier was
+  given, so "the latest record" is not presented as a match; identifiers wrapped under
+  `filters`/`where`/`criteria` are now honoured.
+
 ## [3.4.2] — 2026-09-15
 
 ### Fixed
