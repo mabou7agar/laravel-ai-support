@@ -231,6 +231,9 @@ enum EngineEnum: string
                 EntityEnum::OPENAI_TTS_1_HD,
             ],
             self::Anthropic => [
+                EntityEnum::CLAUDE_SONNET_5,
+                EntityEnum::CLAUDE_OPUS_5,
+                EntityEnum::CLAUDE_HAIKU_4_5,
                 EntityEnum::CLAUDE_3_5_SONNET,
                 EntityEnum::CLAUDE_3_HAIKU,
             ],

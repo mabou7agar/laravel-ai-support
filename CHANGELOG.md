@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] — 2026-09-15
+
 ### Agent quality
 
 - **No detours for fields the tool cannot use.** When the draft holds every required field of
@@ -36,6 +38,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshot's `recent_outcomes.display` or `last_turn_outcome`
   (`ai_native.prompt_dedupe_tool_results`), and in-loop compaction
   (`ai_native.compaction.enabled`) is on by default.
+- **Other requests are answered while a task is open.** A message for a different skill no
+  longer forces the open task's final tool, and a message matching no skill keeps the task's
+  tools plus the few tools it is about (and `find_tools`), so "find customer X" or "how many
+  leads?" with an invoice draft open is answered instead of re-showing the invoice.
+  Config `tool_selection.off_skill_relevant_limit` (default 8).
+
+### Fixed
+
+- **Failover sends a model the fallback provider serves.** `AIEngineService::generate()` and
+  `stream()` used to rebuild the failover request with the original model (`gpt-4o` sent to
+  Anthropic) and silently dropped `messages`, `functions`/`function_call`, `files`, `context`,
+  `seed` and `conversationId`. The failover request now keeps every field and maps the model
+  via the new `ai-engine.error_handling.fallback_models.<engine>` (a model id, or a
+  source-model => fallback map with `default`), then the engine's `default_model`, then its
+  built-in default models — always matching the source model's content type.
+- **Bounded, transient-only HTTP retries for provider drivers.** New shared
+  `LaravelAIEngine\Support\Http\RetryPolicy` (Guzzle middleware + a Laravel HTTP client
+  wrapper) used by the OpenAI (incl. the openai-php client), Anthropic, Gemini, DeepSeek,
+  OpenRouter and xAI drivers. It retries only 429, retryable 5xx and connection errors with
+  exponential backoff + jitter, honours `Retry-After`, never retries other 4xx, and caps each
+  wait and the total sleep so Octane workers are not pinned. A `Retry-After` longer than the
+  cap returns the error at once so engine failover takes over. Configure under
+  `ai-engine.http.retry.{enabled,max_attempts,base_delay_ms,max_delay_ms,max_total_delay_ms}`
+  (defaults: on, 3 attempts, 250 ms base, 2 s per wait, 4 s total).
+- **`EngineProxy::withRetry()` no longer retries permanent provider errors** (400/401/403/...)
+  and each wait is capped by `ai-engine.http.retry.max_delay_ms` (was up to 4 s+ per attempt).
+- **Anthropic streaming is parsed per SSE event.** The driver read the body in fixed 1 KB
+  slices and only matched `data:` at the slice start, so events split across reads were lost.
+  `ParsesSseStream::parseSseEvents()` now buffers lines across reads (and flushes a trailing
+  event without a newline); the Anthropic stream handles `message_start`,
+  `content_block_start` (`text`/`tool_use`), `text_delta`, `input_json_delta` accumulation,
+  `content_block_stop`, `message_delta` (stop reason, usage) and `error`. Streaming requests
+  now send tools, and the generator returns an `AIResponse` with usage, finish reason and
+  streamed tool calls.
+- **Anthropic function calling.** Function definitions were sent as an OpenAI-style
+  `functions` key (rejected by the Messages API), `max_tokens` could be `null`, and
+  `tool_use` blocks were ignored. Functions are now converted to Anthropic `tools`
+  (`input_schema`), `function_call` maps to `tool_choice` (`parallel_tool_calls: false` sets
+  `disable_parallel_tool_use`), `max_tokens` defaults to `engines.anthropic.max_tokens`
+  (4096), and tool calls — streamed or not — are exposed in `metadata['tool_calls']`
+  (OpenAI shape, as OpenRouter/xAI do) plus `getFunctionCall()`, so the AiNative native tool
+  planner works on Anthropic. Temperature is omitted for models that reject sampling
+  parameters (Claude Opus 4.7+, Sonnet 5+).
+
+### Changed
+
+- **Graph (Neo4j) is off by default.** `ai-engine.graph.enabled` now defaults to
+  `AI_ENGINE_GRAPH_ENABLED=false`; set it to `true` when a Neo4j instance is configured.
+- **No Qdrant ping on boot for unconfigured installs.** The startup health gate's Qdrant
+  self-check (`infrastructure.qdrant_self_check.enabled`) now defaults to on only when
+  `QDRANT_HOST` or `QDRANT_API_KEY` is set, and is skipped when no Qdrant host is configured
+  or Qdrant is not the selected vector driver. Set `AI_ENGINE_QDRANT_SELF_CHECK_ENABLED=true`
+  to force it.
+
+- **Dependencies.** `openai-php/client` now allows `^0.8` through `^0.20` (0.11+ needs
+  PHP 8.2; PHP 8.1 keeps resolving 0.10). `MissingOpenAIClient` declares every resource
+  method with a `never` return type so it satisfies each release's `ClientContract`.
+  Minimums raised to `guzzlehttp/guzzle ^7.15.2` and `guzzlehttp/psr7 ^2.12.3`, which fix
+  the published cookie, redirect-Referer, proxy-header, host-confusion and CRLF advisories.
+
+### Added
+
+- **Current Claude models.** `EntityEnum::CLAUDE_OPUS_5` (`claude-opus-5`) and
+  `EntityEnum::CLAUDE_SONNET_5` (`claude-sonnet-5`) alongside the existing
+  `CLAUDE_HAIKU_4_5` (`claude-haiku-4-5-20251001`), added to the model catalog
+  (`resources/models.json`), engine model/credit config, `AIModelRegistry`, the models seeder
+  and the driver's model list. `claude-sonnet-5` is the new Anthropic default
+  (`engines.anthropic.default_model`, `ANTHROPIC_DEFAULT_MODEL`). Older ids are kept.
+- **Anthropic prompt caching covers tools.** With `engines.anthropic.prompt_caching` (default
+  on) the last tool definition gets a `cache_control: ephemeral` breakpoint in addition to the
+  system prompt block. Cache usage (`cached_tokens`, `cache_creation_tokens`) is reported for
+  streamed responses too. OpenAI prefix caching needed no change: the system message is always
+  first and tools are sent in caller order.
 
 ## [3.4.4] — 2026-09-15
 

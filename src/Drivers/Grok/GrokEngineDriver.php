@@ -348,10 +348,12 @@ class GrokEngineDriver extends BaseEngineDriver
 
     protected function postJson(string $path, array $payload, array $options = []): Response
     {
-        return Http::withHeaders($this->getHeaders())
-            ->withOptions($options)
-            ->timeout((int) ($this->config['timeout'] ?? config('ai-engine.engines.xai.timeout', 60)))
-            ->post($this->baseUrl . $path, $payload);
+        return \LaravelAIEngine\Support\Http\RetryPolicy::resolve()->send(
+            fn (): Response => Http::withHeaders($this->getHeaders())
+                ->withOptions($options)
+                ->timeout((int) ($this->config['timeout'] ?? config('ai-engine.engines.xai.timeout', 60)))
+                ->post($this->baseUrl . $path, $payload)
+        );
     }
 
     protected function parseStreamingResponse(Response $response): \Generator

@@ -5,95 +5,109 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Support\OpenAI;
 
 use OpenAI\Contracts\ClientContract;
-use OpenAI\Contracts\Resources\AssistantsContract;
-use OpenAI\Contracts\Resources\AudioContract;
-use OpenAI\Contracts\Resources\BatchesContract;
-use OpenAI\Contracts\Resources\ChatContract;
-use OpenAI\Contracts\Resources\CompletionsContract;
-use OpenAI\Contracts\Resources\EditsContract;
-use OpenAI\Contracts\Resources\EmbeddingsContract;
-use OpenAI\Contracts\Resources\FilesContract;
-use OpenAI\Contracts\Resources\FineTunesContract;
-use OpenAI\Contracts\Resources\FineTuningContract;
-use OpenAI\Contracts\Resources\ImagesContract;
-use OpenAI\Contracts\Resources\ModelsContract;
-use OpenAI\Contracts\Resources\ModerationsContract;
-use OpenAI\Contracts\Resources\ThreadsContract;
-use OpenAI\Contracts\Resources\VectorStoresContract;
 
+/**
+ * Bound as the OpenAI ClientContract when no OPENAI_API_KEY is configured:
+ * resolving services never fails, using any OpenAI resource throws a clear error.
+ *
+ * Every resource method is declared with a `never` return type, which is a
+ * valid override of any contract return type. That keeps this class
+ * compatible with every supported openai-php/client release (^0.8 ... ^0.20),
+ * including resource methods that only exist in newer releases.
+ */
 class MissingOpenAIClient implements ClientContract
 {
-    public function completions(): CompletionsContract
+    public function responses(): never
     {
         $this->throwMissingKey();
     }
 
-    public function chat(): ChatContract
+    public function conversations(): never
     {
         $this->throwMissingKey();
     }
 
-    public function embeddings(): EmbeddingsContract
+    public function completions(): never
     {
         $this->throwMissingKey();
     }
 
-    public function audio(): AudioContract
+    public function chat(): never
     {
         $this->throwMissingKey();
     }
 
-    public function edits(): EditsContract
+    public function containers(): never
     {
         $this->throwMissingKey();
     }
 
-    public function files(): FilesContract
+    public function embeddings(): never
     {
         $this->throwMissingKey();
     }
 
-    public function models(): ModelsContract
+    public function audio(): never
     {
         $this->throwMissingKey();
     }
 
-    public function fineTuning(): FineTuningContract
+    public function edits(): never
     {
         $this->throwMissingKey();
     }
 
-    public function fineTunes(): FineTunesContract
+    public function files(): never
     {
         $this->throwMissingKey();
     }
 
-    public function moderations(): ModerationsContract
+    public function models(): never
     {
         $this->throwMissingKey();
     }
 
-    public function images(): ImagesContract
+    public function fineTuning(): never
     {
         $this->throwMissingKey();
     }
 
-    public function assistants(): AssistantsContract
+    public function fineTunes(): never
     {
         $this->throwMissingKey();
     }
 
-    public function threads(): ThreadsContract
+    public function moderations(): never
     {
         $this->throwMissingKey();
     }
 
-    public function batches(): BatchesContract
+    public function images(): never
     {
         $this->throwMissingKey();
     }
 
-    public function vectorStores(): VectorStoresContract
+    public function assistants(): never
+    {
+        $this->throwMissingKey();
+    }
+
+    public function realtime(): never
+    {
+        $this->throwMissingKey();
+    }
+
+    public function threads(): never
+    {
+        $this->throwMissingKey();
+    }
+
+    public function batches(): never
+    {
+        $this->throwMissingKey();
+    }
+
+    public function vectorStores(): never
     {
         $this->throwMissingKey();
     }

@@ -14,6 +14,8 @@ class NodeRouterServiceGraphPreferenceTest extends UnitTestCase
 
     public function test_route_stays_local_when_central_graph_reads_are_enabled(): void
     {
+        // Graph is off by default; this test covers the enabled central-graph path.
+        config()->set('ai-engine.graph.enabled', true);
         config()->set('ai-engine.graph.reads_prefer_central_graph', true);
 
         $resolver = $this->createMock(NodeOwnershipResolver::class);

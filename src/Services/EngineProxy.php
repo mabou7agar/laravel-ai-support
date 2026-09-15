@@ -8,6 +8,7 @@ use LaravelAIEngine\Contracts\ProviderToolInterface;
 use LaravelAIEngine\DTOs\AIRequest;
 use LaravelAIEngine\DTOs\AIResponse;
 use LaravelAIEngine\DTOs\StructuredOutputSchema;
+use LaravelAIEngine\Support\Http\RetryPolicy;
 
 class EngineProxy
 {
@@ -263,7 +264,9 @@ class EngineProxy
             } catch (\Throwable $exception) {
                 $lastException = $exception;
 
-                if (!$retryOptions['enabled'] || $attempt === $retryOptions['max_retries']) {
+                if (!$retryOptions['enabled']
+                    || $attempt === $retryOptions['max_retries']
+                    || $this->isPermanentFailure($exception)) {
                     if ($retryOptions['fallback_engine'] !== null && $retryOptions['fallback_engine'] !== '') {
                         $fallbackOptions = $options;
                         $fallbackOptions['engine'] = $retryOptions['fallback_engine'];
@@ -364,7 +367,9 @@ class EngineProxy
             } catch (\Throwable $exception) {
                 $lastException = $exception;
 
-                if (!$retryOptions['enabled'] || $attempt === $retryOptions['max_retries']) {
+                if (!$retryOptions['enabled']
+                    || $attempt === $retryOptions['max_retries']
+                    || $this->isPermanentFailure($exception)) {
                     break;
                 }
 
@@ -454,6 +459,28 @@ class EngineProxy
             default => 1000,
         };
 
-        usleep($milliseconds * 1000);
+        // Cap each wait so an opt-in retry cannot pin a request worker for long.
+        $cap = (int) config('ai-engine.http.retry.max_delay_ms', 2000);
+        if ($cap > 0) {
+            $milliseconds = min($milliseconds, $cap);
+        }
+
+        RetryPolicy::resolve()->sleep($milliseconds);
+    }
+
+    /**
+     * A provider error that retrying cannot fix (400/401/403/404/422 ...).
+     * Unknown exceptions keep the historical "retry" behaviour.
+     */
+    protected function isPermanentFailure(\Throwable $exception): bool
+    {
+        $status = null;
+        if ($exception instanceof \GuzzleHttp\Exception\RequestException && $exception->getResponse() !== null) {
+            $status = $exception->getResponse()->getStatusCode();
+        } elseif ($exception instanceof \Illuminate\Http\Client\RequestException) {
+            $status = $exception->response->status();
+        }
+
+        return $status !== null && !RetryPolicy::resolve()->shouldRetryStatus($status);
     }
 }

@@ -102,7 +102,16 @@ class InfrastructureHealthService
             ];
         }
 
-        $host = (string) config('ai-engine.vector.drivers.qdrant.host', 'http://localhost:6333');
+        $host = trim((string) config('ai-engine.vector.drivers.qdrant.host', ''));
+        if ($host === '') {
+            return [
+                'required' => false,
+                'healthy' => true,
+                'driver' => $defaultDriver,
+                'message' => 'Qdrant self-check skipped: no Qdrant host is configured.',
+            ];
+        }
+
         $endpoint = (string) config('ai-engine.infrastructure.qdrant_self_check.endpoint', '/collections');
         $timeout = (float) config('ai-engine.infrastructure.qdrant_self_check.timeout_seconds', 5);
         $apiKey = config('ai-engine.vector.drivers.qdrant.api_key');

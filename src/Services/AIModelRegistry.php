@@ -299,6 +299,27 @@ class AIModelRegistry
         // Seed predefined Claude 4 models
         $claudeModels = [
             [
+                'model_id' => 'claude-opus-5',
+                'name' => 'Claude Opus 5',
+                'description' => 'Most capable Claude Opus model for complex reasoning and agentic work',
+                'capabilities' => ['chat', 'vision', 'reasoning', 'coding', 'function_calling'],
+                'context_window' => ['input' => 1000000, 'output' => 128000],
+            ],
+            [
+                'model_id' => 'claude-sonnet-5',
+                'name' => 'Claude Sonnet 5',
+                'description' => 'Balanced Claude model for speed and intelligence',
+                'capabilities' => ['chat', 'vision', 'reasoning', 'coding', 'function_calling'],
+                'context_window' => ['input' => 1000000, 'output' => 128000],
+            ],
+            [
+                'model_id' => 'claude-haiku-4-5-20251001',
+                'name' => 'Claude Haiku 4.5',
+                'description' => 'Fastest, most affordable Claude model',
+                'capabilities' => ['chat', 'vision', 'coding', 'function_calling'],
+                'context_window' => ['input' => 200000, 'output' => 64000],
+            ],
+            [
                 'model_id' => 'claude-4.5-sonnet',
                 'name' => 'Claude 4.5 Sonnet',
                 'description' => 'Latest Claude model with best quality',

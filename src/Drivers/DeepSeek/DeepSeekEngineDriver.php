@@ -23,7 +23,7 @@ class DeepSeekEngineDriver extends BaseEngineDriver
     {
         parent::__construct($config);
 
-        $this->httpClient = new Client([
+        $this->httpClient = \LaravelAIEngine\Support\Http\RetryPolicy::resolve()->guzzleClient([
             'timeout' => $this->getTimeout(),
             'base_uri' => $this->getBaseUrl(),
             'headers' => $this->buildHeaders(),

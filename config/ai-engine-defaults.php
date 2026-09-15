@@ -501,7 +501,9 @@ return [
         ],
 
         'qdrant_self_check' => [
-            'enabled' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENABLED', true),
+            // Defaults to on only when Qdrant is actually configured (QDRANT_HOST or
+            // QDRANT_API_KEY set), so an unconfigured install never pings localhost:6333.
+            'enabled' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENABLED', env('QDRANT_HOST') !== null || env('QDRANT_API_KEY') !== null),
             'timeout_seconds' => (float) env('AI_ENGINE_QDRANT_SELF_CHECK_TIMEOUT', 5),
             'endpoint' => env('AI_ENGINE_QDRANT_SELF_CHECK_ENDPOINT', '/collections'),
         ],
@@ -793,7 +795,12 @@ return [
             // Send the system prompt as a cache_control: ephemeral block so Anthropic caches the
             // stable instruction prefix (OpenAI auto-caches its prefix; Anthropic needs this).
             'prompt_caching' => env('AI_ENGINE_ANTHROPIC_PROMPT_CACHING', true),
+            'default_model' => env('ANTHROPIC_DEFAULT_MODEL', 'claude-sonnet-5'),
+            'max_tokens' => (int) env('ANTHROPIC_MAX_TOKENS', 4096),
             'models' => [
+                'claude-opus-5' => ['enabled' => true, 'credit_index' => 4.0],
+                'claude-sonnet-5' => ['enabled' => true, 'credit_index' => 2.0],
+                'claude-haiku-4-5-20251001' => ['enabled' => true, 'credit_index' => 1.0],
                 'claude-4-sonnet' => ['enabled' => true, 'credit_index' => 4.0],
                 'claude-3-5-sonnet-20241022' => ['enabled' => true, 'credit_index' => 2.0],
                 'claude-3-5-sonnet-20240620' => ['enabled' => true, 'credit_index' => 1.8],
@@ -1329,6 +1336,41 @@ return [
             'comfyui' => ['cloudflare_workers_ai', 'huggingface', 'replicate', 'fal_ai'],
             'google_tts' => ['openai', 'eleven_labs', 'cloudflare_workers_ai', 'huggingface'],
             'openrouter' => ['openai', 'anthropic', 'gemini'], // OpenRouter as fallback for others
+        ],
+        // Model used when a request fails over to another engine. The source model
+        // (e.g. gpt-4o) is never sent to a different provider. Value: a model id, or
+        // a map of source model id => fallback model id with an optional "default".
+        // When unset (or when the content type differs from the source model), the
+        // engine's default_model / built-in default models are used instead.
+        'fallback_models' => [
+            'openai' => env('AI_ENGINE_FALLBACK_MODEL_OPENAI', 'gpt-4o-mini'),
+            'anthropic' => env('AI_ENGINE_FALLBACK_MODEL_ANTHROPIC', 'claude-sonnet-5'),
+            'gemini' => env('AI_ENGINE_FALLBACK_MODEL_GEMINI', 'gemini-2.5-flash'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Provider HTTP Retry
+    |--------------------------------------------------------------------------
+    |
+    | Shared retry policy for the chat provider drivers (OpenAI, Anthropic,
+    | Gemini, DeepSeek, OpenRouter, xAI). Only HTTP 429, retryable 5xx and
+    | connection errors are retried, with exponential backoff + jitter; a
+    | Retry-After header is honoured. Other 4xx (400/401/403/404/422) are never
+    | retried. Sleeping blocks the request worker (Octane/FPM), so each wait is
+    | capped by max_delay_ms and the whole call by max_total_delay_ms; a
+    | Retry-After above max_delay_ms returns the error immediately so engine
+    | failover can take over. max_attempts counts the first attempt.
+    |
+    */
+    'http' => [
+        'retry' => [
+            'enabled' => env('AI_ENGINE_HTTP_RETRY_ENABLED', true),
+            'max_attempts' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_ATTEMPTS', 3),
+            'base_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_BASE_DELAY_MS', 250),
+            'max_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_DELAY_MS', 2000),
+            'max_total_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_TOTAL_DELAY_MS', 4000),
         ],
     ],
 
@@ -2134,7 +2176,9 @@ return [
     |
     */
     'graph' => [
-        'enabled' => env('AI_ENGINE_GRAPH_ENABLED', true),
+        // Off by default: the graph backend (Neo4j) is optional infrastructure.
+        // Enable only when AI_ENGINE_NEO4J_* points at a running instance.
+        'enabled' => env('AI_ENGINE_GRAPH_ENABLED', false),
         'backend' => env('AI_ENGINE_GRAPH_BACKEND', 'neo4j'),
         'reads_prefer_central_graph' => env('AI_ENGINE_GRAPH_READS_PREFER_CENTRAL', true),
         // When true, graph retrieval/snapshot queries that resolve to NO user scope

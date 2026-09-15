@@ -55,9 +55,10 @@ return array_replace_recursive($defaults, [
         ],
         'anthropic' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
-            // Mark stable system prompts cache_control: ephemeral (~0.1x input
-            // price on cache reads). Safe default: sub-minimum blocks simply
-            // aren't cached.
+            'default_model' => env('ANTHROPIC_DEFAULT_MODEL', data_get($defaults, 'engines.anthropic.default_model', 'claude-sonnet-5')),
+            // Mark the system prompt and the last tool definition
+            // cache_control: ephemeral (~0.1x input price on cache reads). Safe
+            // default: sub-minimum prefixes simply aren't cached.
             'prompt_caching' => (bool) env('ANTHROPIC_PROMPT_CACHING', true),
         ],
         'bedrock' => [
@@ -149,6 +150,27 @@ return array_replace_recursive($defaults, [
                 'command' => data_get($defaults, 'engines.local_audio.tts.command', []),
                 'output_path' => env('LOCAL_AUDIO_TTS_OUTPUT_PATH', data_get($defaults, 'engines.local_audio.tts.output_path')),
             ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Provider HTTP Retry
+    |--------------------------------------------------------------------------
+    |
+    | Retries only 429 / retryable 5xx / connection errors with capped
+    | exponential backoff + jitter and Retry-After support. Never retries other
+    | 4xx. Caps keep request workers (Octane) from blocking; see
+    | AIEngineConfigDefaults for the full description.
+    |
+    */
+    'http' => [
+        'retry' => [
+            'enabled' => env('AI_ENGINE_HTTP_RETRY_ENABLED', data_get($defaults, 'http.retry.enabled', true)),
+            'max_attempts' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_ATTEMPTS', data_get($defaults, 'http.retry.max_attempts', 3)),
+            'base_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_BASE_DELAY_MS', data_get($defaults, 'http.retry.base_delay_ms', 250)),
+            'max_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_DELAY_MS', data_get($defaults, 'http.retry.max_delay_ms', 2000)),
+            'max_total_delay_ms' => (int) env('AI_ENGINE_HTTP_RETRY_MAX_TOTAL_DELAY_MS', data_get($defaults, 'http.retry.max_total_delay_ms', 4000)),
         ],
     ],
 

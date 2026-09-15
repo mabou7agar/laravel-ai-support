@@ -1132,10 +1132,12 @@ class OpenRouterEngineDriver extends BaseEngineDriver
             : (int) ($this->config['timeout'] ?? config('ai-engine.engines.openrouter.timeout', 60));
         unset($options['timeout']);
 
-        return Http::withHeaders($this->getHeaders())
-            ->withOptions($options)
-            ->timeout($timeout)
-            ->post($this->baseUrl . $path, $payload);
+        return \LaravelAIEngine\Support\Http\RetryPolicy::resolve()->send(
+            fn (): Response => Http::withHeaders($this->getHeaders())
+                ->withOptions($options)
+                ->timeout($timeout)
+                ->post($this->baseUrl . $path, $payload)
+        );
     }
 
     protected function parseStreamingResponse(Response $response, AIRequest $request): \Generator
