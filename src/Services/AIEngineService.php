@@ -190,6 +190,7 @@ class AIEngineService
     protected function generateWithFailover(AIRequest $request, string $requestId, bool $debugMode): AIResponse
     {
         $originalEngine = $request->engine;
+        $originalRequest = $request;
         $lastException = null;
         $attemptedEngines = [];
 
@@ -212,21 +213,10 @@ class AIEngineService
                         ]);
                     }
 
-                    // Create new request with failover engine
-                    $request = new AIRequest(
-                        prompt:       $request->prompt,
-                        engine:       $engine,
-                        model:        $request->model,
-                        parameters:   $request->parameters,
-                        userId:       $request->userId,
-                        systemPrompt: $request->systemPrompt,
-                        maxTokens:    $request->maxTokens,
-                        temperature:  $request->temperature,
-                        metadata:     array_merge($request->metadata, [
-                            'failover_from' => $originalEngine->value,
-                            'failover_to' => $engine->value,
-                        ])
-                    );
+                    // Rebuild the request for the failover engine: every field
+                    // (messages, functions, files, context, ...) is preserved and
+                    // the model is mapped to one the fallback provider serves.
+                    $request = $this->failoverRequest($originalRequest, $engine);
                 }
 
                 // Get the appropriate driver
@@ -387,6 +377,7 @@ class AIEngineService
         $fallbackEngines = config("ai-engine.error_handling.fallback_engines.{$originalEngine->value}", []);
         $enginesToTry = array_merge([$originalEngine->value], $this->usableFallbackEngines((array) $fallbackEngines));
         $lastException = null;
+        $originalRequest = $request;
 
         foreach ($enginesToTry as $engineName) {
             try {
@@ -394,20 +385,7 @@ class AIEngineService
 
                 // Update request with new engine if different from original
                 if ($engine !== $originalEngine) {
-                    $request = new AIRequest(
-                        prompt: $request->prompt,
-                        engine: $engine,
-                        model: $request->model,
-                        systemPrompt: $request->systemPrompt,
-                        temperature: $request->temperature,
-                        maxTokens: $request->maxTokens,
-                        userId: $request->userId,
-                        parameters: $request->parameters,
-                        metadata: array_merge($request->metadata, [
-                            'failover_from' => $originalEngine->value,
-                            'failover_to' => $engine->value,
-                        ])
-                    );
+                    $request = $this->failoverRequest($originalRequest, $engine);
                 }
 
                 // Get the appropriate driver
@@ -520,6 +498,100 @@ class AIEngineService
      * error that masks the real upstream failure. Engines with no api_key concept (local
      * models) and engines whose config we cannot introspect are treated as available.
      */
+    /**
+     * Build the request sent to a failover engine.
+     *
+     * Every request field (messages, functions, files, context, seed, stream
+     * flag, conversation id, ...) is carried over; only the engine and model
+     * change. The source model is mapped to one the fallback provider actually
+     * serves — sending e.g. "gpt-4o" to Anthropic would fail every failover.
+     */
+    protected function failoverRequest(AIRequest $originalRequest, EngineEnum $engine): AIRequest
+    {
+        $originalEngine = $originalRequest->getEngine();
+        $model = $this->resolveFallbackModel($engine, $originalRequest->getModel());
+
+        return $originalRequest
+            ->withEngineAndModel($engine, $model)
+            ->withMetadata([
+                'failover_from' => $originalEngine->value,
+                'failover_to' => $engine->value,
+                'failover_from_model' => $originalRequest->getModel()->value,
+                'failover_to_model' => $model->value,
+            ]);
+    }
+
+    /**
+     * Resolve the model to use on a failover engine.
+     *
+     * Candidates, first match wins (each must have the same content type as the
+     * source model, so an image request never falls back to a chat model):
+     *  1. ai-engine.error_handling.fallback_models.<engine> — a model id, or a
+     *     map of source model id => fallback model id with an optional "default"
+     *  2. ai-engine.engines.<engine>.default_model / .model
+     *  3. ai-engine.default_model when <engine> is the package default engine
+     *  4. the engine's built-in default models (EngineEnum::getDefaultModels)
+     *  5. the first enabled model listed under ai-engine.engines.<engine>.models
+     * Falls back to the source model when nothing matches.
+     */
+    protected function resolveFallbackModel(EngineEnum $engine, EntityEnum $sourceModel): EntityEnum
+    {
+        $engineName = $engine->value;
+        $candidates = [];
+
+        $mapped = config("ai-engine.error_handling.fallback_models.{$engineName}");
+        if (is_string($mapped)) {
+            $candidates[] = $mapped;
+        } elseif (is_array($mapped)) {
+            $candidates[] = $mapped[$sourceModel->value] ?? null;
+            $candidates[] = $mapped['default'] ?? null;
+        }
+
+        $candidates[] = config("ai-engine.engines.{$engineName}.default_model");
+        $candidates[] = config("ai-engine.engines.{$engineName}.model");
+
+        if (config('ai-engine.default') === $engineName) {
+            $candidates[] = config('ai-engine.default_model');
+        }
+
+        foreach ($engine->getDefaultModels() as $key => $value) {
+            $candidates[] = $value instanceof EntityEnum ? $value->value : (is_string($key) ? $key : $value);
+        }
+
+        $configuredModels = config("ai-engine.engines.{$engineName}.models", []);
+        if (is_array($configuredModels)) {
+            foreach ($configuredModels as $id => $definition) {
+                if (is_string($id) && (!is_array($definition) || ($definition['enabled'] ?? true))) {
+                    $candidates[] = $id;
+                }
+            }
+        }
+
+        $contentType = $this->safeContentType($sourceModel);
+
+        foreach ($candidates as $candidate) {
+            if (!is_string($candidate) || trim($candidate) === '') {
+                continue;
+            }
+
+            $model = EntityEnum::tryFrom(trim($candidate));
+            if ($model !== null && $this->safeContentType($model) === $contentType) {
+                return $model;
+            }
+        }
+
+        return $sourceModel;
+    }
+
+    private function safeContentType(EntityEnum $model): string
+    {
+        try {
+            return $model->getContentType();
+        } catch (\Throwable) {
+            return 'text';
+        }
+    }
+
     protected function fallbackEngineIsConfigured(string $engineName): bool
     {
         $config = config("ai-engine.engines.{$engineName}");

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Failover sends a model the fallback provider serves.** `AIEngineService::generate()` and
+  `stream()` used to rebuild the failover request with the original model (`gpt-4o` sent to
+  Anthropic) and silently dropped `messages`, `functions`/`function_call`, `files`, `context`,
+  `seed` and `conversationId`. The failover request now keeps every field and maps the model
+  via the new `ai-engine.error_handling.fallback_models.<engine>` (a model id, or a
+  source-model => fallback map with `default`), then the engine's `default_model`, then its
+  built-in default models — always matching the source model's content type.
+
 ## [3.4.4] — 2026-09-15
 
 ### Fixed

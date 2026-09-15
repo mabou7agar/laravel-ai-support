@@ -1330,6 +1330,16 @@ return [
             'google_tts' => ['openai', 'eleven_labs', 'cloudflare_workers_ai', 'huggingface'],
             'openrouter' => ['openai', 'anthropic', 'gemini'], // OpenRouter as fallback for others
         ],
+        // Model used when a request fails over to another engine. The source model
+        // (e.g. gpt-4o) is never sent to a different provider. Value: a model id, or
+        // a map of source model id => fallback model id with an optional "default".
+        // When unset (or when the content type differs from the source model), the
+        // engine's default_model / built-in default models are used instead.
+        'fallback_models' => [
+            'openai' => env('AI_ENGINE_FALLBACK_MODEL_OPENAI', 'gpt-4o-mini'),
+            'anthropic' => env('AI_ENGINE_FALLBACK_MODEL_ANTHROPIC', 'claude-sonnet-5'),
+            'gemini' => env('AI_ENGINE_FALLBACK_MODEL_GEMINI', 'gemini-2.5-flash'),
+        ],
     ],
 
     /*
