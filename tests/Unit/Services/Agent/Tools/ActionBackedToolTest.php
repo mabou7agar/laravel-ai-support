@@ -96,6 +96,42 @@ class ActionBackedToolTest extends UnitTestCase
         $this->assertArrayNotHasKey('line_items', $result->data);
     }
 
+    public function test_a_single_line_given_as_flat_arguments_becomes_one_list_row(): void
+    {
+        $registry = new ActionRegistry();
+        $registry->register([
+            'id' => 'orders.create',
+            'label' => 'Create order',
+            'description' => 'Create an order.',
+            'operation' => 'create',
+            'required' => [],
+            'confirmation_required' => false,
+            'parameters' => [
+                'customer_name' => ['type' => 'string'],
+                'notes' => ['type' => 'string'],
+                'items.*.product_name' => ['type' => 'string', 'required' => true],
+                'items.*.quantity' => ['type' => 'number'],
+                'items.*.unit_price' => ['type' => 'number'],
+            ],
+            'argument_aliases' => [
+                'customer' => 'customer_name',
+                'items.*.product' => 'items.*.product_name',
+                'items.*.price' => 'items.*.unit_price',
+            ],
+            'handler' => fn (array $payload): ActionResult => ActionResult::success('Created order.', $payload),
+        ]);
+        $tool = new CreateOrderActionTool(new ActionOrchestrator($registry));
+
+        $flat = $tool->execute(['customer' => 'Acme', 'notes' => 'rush', 'product' => 'Paper', 'quantity' => 10, 'price' => 25], new UnifiedActionContext('flat-row', 5));
+        $this->assertEquals([['product_name' => 'Paper', 'quantity' => 10, 'unit_price' => 25]], $flat->data['items']);
+        $this->assertSame('rush', $flat->data['notes'], 'Top-level parameters are never folded into the row.');
+        $this->assertArrayNotHasKey('product', $flat->data);
+
+        // An explicit list wins; stray flat fields are left alone.
+        $listed = $tool->execute(['items' => [['product_name' => 'Pens', 'quantity' => 2]], 'quantity' => 99], new UnifiedActionContext('flat-row-list', 5));
+        $this->assertSame([['product_name' => 'Pens', 'quantity' => 2]], $listed->data['items']);
+    }
+
     private function orchestrator(): ActionOrchestrator
     {
         $registry = new ActionRegistry();

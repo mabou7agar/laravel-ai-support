@@ -285,6 +285,37 @@ class ConfirmationsRuntimeFlowTest extends UnitTestCase
         );
     }
 
+    public function test_a_new_skill_request_cancels_the_write_awaiting_approval(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 1);
+
+        $toolLog = [];
+        $runtime = $this->runtime([
+            [
+                'action' => 'tool_call',
+                'tool' => 'create_customer',
+                'arguments' => ['name' => 'Ahmed', 'email' => 'ahmed@example.com'],
+                'message' => 'Create Ahmed?',
+            ],
+            [
+                'action' => 'ask_user',
+                'message' => 'Which products go on the invoice for Mona?',
+            ],
+        ], $toolLog);
+
+        $context = new UnifiedActionContext('confirm-runtime-new-request', 77);
+
+        $first = $runtime->process('Create customer Ahmed', $context);
+        $this->assertSame('create_customer', $first->data['pending_tool']['name']);
+
+        // No change term ("change", "add", ...) and not an approval: a different request.
+        $runtime->process('create invoice for Mona', $context);
+
+        $this->assertNull($context->metadata['ai_native']['pending_tool'] ?? null, 'A later "yes" must not run the abandoned write.');
+        $this->assertArrayNotHasKey('create_customer', $toolLog);
+        $this->assertSame('pending_confirmation_changed_by_user', $context->metadata['ai_native']['runtime_feedback'][0]['reason'] ?? null);
+    }
+
     /**
      * Branches intentionally omitted from this file because they cannot be reached
      * non-brittly through the real two-turn handlePendingTool flow:

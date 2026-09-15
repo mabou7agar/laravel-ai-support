@@ -44,7 +44,10 @@ class AiNativePendingConfirmationHandler
             return null;
         }
 
-        $changesPendingTool = $this->messageChangesPendingTool($normalized);
+        // A fresh request ("create a purchase invoice ...") abandons the write awaiting
+        // approval; leaving it pending would let the next "yes" run the old one.
+        $changesPendingTool = $this->messageChangesPendingTool($normalized)
+            || (!$this->isPendingToolApproval($normalized) && $this->skillPolicy->startsSkillTask($message));
         if ($this->signals->isNegative($normalized)) {
             $this->taskState->clearPendingConfirmation($state);
             if ($changesPendingTool) {

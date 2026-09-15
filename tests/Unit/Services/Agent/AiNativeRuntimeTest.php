@@ -2245,6 +2245,77 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertFalse($executed);
     }
 
+    public function test_ask_user_confirmation_inside_a_skill_never_stages_an_unrelated_tool(): void
+    {
+        $registry = new ToolRegistry();
+        $staged = [];
+        foreach (['create_invoice' => ['items' => ['type' => 'array', 'required' => true]], 'create_automation' => ['name' => ['type' => 'string', 'required' => true]]] as $toolName => $parameters) {
+            $registry->register($toolName, new class($toolName, $parameters, $staged) extends AgentTool {
+                public function __construct(private string $toolName, private array $parameters, private array &$staged) {}
+
+                public function getName(): string
+                {
+                    return $this->toolName;
+                }
+
+                public function getDescription(): string
+                {
+                    return $this->toolName;
+                }
+
+                public function getParameters(): array
+                {
+                    return $this->parameters + ['confirmed' => ['type' => 'boolean', 'required' => false]];
+                }
+
+                public function requiresConfirmation(): bool
+                {
+                    return true;
+                }
+
+                public function execute(array $parameters, UnifiedActionContext $context): ActionResult
+                {
+                    $this->staged[] = $this->toolName;
+
+                    return ActionResult::success('ok');
+                }
+            });
+        }
+
+        $skills = Mockery::mock(AgentSkillRegistry::class);
+        $skills->shouldReceive('skills')->andReturn([
+            new AgentSkillDefinition(id: 'invoice_create', name: 'Create Invoice', description: 'Create invoices.', triggers: ['create invoice'], tools: ['create_invoice'], metadata: ['final_tool' => 'create_invoice']),
+        ]);
+
+        $stateStore = new AiNativeStateStore();
+        $taskState = new AgentTaskStateService(new ToolOutcomeNormalizer());
+        $handler = new AiNativeAskUserConfirmationHandler(
+            $registry,
+            $skills,
+            new AiNativeSkillPolicy($skills, $registry, app(IntentSignalService::class)),
+            $taskState,
+            $stateStore,
+            new AiNativeConfirmationPreviewService(),
+            new AiNativeResponseFactory($stateStore, $registry, new AiNativeConfirmationPresenter()),
+            new AiNativeToolExecutor($taskState, $stateStore)
+        );
+
+        // A flat payload the invoice tool cannot take as-is; customer_name loosely fits create_automation's name.
+        $state = ['task_frame' => ['active_objective' => 'invoice_create', 'current_payload' => ['customer_name' => 'Acme', 'product_name' => 'Paper', 'quantity' => 3]]];
+        $outcome = $handler->handle(new UnifiedActionContext('ask-user-skill-scope', 77), $state, [], [
+            'action' => 'ask_user',
+            'message' => 'Please confirm: should I create this invoice for Acme?',
+            'required_inputs' => [],
+        ]);
+
+        $this->assertNotNull($outcome);
+        $this->assertNull($outcome->response, 'No confirmation may be staged for a tool outside the skill.');
+        $this->assertTrue($outcome->continueLoop);
+        $this->assertArrayNotHasKey('pending_tool', $state);
+        $this->assertSame('write_confirmation_requires_tool_call', $state['runtime_feedback'][0]['reason']);
+        $this->assertSame([], $staged);
+    }
+
     public function test_ask_user_confirmation_handler_uses_configured_payload_aliases(): void
     {
         config()->set('ai-agent.ai_native.payload_aliases.label_fields', ['display']);

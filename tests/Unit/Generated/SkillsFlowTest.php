@@ -1036,6 +1036,29 @@ class SkillsFlowTest extends UnitTestCase
         $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $satisfied, $options, []));
     }
 
+    public function test_asking_only_for_optional_final_tool_fields_calls_the_tool_instead(): void
+    {
+        $policy = $this->skillPolicy(
+            $this->skillRegistry([$this->createInvoiceSkill()]),
+            $this->toolRegistryWithInvoiceTools()
+        );
+
+        $options = ['skill_id' => 'create_invoice', 'runtime_scope' => 'skill'];
+        $state = ['task_frame' => ['current_payload' => ['items' => [['product_id' => 1]]]]];
+
+        // customer_id is an optional create_invoice parameter: not a reason to stop and ask.
+        $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['customer_id']]));
+        $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => [['name' => 'customer_id']]]));
+
+        // A required parameter, or a field the tool does not know, is a genuine question.
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['items']]));
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['customer_id', 'currency']]));
+
+        // Pushed back once already this turn: let the question through rather than loop.
+        $pushedBack = $state + ['runtime_feedback' => [['reason' => 'final_tool_required_before_confirmation_question']]];
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $pushedBack, $options, ['required_inputs' => ['customer_id']]));
+    }
+
     // =====================================================================
     // Scenario: AgentSkill DTO building fallbacks
     // =====================================================================

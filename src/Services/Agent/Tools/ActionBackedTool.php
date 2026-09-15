@@ -169,10 +169,8 @@ abstract class ActionBackedTool extends AgentTool
      */
     protected function normalizeArguments(array $parameters): array
     {
-        $aliases = (array) ($this->action()['argument_aliases'] ?? []);
-        if ($aliases === []) {
-            return $parameters;
-        }
+        $action = $this->action();
+        $aliases = (array) ($action['argument_aliases'] ?? []);
 
         $nested = [];
         foreach ($aliases as $from => $to) {
@@ -190,6 +188,8 @@ abstract class ActionBackedTool extends AgentTool
                 unset($parameters[$from]);
             }
         }
+
+        $parameters = $this->foldFlatListRow($parameters, (array) ($action['parameters'] ?? []), $nested);
 
         foreach ($nested as $list => $fields) {
             if (!is_array($parameters[$list] ?? null)) {
@@ -210,6 +210,56 @@ abstract class ActionBackedTool extends AgentTool
 
                 return $row;
             }, $rows);
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * Planners describing a single line often skip the list: {"product": "Paper", "quantity": 10,
+     * "price": 25} instead of {"items": [{...}]}. When the list is absent, move top-level keys that
+     * are only known as fields of that list (or their aliases) into one row.
+     *
+     * @param array<string, mixed>                $parameters
+     * @param array<string, mixed>                $definitions action parameters ("items.*.quantity")
+     * @param array<string, array<string, string>> $nestedAliases list => [alias field => field]
+     * @return array<string, mixed>
+     */
+    protected function foldFlatListRow(array $parameters, array $definitions, array $nestedAliases): array
+    {
+        $topLevel = [];
+        $listFields = [];
+        foreach (array_keys($definitions) as $name) {
+            $name = (string) $name;
+            if (str_contains($name, '.*.')) {
+                [$list, $field] = explode('.*.', $name, 2);
+                $listFields[$list][] = $field;
+            } else {
+                $topLevel[] = $name;
+            }
+        }
+        foreach ($nestedAliases as $list => $fields) {
+            foreach ($fields as $alias => $field) {
+                $listFields[$list][] = (string) $alias;
+            }
+        }
+
+        foreach ($listFields as $list => $fields) {
+            if (array_key_exists($list, $parameters) && $parameters[$list] !== null && $parameters[$list] !== [] && $parameters[$list] !== '') {
+                continue;
+            }
+
+            $row = [];
+            foreach (array_unique($fields) as $field) {
+                if (!in_array($field, $topLevel, true) && array_key_exists($field, $parameters)) {
+                    $row[$field] = $parameters[$field];
+                    unset($parameters[$field]);
+                }
+            }
+
+            if ($row !== []) {
+                $parameters[$list] = [$row];
+            }
         }
 
         return $parameters;
