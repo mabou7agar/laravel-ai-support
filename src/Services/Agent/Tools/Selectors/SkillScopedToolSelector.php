@@ -49,6 +49,19 @@ class SkillScopedToolSelector implements ToolSelectorContract
             static fn ($tool): bool => isset($allowed[$tool->getName()])
         );
 
+        // The scope comes from an open task, but this message is not about that task's skill
+        // ("find customer CUST-0001" while an invoice draft is open). Keep the task's tools so
+        // it can be resumed, and add the few tools the message is about (plus find_tools), so
+        // the question can be answered instead of being pulled back into the draft.
+        if ($selected !== [] && $this->scopeIsFromTaskOnly($skillId, $message, $options)) {
+            $extra = (int) ($options['tool_selection']['off_skill_relevant_limit']
+                ?? config('ai-agent.ai_native.tool_selection.off_skill_relevant_limit', 8));
+            $relevant = $extra > 0 ? $this->relevantTools($tools, $message, $extra, array_keys($selected)) : [];
+            if ($relevant !== []) {
+                $selected += $relevant + $this->findToolsEntry($options);
+            }
+        }
+
         // Guard against an over-aggressive scope: if the filter somehow removed everything,
         // fall back to the full set rather than handing the planner no tools.
         return $selected !== [] ? $selected : $this->boundedUnscoped($tools, $message, $options);
@@ -134,14 +147,85 @@ class SkillScopedToolSelector implements ToolSelectorContract
 
     private function activeSkillId(string $message, array $state, array $options): ?string
     {
+        $matched = $this->matcher->matchedSkillId($message, $options);
+        $matched = is_string($matched) && $matched !== '' ? $matched : null;
+
         $active = trim((string) $this->matcher->selectedSkillIdForActiveTask($state, $options));
         if ($active !== '') {
-            return $active;
+            // A message that clearly belongs to another skill scopes to that skill.
+            return $matched ?? $active;
         }
 
-        $matched = $this->matcher->matchedSkillId($message, $options);
+        return $matched;
+    }
 
-        return is_string($matched) && $matched !== '' ? $matched : null;
+    /**
+     * True when the skill scope was inherited from the open task and the message itself
+     * matches no skill (an explicitly selected skill always owns the turn).
+     *
+     * @param array<string, mixed> $options
+     */
+    private function scopeIsFromTaskOnly(string $skillId, string $message, array $options): bool
+    {
+        if (trim((string) ($options['skill_id'] ?? '')) !== '') {
+            return false;
+        }
+
+        return $this->matcher->matchedSkillId($message, $options) === null;
+    }
+
+    /**
+     * Up to $limit tools whose name/description share keywords with the message, best first.
+     *
+     * @param array<string, mixed> $tools
+     * @param array<int, string>   $exclude
+     * @return array<string, mixed>
+     */
+    private function relevantTools(array $tools, string $message, int $limit, array $exclude = []): array
+    {
+        $terms = $this->keywordTerms($message);
+        if ($terms === []) {
+            return [];
+        }
+
+        $excluded = array_flip($exclude);
+        $scores = [];
+        foreach ($tools as $name => $tool) {
+            if (isset($excluded[$name])) {
+                continue;
+            }
+            $description = method_exists($tool, 'getDescription') ? (string) $tool->getDescription() : '';
+            $score = $this->keywordScore((string) $name, $description, $terms);
+            if ($score > 0) {
+                $scores[$name] = $score;
+            }
+        }
+
+        $keys = array_flip(array_keys($tools));
+        uksort($scores, static fn ($a, $b): int => [$scores[$b], $keys[$a]] <=> [$scores[$a], $keys[$b]]);
+
+        $picked = [];
+        foreach (array_slice(array_keys($scores), 0, $limit) as $name) {
+            $picked[$name] = $tools[$name];
+        }
+
+        return $picked;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function findToolsEntry(array $options): array
+    {
+        $enabled = $options['tool_selection']['find_tools_enabled']
+            ?? config('ai-agent.ai_native.tool_selection.find_tools_enabled', true);
+        $registry = $this->registry ?? (function_exists('app') && app()->bound(ToolRegistry::class) ? app(ToolRegistry::class) : null);
+        $closedRoster = array_key_exists('exposed_tools', (array) ($options['tool_selection'] ?? []));
+
+        return (bool) $enabled && !$closedRoster && $registry instanceof ToolRegistry && $registry->has('find_tools')
+            ? ['find_tools' => $registry->get('find_tools')]
+            : [];
     }
 
     /**

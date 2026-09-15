@@ -87,6 +87,40 @@ class SkillScopedToolSelectorTest extends UnitTestCase
         $this->assertNotContains('unrelated_tool', $selected);
     }
 
+    public function test_an_open_task_does_not_hide_the_tools_an_unrelated_message_needs(): void
+    {
+        config()->set('ai-agent.ai_native.tool_selection.always', ['data_query']);
+
+        $registry = Mockery::mock(AgentSkillRegistry::class);
+        $registry->shouldReceive('skills')->andReturn([
+            $this->skill('invoice', ['create_invoice']),
+            $this->skill('leads', ['create_lead']),
+        ]);
+        $tools = $this->tools(['create_invoice', 'create_lead', 'show_customer', 'send_email', 'data_query']);
+
+        $matcher = Mockery::mock(AiNativeSkillMatcher::class);
+        $matcher->shouldReceive('selectedSkillIdForActiveTask')->andReturn('invoice');
+        $matcher->shouldReceive('matchedSkillId')->with('find customer CUST-0001', [])->andReturn(null);
+        $matcher->shouldReceive('matchedSkillId')->with('Acme', [])->andReturn(null);
+        $matcher->shouldReceive('matchedSkillId')->with('add a lead', [])->andReturn('leads');
+        $selector = new SkillScopedToolSelector($registry, $matcher);
+
+        // Off-topic question with an invoice draft open: the task's tools stay, the customer tool is added.
+        $selected = array_keys($selector->select($tools, 'find customer CUST-0001', [], []));
+        sort($selected);
+        $this->assertSame(['create_invoice', 'data_query', 'find_tools', 'show_customer'], $selected);
+
+        // A plain reply to the task stays scoped to it.
+        $selected = array_keys($selector->select($tools, 'Acme', [], []));
+        sort($selected);
+        $this->assertSame(['create_invoice', 'data_query'], $selected);
+
+        // A message for another skill scopes to that skill.
+        $selected = array_keys($selector->select($tools, 'add a lead', [], []));
+        sort($selected);
+        $this->assertSame(['create_lead', 'data_query'], $selected);
+    }
+
     public function test_returns_all_tools_when_no_skill_is_active(): void
     {
         $matcher = Mockery::mock(AiNativeSkillMatcher::class);
