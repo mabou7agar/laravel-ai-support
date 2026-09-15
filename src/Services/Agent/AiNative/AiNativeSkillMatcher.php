@@ -22,14 +22,21 @@ class AiNativeSkillMatcher
             return $selectedSkill;
         }
 
+        // Pick the skill with the most specific (longest) matching trigger; registration
+        // order only breaks ties. First-match let a broad module skill that merely mentions
+        // "sales invoice" shadow a dedicated "create sales invoice" skill.
         $normalized = mb_strtolower($message);
+        $bestId = null;
+        $bestLength = 0;
         foreach ($this->skills->skills() as $skill) {
-            if ($this->skillMatchesMessage($skill, $normalized)) {
-                return $skill->id;
+            $length = $this->longestMatchingTriggerLength($skill, $normalized);
+            if ($length > $bestLength) {
+                $bestId = $skill->id;
+                $bestLength = $length;
             }
         }
 
-        return null;
+        return $bestId;
     }
 
     /**
@@ -78,7 +85,13 @@ class AiNativeSkillMatcher
 
     public function skillMatchesMessage(mixed $skill, string $normalized): bool
     {
+        return $this->longestMatchingTriggerLength($skill, $normalized) > 0;
+    }
+
+    private function longestMatchingTriggerLength(mixed $skill, string $normalized): int
+    {
         $normalizedWithoutStopwords = $this->withoutCommonStopwords($normalized);
+        $longest = 0;
 
         foreach ($skill->triggers as $trigger) {
             $trigger = mb_strtolower(trim((string) $trigger));
@@ -86,12 +99,13 @@ class AiNativeSkillMatcher
                 continue;
             }
 
-            if (str_contains($normalized, $trigger) || str_contains($normalizedWithoutStopwords, $this->withoutCommonStopwords($trigger))) {
-                return true;
+            $withoutStopwords = $this->withoutCommonStopwords($trigger);
+            if (str_contains($normalized, $trigger) || ($withoutStopwords !== '' && str_contains($normalizedWithoutStopwords, $withoutStopwords))) {
+                $longest = max($longest, mb_strlen($withoutStopwords !== '' ? $withoutStopwords : $trigger));
             }
         }
 
-        return false;
+        return $longest;
     }
 
     private function withoutCommonStopwords(string $value): string

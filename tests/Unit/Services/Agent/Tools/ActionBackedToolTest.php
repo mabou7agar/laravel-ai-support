@@ -55,6 +55,47 @@ class ActionBackedToolTest extends UnitTestCase
         $this->assertSame(9, $executed->data['id']);
     }
 
+    public function test_flattened_list_parameters_become_an_array_schema_and_aliases_are_normalized(): void
+    {
+        $registry = new ActionRegistry();
+        $registry->register([
+            'id' => 'orders.create',
+            'label' => 'Create order',
+            'description' => 'Create an order.',
+            'operation' => 'create',
+            'required' => [],
+            'confirmation_required' => false,
+            'parameters' => [
+                'customer_name' => ['type' => 'string', 'required' => true],
+                'items.*.product_name' => ['type' => 'string', 'required' => true],
+                'items.*.quantity' => ['type' => 'number'],
+            ],
+            'argument_aliases' => [
+                'customer' => 'customer_name',
+                'line_items' => 'items',
+                'items.*.description' => 'items.*.product_name',
+                'items.*.qty' => 'items.*.quantity',
+            ],
+            'handler' => fn (array $payload): ActionResult => ActionResult::success('Created order.', $payload),
+        ]);
+        $tool = new CreateOrderActionTool(new ActionOrchestrator($registry));
+
+        $parameters = $tool->getParameters();
+        $this->assertArrayNotHasKey('items.*.product_name', $parameters);
+        $this->assertSame('array', $parameters['items']['type']);
+        $this->assertSame(['type' => 'string'], $parameters['items']['items']['properties']['product_name']);
+        $this->assertSame(['product_name'], $parameters['items']['items']['required']);
+
+        $arguments = ['customer' => 'Acme', 'line_items' => [['description' => 'Paper', 'qty' => 10]]];
+        $this->assertSame([], $tool->validate($arguments));
+
+        $result = $tool->execute($arguments, new UnifiedActionContext('action-aliases', 5));
+        $this->assertTrue($result->success);
+        $this->assertSame('Acme', $result->data['customer_name']);
+        $this->assertSame([['product_name' => 'Paper', 'quantity' => 10]], $result->data['items']);
+        $this->assertArrayNotHasKey('line_items', $result->data);
+    }
+
     private function orchestrator(): ActionOrchestrator
     {
         $registry = new ActionRegistry();
@@ -99,4 +140,9 @@ class CreateNoteActionTool extends ActionBackedTool
 class DeleteNoteActionTool extends ActionBackedTool
 {
     public string $actionId = 'notes.delete';
+}
+
+class CreateOrderActionTool extends ActionBackedTool
+{
+    public string $actionId = 'orders.create';
 }

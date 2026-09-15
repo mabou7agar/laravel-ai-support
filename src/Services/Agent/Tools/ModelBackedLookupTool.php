@@ -100,6 +100,15 @@ abstract class ModelBackedLookupTool extends AgentTool
         ];
     }
 
+    public function validate(array $parameters): array
+    {
+        // execute() searches with query, name, email, title or any search column; planners
+        // often send {"name": "..."} instead of {"query": "..."}, which is equally valid.
+        $keys = array_values(array_unique(array_merge(['query', 'name', 'email', 'title'], $this->searchColumns())));
+
+        return $this->queryText($parameters, $keys) !== '' ? [] : parent::validate($parameters);
+    }
+
     /**
      * @return array<string, string>
      */

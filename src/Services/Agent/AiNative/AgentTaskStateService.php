@@ -67,12 +67,24 @@ class AgentTaskStateService
         $frame['recent_outcomes'] = array_slice((array) ($frame['recent_outcomes'] ?? []), -8);
         $frame['recent_outcomes'][] = $outcome;
 
+        $objectiveCompleted = false;
         if ($writeTool && $result->success && !$result->requiresUserInput()) {
             $toolObjective = $this->objectiveFromTool($toolName);
             $activeObjective = trim((string) ($frame['active_objective'] ?? ''));
-            $frame['status'] = $activeObjective === '' || $activeObjective === $toolName || $activeObjective === $toolObjective
-                ? 'completed'
-                : 'working';
+            $objectiveCompleted = $activeObjective === ''
+                || $activeObjective === $toolName
+                || $activeObjective === $toolObjective
+                || $this->sameObjective($activeObjective, $toolName);
+            $frame['status'] = $objectiveCompleted ? 'completed' : 'working';
+            if ($objectiveCompleted) {
+                // The draft has been written. Keeping it as the working payload would merge
+                // it into the user's NEXT request for the same kind of record (e.g. a second
+                // invoice inheriting the first one's customer and type).
+                unset($frame['current_payload'], $frame['current_payload_source']);
+                // Only when the task itself is done: a supporting write mid-task (e.g. creating
+                // a missing product) must keep the lookups the task still relies on.
+                $this->dropReadsOlderThanWrite($state, $frame, $toolName);
+            }
             $frame['pending_tool'] = null;
             $frame['completed_writes'][] = [
                 'tool' => $toolName,
@@ -88,6 +100,10 @@ class AgentTaskStateService
         }
 
         $state['task_frame'] = $frame;
+
+        if ($objectiveCompleted) {
+            return;
+        }
 
         $payload = $this->payloadFromResult($result);
         if ($payload === []) {
@@ -163,6 +179,71 @@ class AgentTaskStateService
         $frame = $state['task_frame'] ?? [];
 
         return is_array($frame) ? $frame : [];
+    }
+
+    /**
+     * Computed reads recorded before the task's write (counts, lists, aggregates such as
+     * "3 sales invoices") describe the data as it was. Keeping them lets the planner answer
+     * the next question from that stale result instead of reading again. Writes and entity
+     * lookups (a resolved customer id) stay valid and remain as tool evidence.
+     *
+     * @param array<string, mixed> $state
+     * @param array<string, mixed> $frame
+     */
+    private function dropReadsOlderThanWrite(array &$state, array &$frame, string $writeTool): void
+    {
+        $writes = array_flip(array_merge(
+            [$writeTool],
+            array_map(static fn (mixed $write): string => (string) (is_array($write) ? ($write['tool'] ?? '') : ''), (array) ($frame['completed_writes'] ?? []))
+        ));
+        $keepOutcome = static fn (mixed $outcome): bool => is_array($outcome)
+            && (isset($writes[(string) ($outcome['tool'] ?? '')]) || ($outcome['entity_id'] ?? null) !== null);
+
+        $outcomes = (array) ($state['recent_outcomes'] ?? []);
+        $entityTools = [];
+        foreach (array_merge($outcomes, (array) ($frame['recent_outcomes'] ?? [])) as $outcome) {
+            if ($keepOutcome($outcome)) {
+                $entityTools[(string) ($outcome['tool'] ?? '')] = true;
+            }
+        }
+
+        if (isset($state['outcomes_at_turn_start'])) {
+            // Keep the in-turn marker pointing at the same boundary after pruning.
+            $beforeTurn = array_slice($outcomes, 0, (int) $state['outcomes_at_turn_start']);
+            $state['outcomes_at_turn_start'] = count(array_filter($beforeTurn, $keepOutcome));
+        }
+        $state['recent_outcomes'] = array_values(array_filter($outcomes, $keepOutcome));
+        $frame['recent_outcomes'] = array_values(array_filter((array) ($frame['recent_outcomes'] ?? []), $keepOutcome));
+
+        if (isset($state['tool_results']) && is_array($state['tool_results'])) {
+            $state['tool_results'] = array_values(array_filter(
+                $state['tool_results'],
+                static fn (mixed $entry): bool => is_array($entry) && isset($entityTools[(string) ($entry['tool'] ?? '')])
+            ));
+        }
+    }
+
+    /**
+     * Whether an objective label (often a skill id such as "invoice_create" or "invoices")
+     * names the same entity as a tool ("create_invoice"), ignoring verbs and plurals.
+     */
+    private function sameObjective(string $objective, string $toolName): bool
+    {
+        $entity = static function (string $value): array {
+            $verbs = ['find', 'lookup', 'search', 'create', 'update', 'delete', 'remove', 'send', 'generate', 'new', 'add', 'make', 'issue'];
+            $tokens = array_values(array_filter(
+                explode('_', Str::snake($value)),
+                static fn (string $token): bool => $token !== '' && !in_array($token, $verbs, true)
+            ));
+            $tokens = array_map(static fn (string $token): string => Str::singular($token), $tokens);
+            sort($tokens);
+
+            return $tokens;
+        };
+
+        $objectiveEntity = $entity($objective);
+
+        return $objectiveEntity !== [] && $objectiveEntity === $entity($toolName);
     }
 
     private function objectiveFromTool(string $toolName): string
