@@ -66,4 +66,52 @@ trait SelectsBoundedTools
 
         return $selected;
     }
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function keywordStopWords(): array
+    {
+        return [
+            'the', 'and', 'for', 'with', 'this', 'that', 'you', 'your', 'are', 'was', 'will',
+            'can', 'please', 'want', 'need', 'about', 'from', 'into', 'have', 'has', 'create',
+            'make', 'show', 'get', 'list', 'find', 'add', 'new',
+        ];
+    }
+
+    /**
+     * @param array<int, string> $terms
+     */
+    protected function keywordScore(string $name, string $description, array $terms): int
+    {
+        $nameHay = ' ' . str_replace('_', ' ', mb_strtolower($name)) . ' ';
+        $descHay = mb_strtolower($description);
+
+        $score = 0;
+        foreach ($terms as $term) {
+            // A hit in the tool name is the strongest signal.
+            if (str_contains($nameHay, ' ' . $term . ' ')) {
+                $score += 3;
+            } elseif (str_contains($nameHay, $term)) {
+                $score += 2;
+            } elseif (str_contains($descHay, $term)) {
+                $score += 1;
+            }
+        }
+
+        return $score;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function keywordTerms(string $message): array
+    {
+        $tokens = preg_split('/[^a-z0-9]+/i', mb_strtolower($message)) ?: [];
+
+        return array_values(array_unique(array_filter(
+            $tokens,
+            static fn (string $t): bool => strlen($t) >= 3 && !in_array($t, self::keywordStopWords(), true)
+        )));
+    }
 }

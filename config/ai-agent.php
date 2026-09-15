@@ -218,6 +218,13 @@ return [
         // entry's 'display' strings are capped (~200 chars). Prompt-only — the
         // persisted state is untouched. Kill switch; default ON.
         'snapshot_compact_outcomes' => (bool) env('AI_AGENT_AI_NATIVE_SNAPSHOT_COMPACT_OUTCOMES', true),
+        // Render-time cap per tool_results entry in the planner prompt (bytes). The
+        // persisted state keeps state_result_max_bytes; this tighter cap bounds what
+        // every planner step re-sends. 0 = no render cap.
+        'prompt_tool_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_PROMPT_TOOL_RESULT_MAX_BYTES', 4096),
+        // Drop the context snapshot's recent_outcomes 'display' copy for results
+        // still rendered under tool_results (the same payload was sent twice per step).
+        'prompt_dedupe_tool_results' => (bool) env('AI_AGENT_AI_NATIVE_PROMPT_DEDUPE_TOOL_RESULTS', true),
         // Strip a host's TURN-CONTEXT preamble from REPLAYED user history at
         // prompt render: a user entry containing a "User request…:" fence
         // marker keeps only the text after the marker, so a prior turn's stale
@@ -231,12 +238,35 @@ return [
         // instead. Unset (null) = derive from max_execution_time minus a 20s
         // margin (0/CLI = unlimited). Per-run override: options.turn_deadline_seconds.
         'turn_deadline_seconds' => env('AI_AGENT_AI_NATIVE_TURN_DEADLINE_SECONDS'),
+        // "Request context JSON" planner block: today's date/weekday in the
+        // request timezone (options.timezone > context metadata > this >
+        // app.timezone), the user's locale, user_id/workspace_id, and any
+        // host-provided options (or context metadata) user_context,
+        // workspace_context, page_context and request_context — each capped
+        // at max_bytes_per_section. Placed after the conversation block so it
+        // never fragments the cacheable prompt prefix. Per-run opt-out:
+        // options.prompt_context=false.
+        // Before showing a write confirmation, check the latest user message for
+        // optional parameters the planned call left empty but the user literally
+        // labelled ("phone +20…", "due date 2026-10-01"). When found, the planner
+        // gets one runtime_feedback round to include them; values are never
+        // guessed or filled by the runtime. Kill switch; default ON.
+        'omitted_detail_feedback' => [
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_OMITTED_DETAIL_FEEDBACK', true),
+        ],
+        'prompt_context' => [
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_PROMPT_CONTEXT', true),
+            'timezone' => env('AI_AGENT_AI_NATIVE_PROMPT_TIMEZONE'),
+            'max_bytes_per_section' => (int) env('AI_AGENT_AI_NATIVE_PROMPT_CONTEXT_MAX_BYTES', 2000),
+        ],
         'compaction' => [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows
             // past the threshold so a smaller state is sent to the planner.
-            // Default OFF preserves today's behavior byte-for-byte.
-            'enabled' => env('AI_AGENT_AI_NATIVE_COMPACTION_ENABLED', false),
+            // Default ON since 3.5: only long turns cross the threshold, and the
+            // newest keep_recent_results entries (the ones the planner acts on)
+            // are never dropped. Conversation compaction below stays opt-in.
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_COMPACTION_ENABLED', true),
             'threshold' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_THRESHOLD', 12),
             'keep_recent_results' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_KEEP_RECENT_RESULTS', 6),
             // When enabled, also compact $context->conversationHistory via the
@@ -377,6 +407,13 @@ return [
             // <= fallback_limit (unchanged behavior), otherwise core + the first fallback_limit
             // tools. Set to null to restore the legacy unbounded fail-open.
             'fallback_limit' => env('AI_AGENT_TOOL_SELECTION_FALLBACK_LIMIT', 50),
+            // skill_scoped strategy, turns where NO skill applies: registries larger than
+            // this expose the always-on core + the tools most relevant to the message
+            // (keyword ranked; a registration-order slice on no-signal turns) + find_tools
+            // so the planner can discover the rest. Previously every tool was sent (1,000+
+            // schemas on large hosts). null restores the unbounded fallback. Per-request:
+            // options.tool_selection.unscoped_limit.
+            'unscoped_limit' => env('AI_AGENT_TOOL_SELECTION_UNSCOPED_LIMIT', 40),
             // 'full' (default) injects each selected tool's full schema; 'progressive'
             // lists tools by name + summary only and registers a find_tools meta-tool the
             // planner calls to load a tool's full parameters on demand.

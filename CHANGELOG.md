@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Agent quality
+
+- **No detours for fields the tool cannot use.** When the draft holds every required field of
+  the skill's final tool, an `ask_user` plan that only asks for optional fields *or* for names
+  that are not parameters of that tool at all ("which currency?" on an invoice tool without a
+  currency field) is sent back once. Required-parameter questions, nested draft fields and
+  questions after the final tool itself reported a problem still reach the user.
+- **Optional details the user typed are kept.** Before a write confirmation, a conservative
+  detector looks for optional scalar parameters left empty but literally labelled in the latest
+  message ("phone +20 …", "due date 2026-10-01", "notes: …"). The planner gets one
+  `user_details_missing_from_write` feedback round; values are never guessed or filled.
+  Kill switch: `ai_native.omitted_detail_feedback.enabled`.
+- **Stale task labels.** A finished task (skill final tool completed, or its last step was a
+  successful write covering the draft) now gives way to a new message matching a different
+  skill, even when the write tool's name does not line up with the skill id.
+- **Request context in the planner prompt.** New "Request context JSON" block: today, weekday,
+  timezone, locale/language, user_id, workspace_id and host-provided `user_context`,
+  `workspace_context`, `page_context`, `request_context` (options or context metadata).
+  Config `ai_native.prompt_context.*`; per-run opt-out `options.prompt_context=false`.
+- **Bounded tool exposure without a skill.** With `skill_scoped` selection, turns no skill
+  matches no longer receive the whole registry: above `tool_selection.unscoped_limit`
+  (default 40) they get the core, the keyword-ranked relevant tools and `find_tools`.
+- **Smaller planner prompts.** Tool results are capped at render time
+  (`ai_native.prompt_tool_result_max_bytes`, default 4096), no longer duplicated in the
+  snapshot's `recent_outcomes.display` or `last_turn_outcome`
+  (`ai_native.prompt_dedupe_tool_results`), and in-loop compaction
+  (`ai_native.compaction.enabled`) is on by default.
+
 ## [3.4.4] — 2026-09-15
 
 ### Fixed

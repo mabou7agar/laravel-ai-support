@@ -103,6 +103,11 @@ class AiNativePromptBuilder
             // still consumes the context window and cache read/write tokens.
             'Recent conversation JSON:',
             json_encode($this->conversationDocuments($this->withoutLatestUserEcho($context->conversationHistory, $message), $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            // Per-request facts the planner cannot infer: today's date (relative
+            // dates like "due next Friday"), the user's locale, and whatever
+            // user/workspace/page context the host passed. Kept after the
+            // conversation so it never fragments the cacheable prefix.
+            ...$this->requestContextBlock($context, $options),
             'Context snapshot JSON:',
             json_encode($this->snapshotBuilder()->build($context, $state), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'Current runtime state JSON:',
@@ -347,6 +352,152 @@ class AiNativePromptBuilder
             : (string) config('ai-agent.ai_native.system_guidance', '');
 
         return trim($guidance);
+    }
+
+    /**
+     * The "Request context JSON" prompt block: today's date in the request timezone, the
+     * user's locale, the acting user/workspace ids and any host-provided context
+     * (options or context metadata keys user_context, workspace_context, page_context and
+     * request_context). Disabled per run with options.prompt_context=false or globally with
+     * ai-agent.ai_native.prompt_context.enabled=false.
+     *
+     * @param array<string, mixed> $options
+     * @return array<int, string>
+     */
+    private function requestContextBlock(UnifiedActionContext $context, array $options): array
+    {
+        $enabled = array_key_exists('prompt_context', $options) && !is_array($options['prompt_context'])
+            ? (bool) $options['prompt_context']
+            : (bool) config('ai-agent.ai_native.prompt_context.enabled', true);
+        if (!$enabled) {
+            return [];
+        }
+
+        $document = $this->requestContextDocument($context, $options);
+        $encoded = json_encode($document, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($encoded) || $document === []) {
+            return [];
+        }
+
+        return ['Request context JSON:', $encoded];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function requestContextDocument(UnifiedActionContext $context, array $options = []): array
+    {
+        $metadata = $context->metadata;
+        $timezone = $this->firstString([
+            $options['timezone'] ?? null,
+            $metadata['timezone'] ?? null,
+            config('ai-agent.ai_native.prompt_context.timezone'),
+            config('app.timezone'),
+        ]) ?? 'UTC';
+
+        try {
+            $now = \Illuminate\Support\Carbon::now($timezone);
+        } catch (\Throwable) {
+            $timezone = 'UTC';
+            $now = \Illuminate\Support\Carbon::now($timezone);
+        }
+
+        $locale = $this->firstString([
+            $options['locale'] ?? null,
+            $options['language'] ?? null,
+            $metadata['locale'] ?? null,
+        ]) ?? (function_exists('app') ? (string) app()->getLocale() : null);
+
+        $document = [
+            'today' => $now->toDateString(),
+            'weekday' => $now->englishDayOfWeek,
+            'timezone' => $timezone,
+            'locale' => $locale,
+            'language' => $locale !== null && $locale !== '' ? $this->safeLanguageName($locale) : null,
+            'user_id' => is_scalar($context->userId) ? $context->userId : null,
+            'workspace_id' => $this->firstScalar([
+                $options['workspace_id'] ?? null,
+                $metadata['workspace_id'] ?? null,
+                $options['tenant_id'] ?? null,
+                $metadata['tenant_id'] ?? null,
+            ]),
+        ];
+
+        $maxBytes = max(256, (int) config('ai-agent.ai_native.prompt_context.max_bytes_per_section', 2000));
+        foreach (['user' => 'user_context', 'workspace' => 'workspace_context', 'page' => 'page_context', 'host' => 'request_context'] as $key => $source) {
+            $value = $options[$source] ?? $metadata[$source] ?? null;
+            if ($value === null || $value === '' || $value === []) {
+                continue;
+            }
+            $document[$key] = $this->boundedContextValue($value, $maxBytes);
+        }
+
+        return array_filter($document, static fn (mixed $value): bool => $value !== null && $value !== '');
+    }
+
+    private function safeLanguageName(string $locale): ?string
+    {
+        try {
+            return app(LocaleResourceService::class)->languageName($locale);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Host context is arbitrary; keep it from swamping the prompt. Scalars pass through,
+     * strings and encoded arrays above the cap are cut with an ellipsis marker.
+     */
+    private function boundedContextValue(mixed $value, int $maxBytes): mixed
+    {
+        if (is_bool($value) || is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        if (is_object($value)) {
+            $value = method_exists($value, 'toArray') ? $value->toArray() : (array) $value;
+        }
+
+        if (is_array($value)) {
+            $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (is_string($encoded) && strlen($encoded) <= $maxBytes) {
+                return $value;
+            }
+            $value = is_string($encoded) ? $encoded : '';
+        }
+
+        $value = (string) $value;
+
+        return strlen($value) > $maxBytes ? mb_strcut($value, 0, $maxBytes) . '…' : $value;
+    }
+
+    /**
+     * @param array<int, mixed> $candidates
+     */
+    private function firstString(array $candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int, mixed> $candidates
+     */
+    private function firstScalar(array $candidates): int|string|null
+    {
+        foreach ($candidates as $candidate) {
+            if ((is_int($candidate) || is_string($candidate)) && trim((string) $candidate) !== '') {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -716,9 +867,87 @@ class AiNativePromptBuilder
      */
     private function stateForPrompt(array $state): array
     {
-        unset($state['task_frame'], $state['recent_outcomes']);
+        // last_turn_outcome is an in-memory mirror of the newest recent_outcomes entry.
+        unset($state['task_frame'], $state['recent_outcomes'], $state['last_turn_outcome']);
+
+        $maxBytes = (int) config('ai-agent.ai_native.prompt_tool_result_max_bytes', 4096);
+        if ($maxBytes > 0 && is_array($state['tool_results'] ?? null)) {
+            foreach ($state['tool_results'] as $index => $entry) {
+                if (is_array($entry)) {
+                    $state['tool_results'][$index] = $this->boundedToolResult($entry, $maxBytes);
+                }
+            }
+        }
 
         return $state;
+    }
+
+    /**
+     * Render-time cap for one tool_results entry (the persisted state keeps its own, larger
+     * state_result_max_bytes cap). Long strings and lists are pruned first; an entry that is
+     * still too large keeps its tool name, success flag, message/error and top-level scalars.
+     *
+     * @param array<string, mixed> $entry
+     * @return array<string, mixed>
+     */
+    private function boundedToolResult(array $entry, int $maxBytes): array
+    {
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        $encoded = json_encode($entry, $flags);
+        if (!is_string($encoded) || strlen($encoded) <= $maxBytes) {
+            return $entry;
+        }
+
+        $pruned = $this->prunePromptValue($entry);
+        $pruned['_prompt_truncated'] = true;
+        $pruned['_original_bytes'] = strlen($encoded);
+        $prunedEncoded = json_encode($pruned, $flags);
+        if (is_string($prunedEncoded) && strlen($prunedEncoded) <= $maxBytes) {
+            return $pruned;
+        }
+
+        $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+        $data = is_array($result['data'] ?? null) ? $result['data'] : [];
+        $scalars = static fn (array $values): array => array_map(
+            static fn (mixed $value): mixed => is_string($value) && mb_strlen($value) > 120 ? mb_substr($value, 0, 120) . '…' : $value,
+            array_slice(array_filter($values, static fn (mixed $value): bool => is_scalar($value) || $value === null), 0, 30, true)
+        );
+
+        return array_filter([
+            'tool' => $entry['tool'] ?? null,
+            'params' => is_array($entry['params'] ?? null) ? $scalars($entry['params']) : null,
+            'result' => array_filter([
+                'success' => $result['success'] ?? null,
+                'message' => isset($result['message']) ? mb_substr((string) $result['message'], 0, 300) : null,
+                'error' => isset($result['error']) ? mb_substr((string) $result['error'], 0, 300) : null,
+                'data' => $scalars($data),
+            ], static fn (mixed $value): bool => $value !== null && $value !== []),
+            'task_closed' => $entry['task_closed'] ?? null,
+            '_prompt_truncated' => true,
+            '_original_bytes' => strlen($encoded),
+        ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    private function prunePromptValue(mixed $value, int $depth = 0): mixed
+    {
+        if (is_string($value)) {
+            return mb_strlen($value) > 300 ? mb_substr($value, 0, 300) . '…[truncated]' : $value;
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+        if ($depth >= 5) {
+            return '[pruned: too deep]';
+        }
+        if (array_is_list($value) && count($value) > 10) {
+            $omitted = count($value) - 10;
+            $list = array_map(fn (mixed $item): mixed => $this->prunePromptValue($item, $depth + 1), array_slice($value, 0, 10));
+            $list[] = sprintf('[pruned: +%d more entries]', $omitted);
+
+            return $list;
+        }
+
+        return array_map(fn (mixed $item): mixed => $this->prunePromptValue($item, $depth + 1), $value);
     }
 
     private function withoutLatestUserEcho(array $messages, string $message): array

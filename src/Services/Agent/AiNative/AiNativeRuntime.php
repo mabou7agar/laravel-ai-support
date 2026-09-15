@@ -1259,6 +1259,7 @@ class AiNativeRuntime
             'skills' => 'Available skills JSON:',
             'tools' => 'Available tools JSON',
             'conversation' => 'Recent conversation JSON:',
+            'request_context' => 'Request context JSON:',
             'snapshot' => 'Context snapshot JSON:',
             'runtime_state' => 'Current runtime state JSON:',
             'latest_message' => 'Latest user message:',
@@ -1666,7 +1667,7 @@ class AiNativeRuntime
      */
     private function compactStateForPlanner(array &$state, UnifiedActionContext $context, array $options): void
     {
-        if (!(bool) config('ai-agent.ai_native.compaction.enabled', false)) {
+        if (!(bool) config('ai-agent.ai_native.compaction.enabled', true)) {
             return;
         }
 

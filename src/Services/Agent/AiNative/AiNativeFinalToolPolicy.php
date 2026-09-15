@@ -40,8 +40,17 @@ class AiNativeFinalToolPolicy
             return true;
         }
 
-        if ($this->matcher->selectedSkillIdForActiveTask($state, $options) !== '') {
-            return $this->matcher->messageMatchesSkill($message, $options)
+        $activeSkill = $this->matcher->selectedSkillIdForActiveTask($state, $options);
+        if ($activeSkill !== '') {
+            // A message that belongs to a DIFFERENT skill ("how many leads?" while an invoice
+            // draft is open) is not a reply to the active task: forcing the active task's
+            // final tool looped the planner to the step limit and re-showed the invoice.
+            $messageSkill = $this->matcher->matchedSkillId($message, $options);
+            if ($messageSkill !== null && $messageSkill !== $activeSkill) {
+                return false;
+            }
+
+            return $messageSkill === $activeSkill
                 || $this->activePayloadMissesRequiredFinalToolParams($state, $options);
         }
 

@@ -45,11 +45,24 @@ class AiNativeSkillPolicy
             unset($state['task_frame']['active_objective']);
         }
 
+        $objective = $this->matcher->matchedSkillId($message, $options);
+
         if (!empty($state['task_frame']['active_objective'])) {
-            return;
+            if ($objective === null || !$this->finishedObjectiveGivesWayTo($state, $objective)) {
+                return;
+            }
+
+            // The previous task already wrote its record and nothing of it is pending: the
+            // new request is a different task, not a reply. Close the old one so its draft and
+            // skill scope do not leak into this request.
+            unset($state['task_frame']['current_payload'], $state['task_frame']['current_payload_source']);
+            foreach ((array) ($state['tool_results'] ?? []) as $index => $entry) {
+                if (is_array($entry)) {
+                    $state['tool_results'][$index]['task_closed'] = true;
+                }
+            }
         }
 
-        $objective = $this->matcher->matchedSkillId($message, $options);
         if ($objective === null) {
             return;
         }
@@ -58,6 +71,80 @@ class AiNativeSkillPolicy
             'active_objective' => $objective,
             'status' => 'working',
         ]);
+    }
+
+    /**
+     * A task frame stays "working" after its write when the write tool's name does not line
+     * up with the skill id (e.g. skill "module_lead" writing through "create_lead"), so the
+     * old objective used to survive into an unrelated next request. It gives way to a new
+     * request that matches a DIFFERENT skill only when nothing of the old task is still in
+     * flight: no pending confirmation, not collecting input, and either the skill's declared
+     * final tool has completed or the most recent thing the task did was a successful write.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function finishedObjectiveGivesWayTo(array $state, string $newObjective): bool
+    {
+        $frame = (array) ($state['task_frame'] ?? []);
+        $current = trim((string) ($frame['active_objective'] ?? ''));
+        if ($current === '' || $current === $newObjective) {
+            return false;
+        }
+
+        if (is_array($state['pending_tool'] ?? null)
+            || is_array($frame['pending_tool'] ?? null)
+            || in_array($frame['status'] ?? null, ['confirming', 'collecting'], true)
+            || is_array($state['suggested_tool_continuation'] ?? null)) {
+            return false;
+        }
+
+        $completedWrites = array_values(array_filter((array) ($frame['completed_writes'] ?? []), 'is_array'));
+        if ($completedWrites === []) {
+            return false;
+        }
+
+        $finalTools = $this->declaredFinalTools($current);
+        if ($finalTools !== [] && array_intersect($finalTools, array_column($completedWrites, 'tool')) !== []) {
+            return true;
+        }
+
+        $outcomes = array_values(array_filter((array) ($frame['recent_outcomes'] ?? []), 'is_array'));
+        $last = $outcomes === [] ? null : $outcomes[count($outcomes) - 1];
+        $lastWrite = $completedWrites[count($completedWrites) - 1];
+
+        // A supporting write mid-task (creating the customer an invoice draft needs) leaves
+        // a parent draft the write did not cover; that task is not finished.
+        $draft = (array) ($frame['current_payload'] ?? []);
+        $written = (array) ($lastWrite['params'] ?? []);
+        if (array_diff_key($draft, $written) !== []) {
+            return false;
+        }
+
+        return is_array($last)
+            && ($last['success'] ?? false) === true
+            && ($last['needs_user_input'] ?? false) !== true
+            && (string) ($last['tool'] ?? '') === (string) ($lastWrite['tool'] ?? '')
+            && in_array((string) ($last['outcome'] ?? ''), ['created', 'updated', 'deleted', 'sent', 'completed'], true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function declaredFinalTools(string $skillId): array
+    {
+        foreach ($this->skills->skills() as $skill) {
+            if ((string) ($skill->id ?? '') !== $skillId) {
+                continue;
+            }
+
+            $metadata = (array) ($skill->metadata ?? []);
+            $tools = array_map('strval', (array) ($metadata['final_tools'] ?? []));
+            $tools[] = trim((string) ($metadata['final_tool'] ?? ''));
+
+            return array_values(array_filter($tools, static fn (string $tool): bool => $tool !== ''));
+        }
+
+        return [];
     }
 
     /**
@@ -148,7 +235,7 @@ class AiNativeSkillPolicy
         $requiredInputs = (array) ($plan['required_inputs'] ?? []);
         if ($requiredInputs !== []) {
             if ($this->hasRuntimeFeedback($state, 'final_tool_required_before_confirmation_question')
-                || !$this->onlyOptionalFinalToolInputs($requiredInputs, $requiredTools, (array) data_get($state, 'task_frame.current_payload', []))) {
+                || !$this->onlyOptionalFinalToolInputs($requiredInputs, $requiredTools, (array) data_get($state, 'task_frame.current_payload', []), $state)) {
                 return false;
             }
         }
@@ -389,51 +476,119 @@ class AiNativeSkillPolicy
 
     /**
      * True when the payload already holds every required parameter of the final tools and
-     * every requested input names a parameter those tools mark optional. Unknown names count
-     * as genuinely needed.
+     * nothing the plan asks for is one of those tools' required parameters: each requested
+     * input either names a parameter the tools mark optional, or names something that is
+     * not a parameter of any final tool at all (e.g. "currency" on an invoice tool that has
+     * no currency field). The tool cannot use such an answer, and its own validation still
+     * asks when something is genuinely missing. An input matching a required parameter
+     * keeps the question flowing, and so does a name the payload or schema holds as a nested
+     * field (items.*.product_name) or any question once the final tool itself has already
+     * reported a problem (its answer, not the planner's guess, is driving the question).
      *
      * @param array<int|string, mixed> $requiredInputs
      * @param array<int, string>       $finalTools
      * @param array<string, mixed>     $payload
+     * @param array<string, mixed>     $state
      */
-    private function onlyOptionalFinalToolInputs(array $requiredInputs, array $finalTools, array $payload): bool
+    private function onlyOptionalFinalToolInputs(array $requiredInputs, array $finalTools, array $payload, array $state = []): bool
     {
-        $optional = null;
+        $required = [];
+        $known = [];
+        $nested = $this->nestedKeys($payload);
+        foreach ((array) ($state['tool_results'] ?? []) as $entry) {
+            if (is_array($entry)
+                && ($entry['task_closed'] ?? false) !== true
+                && in_array((string) ($entry['tool'] ?? ''), $finalTools, true)
+                && (($entry['result']['success'] ?? false) !== true || ($entry['result']['data']['needs_user_input'] ?? false) === true)) {
+                return false;
+            }
+        }
         foreach ($finalTools as $toolName) {
             $tool = $this->tools->get($toolName);
             if ($tool === null) {
                 return false;
             }
 
-            $toolOptional = [];
-            foreach ($tool->getParameters() as $name => $definition) {
+            $parameters = $tool->getParameters();
+            if ($parameters === []) {
+                // A tool without a declared schema gives no basis to call a question useless.
+                return false;
+            }
+
+            foreach ($parameters as $name => $definition) {
+                $normalized = $this->normalizeInputName((string) $name);
+                $known[$normalized] = true;
+                if (is_array($definition)) {
+                    foreach (array_merge(array_keys((array) ($definition['properties'] ?? [])), array_keys((array) ($definition['items']['properties'] ?? []))) as $property) {
+                        $nested[$this->normalizeInputName((string) $property)] = true;
+                    }
+                }
                 if (!is_array($definition) || ($definition['required'] ?? false) !== true) {
-                    $toolOptional[] = mb_strtolower((string) $name);
                     continue;
                 }
 
+                $required[$normalized] = true;
                 $value = $payload[(string) $name] ?? null;
                 if ($value === null || $value === '' || $value === []) {
                     return false;
                 }
             }
-            $optional = $optional === null ? $toolOptional : array_values(array_intersect($optional, $toolOptional));
-        }
-
-        if ($optional === null || $optional === []) {
-            return false;
         }
 
         foreach ($requiredInputs as $input) {
             $name = is_array($input)
                 ? (string) ($input['name'] ?? $input['id'] ?? $input['field'] ?? '')
                 : (string) $input;
-            $name = mb_strtolower(trim($name));
-            if ($name === '' || !in_array($name, $optional, true)) {
+            $name = $this->normalizeInputName($name);
+            if ($name === '') {
                 return false;
+            }
+
+            if (isset($nested[$name])) {
+                return false;
+            }
+
+            // "customer" asks for the customer_id parameter.
+            foreach ([$name, $name . '_id', preg_replace('/_id$/', '', $name)] as $candidate) {
+                if (isset($required[$candidate])) {
+                    return false;
+                }
             }
         }
 
-        return true;
+        return $known !== [];
+    }
+
+    /**
+     * Normalized keys found below the top level of a payload (keys of list items and
+     * nested objects).
+     *
+     * @param array<mixed> $value
+     * @return array<string, true>
+     */
+    private function nestedKeys(array $value, bool $includeTopLevel = false, int $depth = 0): array
+    {
+        $keys = [];
+        if ($depth > 4) {
+            return $keys;
+        }
+
+        foreach ($value as $key => $child) {
+            if ($includeTopLevel && is_string($key)) {
+                $keys[$this->normalizeInputName($key)] = true;
+            }
+            if (is_array($child)) {
+                $keys += $this->nestedKeys($child, true, $depth + 1);
+            }
+        }
+
+        return $keys;
+    }
+
+    private function normalizeInputName(string $name): string
+    {
+        $name = mb_strtolower(trim($name));
+
+        return trim((string) preg_replace('/[\s\-.]+/u', '_', $name), '_');
     }
 }
