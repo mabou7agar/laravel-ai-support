@@ -49,7 +49,7 @@ abstract class ActionBackedTool extends AgentTool
 
     public function getParameters(): array
     {
-        $parameters = (array) ($this->action()['parameters'] ?? []);
+        $parameters = $this->expandListParameters((array) ($this->action()['parameters'] ?? []));
         if ($this->requiresConfirmation()) {
             $parameters['confirmed'] ??= [
                 'type' => 'boolean',
@@ -66,8 +66,15 @@ abstract class ActionBackedTool extends AgentTool
         return $this->orchestrator()->requiresConfirmation($this->actionId);
     }
 
+    public function validate(array $parameters): array
+    {
+        return parent::validate($this->normalizeArguments($parameters));
+    }
+
     public function previewConfirmation(array $parameters, UnifiedActionContext $context): ?ActionResult
     {
+        $parameters = $this->normalizeArguments($parameters);
+
         if ($this->actionId === '') {
             return ActionResult::failure('Action-backed tool is missing an action id.');
         }
@@ -95,6 +102,8 @@ abstract class ActionBackedTool extends AgentTool
 
     public function execute(array $parameters, UnifiedActionContext $context): ActionResult
     {
+        $parameters = $this->normalizeArguments($parameters);
+
         if ($this->actionId === '') {
             return ActionResult::failure('Action-backed tool is missing an action id.');
         }
@@ -117,6 +126,93 @@ abstract class ActionBackedTool extends AgentTool
         return $result
             ->withMetadata('action_backed_tool', true)
             ->withMetadata('tool_action_id', $this->actionId);
+    }
+
+    /**
+     * Turn flattened list definitions ("items.*.product_name") into one array parameter with
+     * an object item schema, which is what planners and native tool calling understand.
+     *
+     * @param array<string, mixed> $parameters
+     * @return array<string, mixed>
+     */
+    protected function expandListParameters(array $parameters): array
+    {
+        $expanded = [];
+        foreach ($parameters as $name => $definition) {
+            $name = (string) $name;
+            if (!str_contains($name, '.*.')) {
+                $expanded[$name] = $definition;
+                continue;
+            }
+
+            [$list, $field] = explode('.*.', $name, 2);
+            $expanded[$list] ??= ['type' => 'array', 'required' => false, 'items' => ['type' => 'object', 'properties' => []]];
+            if (!is_array($expanded[$list]['items'] ?? null)) {
+                $expanded[$list]['items'] = ['type' => 'object', 'properties' => []];
+            }
+            $expanded[$list]['items']['properties'][$field] = array_diff_key((array) $definition, ['required' => true]);
+            if ((bool) ($definition['required'] ?? false)) {
+                $expanded[$list]['items']['required'][] = $field;
+            }
+        }
+
+        return $expanded;
+    }
+
+    /**
+     * Apply the action's `argument_aliases` (e.g. ['vendor' => 'vendor_name',
+     * 'line_items' => 'items', 'items.*.description' => 'items.*.product_name']) so the
+     * spellings a planner naturally produces reach the executor under canonical names.
+     *
+     * @param array<string, mixed> $parameters
+     * @return array<string, mixed>
+     */
+    protected function normalizeArguments(array $parameters): array
+    {
+        $aliases = (array) ($this->action()['argument_aliases'] ?? []);
+        if ($aliases === []) {
+            return $parameters;
+        }
+
+        $nested = [];
+        foreach ($aliases as $from => $to) {
+            [$from, $to] = [(string) $from, (string) $to];
+            if (str_contains($from, '.*.') && str_contains($to, '.*.')) {
+                [$list, $fromField] = explode('.*.', $from, 2);
+                $nested[$list][$fromField] = explode('.*.', $to, 2)[1];
+                continue;
+            }
+
+            if (array_key_exists($from, $parameters)) {
+                if (!array_key_exists($to, $parameters) || $parameters[$to] === null || $parameters[$to] === '') {
+                    $parameters[$to] = $parameters[$from];
+                }
+                unset($parameters[$from]);
+            }
+        }
+
+        foreach ($nested as $list => $fields) {
+            if (!is_array($parameters[$list] ?? null)) {
+                continue;
+            }
+
+            $rows = array_is_list($parameters[$list]) ? $parameters[$list] : [$parameters[$list]];
+            $parameters[$list] = array_map(static function (mixed $row) use ($fields): mixed {
+                if (!is_array($row)) {
+                    return $row;
+                }
+                foreach ($fields as $fromField => $toField) {
+                    if (array_key_exists($fromField, $row)) {
+                        $row[$toField] ??= $row[$fromField];
+                        unset($row[$fromField]);
+                    }
+                }
+
+                return $row;
+            }, $rows);
+        }
+
+        return $parameters;
     }
 
     /**

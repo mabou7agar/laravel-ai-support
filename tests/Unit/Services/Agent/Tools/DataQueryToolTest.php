@@ -161,6 +161,20 @@ class DataQueryToolTest extends TestCase
         $this->assertStringContainsString('widget', (string) $r->message);
     }
 
+    public function test_most_specific_alias_wins_over_configuration_order(): void
+    {
+        config()->set('ai-engine.data_query.models', [
+            'widget' => ['class' => DqWidget::class, 'aliases' => ['widget', 'widgets'], 'label' => 'Widgets'],
+            'blue_widget' => ['class' => DqWidget::class, 'aliases' => ['blue widget', 'blue widgets'], 'label' => 'Blue Widgets'],
+        ]);
+
+        $tool = $this->tool();
+        $resolve = fn (string $query) => (fn () => $this->resolveEntity($query, $this->entities()))->call($tool)[0] ?? null;
+
+        $this->assertSame('Blue Widgets', $resolve('how many blue widgets'));
+        $this->assertSame('Widgets', $resolve('how many widgets'));
+    }
+
     public function test_unknown_entity_prompt_bounds_a_large_entity_list(): void
     {
         $models = [];

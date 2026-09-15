@@ -25,9 +25,34 @@ class AiNativeResponseFactory
      */
     public function final(UnifiedActionContext $context, array $state, string $message, array $data = []): AgentResponse
     {
+        $this->closeAnsweredTask($state);
         $this->stateStore->put($context, $state);
 
         return $this->success($context, $state, $message, $this->stateStore->redactedArray($data));
+    }
+
+    /**
+     * A final answer with nothing pending or being collected finishes the task. Without
+     * this a read-only objective (e.g. a count) stays "working" forever and keeps the next,
+     * unrelated request scoped to the previous skill's tools.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function closeAnsweredTask(array &$state): void
+    {
+        $frame = $state['task_frame'] ?? null;
+        if (!is_array($frame) || empty($frame['active_objective'])) {
+            return;
+        }
+
+        if (is_array($state['pending_tool'] ?? null)
+            || is_array($frame['pending_tool'] ?? null)
+            || (array) ($frame['current_payload'] ?? []) !== []
+            || ($frame['status'] ?? null) === 'collecting') {
+            return;
+        }
+
+        $state['task_frame']['status'] = 'completed';
     }
 
     /**

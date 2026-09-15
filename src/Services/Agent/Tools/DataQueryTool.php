@@ -212,15 +212,23 @@ class DataQueryTool extends AgentTool
      */
     protected function resolveEntity(string $query, array $entities): ?array
     {
-        foreach ($entities as $keyword => $config) {
+        // Prefer the most specific (longest) matching alias over configuration order, so
+        // "cmms invoices" resolves to CMMS invoices even when sales invoices also answer to
+        // the bare word "invoices".
+        $best = null;
+        $bestLength = 0;
+
+        foreach ($entities as $config) {
             foreach ($config['aliases'] as $alias) {
-                if (preg_match('/\b' . preg_quote($alias, '/') . '\b/i', $query)) {
-                    return [$config['label'], $config];
+                $length = mb_strlen((string) $alias);
+                if ($length > $bestLength && preg_match('/\b' . preg_quote((string) $alias, '/') . '\b/iu', $query)) {
+                    $best = [$config['label'], $config];
+                    $bestLength = $length;
                 }
             }
         }
 
-        return null;
+        return $best;
     }
 
     /**

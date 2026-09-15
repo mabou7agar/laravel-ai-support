@@ -83,6 +83,14 @@ class GenericModelToolScopeHardeningTest extends TestCase
         $this->assertSame(1, ScopedAccount::count());
     }
 
+    public function test_find_tool_accepts_a_search_value_under_a_column_name(): void
+    {
+        $tool = new \LaravelAIEngine\Services\Agent\Tools\GenericModelLookupTool('find_account', ScopedAccount::class, ['name'], ['id', 'name'], scope: $this->scopeFor('ws-a'));
+
+        $this->assertSame([], $tool->validate(['name' => 'Acme']));
+        $this->assertNotSame([], $tool->validate([]));
+    }
+
     public function test_show_without_explicit_columns_withholds_hidden_and_credential_columns(): void
     {
         $account = ScopedAccount::create([
@@ -104,6 +112,19 @@ class GenericModelToolScopeHardeningTest extends TestCase
         $this->assertArrayNotHasKey('api_token', $record);
         $this->assertArrayNotHasKey('client_secret', $record);
         $this->assertArrayNotHasKey('internal_note', $record, 'Model $hidden columns are respected.');
+    }
+
+    public function test_default_sensitive_patterns_cover_banking_and_identity_columns(): void
+    {
+        $withheld = static fn (string $column): bool => collect(GenericModelDetailTool::SENSITIVE_COLUMN_PATTERNS)
+            ->contains(static fn (string $pattern): bool => preg_match($pattern, $column) === 1);
+
+        foreach (['account_number', 'iban', 'bank_identifier_code', 'tax_payer_id', 'national_id', 'passport_number'] as $column) {
+            $this->assertTrue($withheld($column), $column);
+        }
+        foreach (['basic_salary', 'company_name', 'invoice_number', 'token_count'] as $column) {
+            $this->assertFalse($withheld($column), $column);
+        }
     }
 
     public function test_show_with_explicit_columns_returns_exactly_what_the_host_configured(): void

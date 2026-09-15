@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.1] — 2026-09-15
+
+### Added
+
+- **`ActionBackedTool` understands list parameters and argument aliases.** Flattened action
+  parameters such as `items.*.product_name` are exposed as one `items` array parameter with
+  an object item schema, and an action definition may declare `argument_aliases`
+  (e.g. `'vendor' => 'vendor_name'`, `'line_items' => 'items'`,
+  `'items.*.description' => 'items.*.product_name'`), applied before validation, preview
+  and execution.
+- **Banking and government-identity columns are withheld by default** from
+  `GenericModelDetailTool` output (`account_number`, IBAN/SWIFT/BIC, routing and card
+  numbers, `tax_payer_id`, `national_id`, passport, SSN).
+
+### Changed
+
+- **Skill matching prefers the most specific trigger.** `AiNativeSkillMatcher::matchedSkillId()`
+  picks the skill with the longest matching trigger (registration order breaks ties) instead
+  of the first registered match, so a dedicated "create sales invoice" skill is not shadowed
+  by a broad module skill that mentions "sales invoice". A trigger made only of stopwords no
+  longer matches every message.
+- **`data_query` / `aggregate_data` resolve the most specific entity alias** instead of the
+  first configured one ("cmms invoices" no longer resolves to sales invoices).
+
+### Fixed
+
+- **Multi-record conversations no longer reuse the previous draft.** When a write completes
+  the task, `AgentTaskStateService` clears `task_frame.current_payload`; previously a second
+  invoice in the same conversation inherited the first one's customer and type. The task
+  objective is matched to the tool by entity, so skill ids such as `invoice_create` or
+  `invoices` complete on `create_invoice`.
+- **Computed reads no longer outlive the write that changed them.** When a write completes
+  the task, earlier count/list/aggregate results are dropped from `tool_results` and
+  `recent_outcomes` (entity lookups and writes are kept as tool evidence), so "how many
+  invoices do I have now?" is answered by a fresh read instead of the pre-write number.
+- **A finished answer releases the skill scope.** `AiNativeResponseFactory::final()` marks a
+  task with nothing pending or being collected as completed, so a read-only question (e.g. a
+  count) no longer keeps the next, unrelated request limited to that skill's tools.
+- **Generated `find_*` tools accept the search value under any searchable key** (`name`,
+  `email`, `title`, or a search column), matching what `execute()` already supported instead
+  of failing validation for a missing `query`.
+
 ## [3.4.0] — 2026-09-15
 
 ### Security

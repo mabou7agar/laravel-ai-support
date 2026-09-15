@@ -25,6 +25,8 @@ class GenericModelDetailTool extends AgentTool
         '/(^|_)(password|passwd|secret|api_key|apikey|private_key|otp)(_|$)/i',
         '/(^|_)token$/i',
         '/(^|_)two_factor(_|$)/i',
+        '/(^|_)(account_number|iban|swift|bank_identifier_code|routing_number|card_number|cvv)(_|$)/i',
+        '/(^|_)(tax_payer_id|national_id|passport|ssn|social_security)(_|$)/i',
     ];
 
     /** @var (Closure(UnifiedActionContext, array<string,mixed>): array<string,mixed>)|null */
