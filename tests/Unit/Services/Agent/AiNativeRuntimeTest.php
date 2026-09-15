@@ -3112,6 +3112,46 @@ class AiNativeRuntimeTest extends UnitTestCase
         $this->assertCount(3, $toolLog['lookup_customer']);
     }
 
+    public function test_read_loop_that_hits_the_step_limit_answers_from_the_lookup(): void
+    {
+        // Live pathology: the planner re-called a successful lookup with identical arguments
+        // until the step limit, and the user got "I need more information to continue."
+        config()->set('ai-agent.ai_native.max_steps', 3);
+
+        $toolLog = [];
+        $repeat = ['action' => 'tool_call', 'tool' => 'lookup_customer', 'arguments' => ['query' => 'Ahmed'], 'message' => 'Looking up.'];
+        $runtime = $this->runtime([$repeat, $repeat, $repeat], $toolLog);
+        $context = new UnifiedActionContext('ai-native-read-loop', 77);
+
+        $response = $runtime->process('Find customer Ahmed', $context);
+
+        $this->assertTrue($response->success);
+        $this->assertFalse($response->needsUserInput);
+        $this->assertStringContainsString('Ahmed', $response->message);
+        $this->assertStringContainsString('ahmed@example.com', $response->message);
+        $this->assertStringNotContainsString('more information', strtolower($response->message));
+
+        $reasons = array_column((array) ($context->metadata['ai_native']['runtime_feedback'] ?? []), 'reason');
+        $this->assertContains('repeated_identical_call', $reasons, 'The planner is told it already holds the result.');
+    }
+
+    public function test_step_limit_with_a_pending_draft_still_asks_instead_of_answering_from_a_lookup(): void
+    {
+        config()->set('ai-agent.ai_native.max_steps', 2);
+
+        $toolLog = [];
+        $repeat = ['action' => 'tool_call', 'tool' => 'lookup_customer', 'arguments' => ['query' => 'Ahmed'], 'message' => 'Looking up.'];
+        $runtime = $this->runtime([$repeat, $repeat], $toolLog);
+        $context = new UnifiedActionContext('ai-native-read-loop-draft', 77);
+        app(\LaravelAIEngine\Services\Agent\AiNative\AiNativeStateStore::class)->put($context, [
+            'task_frame' => ['active_objective' => 'create_invoice', 'status' => 'collecting', 'current_payload' => ['customer_name' => 'Ahmed']],
+        ]);
+
+        $response = $runtime->process('Find customer Ahmed', $context);
+
+        $this->assertNotTrue($response->metadata['answered_from_tool_result'] ?? null);
+    }
+
     public function test_single_shot_tool_repeat_finalizes_instead_of_re_executing(): void
     {
         // Live-measured pathology (theme-builder host): a staging tool returned

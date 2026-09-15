@@ -242,6 +242,10 @@ class AiNativeRuntime
         // drives three identical lookups on purpose), so the runtime must not
         // infer "already done" from a repeat by itself.
         $turnSucceededTools = [];
+        // Signatures (tool + arguments) of calls that already succeeded this turn. A repeat is
+        // still executed (polling is legitimate) but the planner is told it already holds the
+        // result, which stops read loops that otherwise run to the step limit.
+        $turnSucceededCalls = [];
         // Host-declared read/discovery calls may prepare an outcome without
         // consuming its mutation budget. The ceiling grows only after a
         // configured tool succeeds, is bounded, and is granted once per unique
@@ -459,6 +463,14 @@ class AiNativeRuntime
 
                     return $this->responses->final($context, $state, $closing, ['repeated_completed_call' => true]);
                 }
+                $callSignature = $planTool . '|' . md5((string) json_encode($this->sortedArguments((array) ($plan['arguments'] ?? []))));
+                if ($planTool !== '' && isset($turnSucceededCalls[$callSignature])) {
+                    $state['runtime_feedback'][] = [
+                        'reason' => 'repeated_identical_call',
+                        'message' => "{$planTool} was already called with these exact arguments this turn and succeeded; its result is in tool_results. Do not call it again — answer the user from that result now.",
+                        'tool' => $planTool,
+                    ];
+                }
                 $this->notifyActivity($options, 'tool_call', ['tool_name' => (string) ($plan['tool'] ?? '')]);
                 $turnOutcomeCountBefore = (int) ($state['turn_outcome_count'] ?? 0);
                 $feedbackCount = count((array) ($state['runtime_feedback'] ?? []));
@@ -474,6 +486,7 @@ class AiNativeRuntime
                     // calls stay retryable (the model may fix its arguments).
                     if (($lastAfter['success'] ?? null) === true && $planTool !== '') {
                         $turnSucceededTools[$planTool] = true;
+                        $turnSucceededCalls[$callSignature] = true;
                         if (isset($nonOutcomeTools[$planTool])) {
                             $succeededNonOutcomeTools[$planTool] = true;
                         }
@@ -604,7 +617,80 @@ class AiNativeRuntime
             );
         }
 
+        $readAnswer = $this->answerFromLatestRead($context, $state);
+        if ($readAnswer instanceof AgentResponse) {
+            return $readAnswer;
+        }
+
         return $this->responses->needsUserInput($context, $state, $this->runtimeText('ai-engine::runtime.responses.need_more_information', 'I need more information to continue.'));
+    }
+
+    /**
+     * A pure read turn (nothing drafted, nothing pending) that exhausted its steps by
+     * re-calling a lookup that had already succeeded with the same arguments already has its
+     * answer: present that record instead of claiming more information is needed. A turn
+     * that ran out of steps after a single lookup keeps asking, as before.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function answerFromLatestRead(UnifiedActionContext $context, array &$state): ?AgentResponse
+    {
+        if (!in_array('repeated_identical_call', array_column((array) ($state['runtime_feedback'] ?? []), 'reason'), true)) {
+            return null;
+        }
+
+        if ((array) data_get($state, 'task_frame.current_payload', []) !== []
+            || is_array($state['pending_tool'] ?? null)
+            || is_array(data_get($state, 'task_frame.pending_tool'))) {
+            return null;
+        }
+
+        $turnCount = (int) ($state['turn_outcome_count'] ?? 0);
+        if ($turnCount === 0) {
+            return null;
+        }
+
+        foreach (array_reverse(array_slice((array) ($state['recent_outcomes'] ?? []), -$turnCount)) as $outcome) {
+            if (!is_array($outcome)
+                || ($outcome['success'] ?? false) !== true
+                || ($outcome['needs_user_input'] ?? false) === true
+                || !in_array((string) ($outcome['outcome'] ?? ''), ['found', 'listed', 'counted', 'completed'], true)) {
+                continue;
+            }
+
+            $lines = [];
+            foreach ((array) ($outcome['display'] ?? []) as $key => $value) {
+                if (is_scalar($value) && count($lines) < 12) {
+                    $lines[] = \Illuminate\Support\Str::headline((string) $key) . ': ' . $value;
+                }
+            }
+            if ($lines === []) {
+                continue;
+            }
+
+            $label = trim((string) ($outcome['label'] ?? ''));
+            $message = ($label !== '' ? $label . "\n" : '') . implode("\n", $lines);
+
+            return $this->responses->final($context, $state, $message, ['last_tool_outcome' => $outcome, 'answered_from_tool_result' => true]);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     * @return array<string, mixed>
+     */
+    private function sortedArguments(array $arguments): array
+    {
+        ksort($arguments);
+        foreach ($arguments as $key => $value) {
+            if (is_array($value)) {
+                $arguments[$key] = $this->sortedArguments($value);
+            }
+        }
+
+        return $arguments;
     }
 
     /**
