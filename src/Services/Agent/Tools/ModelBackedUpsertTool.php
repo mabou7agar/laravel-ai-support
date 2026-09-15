@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Services\Agent\Tools;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 use LaravelAIEngine\DTOs\ActionResult;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 
@@ -52,7 +53,60 @@ abstract class ModelBackedUpsertTool extends ModelBackedLookupTool
      */
     protected function requiredFields(): array
     {
-        return $this->required;
+        if (!$this->inferRequiredFromSchema) {
+            return $this->required;
+        }
+
+        $schemaRequired = $this->schemaRequiredColumns($this->modelClass());
+
+        return $schemaRequired === null
+            ? $this->required
+            : array_values(array_intersect($this->writeFields(), $schemaRequired));
+    }
+
+    /**
+     * When no explicit required list was configured, require only the writable columns the
+     * database itself cannot fill: NOT NULL, no default, not auto-increment. Requiring every
+     * writable field made the agent demand optional data (e.g. a lead's phone number).
+     */
+    protected bool $inferRequiredFromSchema = false;
+
+    /** @var array<string, array<int, string>|null> */
+    private static array $schemaRequiredCache = [];
+
+    /**
+     * @param class-string<Model> $modelClass
+     * @return array<int, string>|null null when the schema cannot be inspected
+     */
+    protected function schemaRequiredColumns(string $modelClass): ?array
+    {
+        if (!$this->tableExists($modelClass)) {
+            return null;
+        }
+
+        $model = new $modelClass();
+        $key = $model->getConnectionName() . '|' . $model->getTable();
+        if (array_key_exists($key, self::$schemaRequiredCache)) {
+            return self::$schemaRequiredCache[$key];
+        }
+
+        $schema = Schema::connection($model->getConnectionName());
+        if (!method_exists($schema, 'getColumns')) {
+            return self::$schemaRequiredCache[$key] = null;
+        }
+
+        try {
+            $required = [];
+            foreach ($schema->getColumns($model->getTable()) as $column) {
+                if (!($column['nullable'] ?? true) && ($column['default'] ?? null) === null && !($column['auto_increment'] ?? false)) {
+                    $required[] = (string) $column['name'];
+                }
+            }
+        } catch (\Throwable) {
+            $required = null;
+        }
+
+        return self::$schemaRequiredCache[$key] = $required;
     }
 
     /**

@@ -244,6 +244,21 @@ class AiNativeSkillPolicy
      * @param array<string, mixed> $options
      * @param array<string, mixed> $plan
      */
+    private function matchedSkillDeclaresFinalTool(string $message, array $options): bool
+    {
+        $skillId = $this->matcher->matchedSkillId($message, $options);
+        foreach ($this->skills->skills() as $skill) {
+            if ($skill->id !== $skillId) {
+                continue;
+            }
+            $metadata = (array) ($skill->metadata ?? []);
+
+            return trim((string) ($metadata['final_tool'] ?? '')) !== '' || (array) ($metadata['final_tools'] ?? []) !== [];
+        }
+
+        return false;
+    }
+
     public function needsNextStepAfterMissingLookup(string $message, array $state, array $options, array $plan): bool
     {
         if (!$this->matcher->messageMatchesSkill($message, $options)) {
@@ -251,6 +266,17 @@ class AiNativeSkillPolicy
         }
 
         if ((array) ($plan['data'] ?? []) !== []) {
+            return false;
+        }
+
+        // "Not found" is a complete answer to a plain lookup. Only push for a next step
+        // (ask, offer to create, another tool) when the lookup serves a write: a draft or
+        // pending write exists, or the matched skill declares a final tool. Otherwise the
+        // planner is forced into proposing creates the user never asked for.
+        if ((array) data_get($state, 'task_frame.current_payload', []) === []
+            && !is_array($state['pending_tool'] ?? null)
+            && !is_array(data_get($state, 'task_frame.pending_tool'))
+            && !$this->matchedSkillDeclaresFinalTool($message, $options)) {
             return false;
         }
 

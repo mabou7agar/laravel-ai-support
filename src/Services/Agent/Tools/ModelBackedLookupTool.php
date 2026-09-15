@@ -70,8 +70,17 @@ abstract class ModelBackedLookupTool extends AgentTool
      */
     protected function returnColumns(): array
     {
-        return $this->returns;
+        if ($this->explicitReturns) {
+            return $this->returns;
+        }
+
+        // Also return what the record was found by: a customer matched on company_name or
+        // customer_code has no name/title/email, so the defaults alone came back empty.
+        return array_values(array_unique(array_merge($this->returns, $this->searchColumns())));
     }
+
+    /** True when the return columns were configured explicitly rather than defaulted. */
+    protected bool $explicitReturns = false;
 
     /**
      * @return array<string, mixed>
@@ -210,6 +219,16 @@ abstract class ModelBackedLookupTool extends AgentTool
         foreach ($arguments as $value) {
             if (is_scalar($value) && trim((string) $value) !== '') {
                 return trim((string) $value);
+            }
+        }
+
+        // Planners often wrap the value: {"filters": {"customer_code": "C-1"}}.
+        foreach (['filters', 'where', 'criteria', 'search', 'conditions'] as $wrapper) {
+            if (is_array($arguments[$wrapper] ?? null)) {
+                $nested = $this->queryText($arguments[$wrapper], $preferredKeys);
+                if ($nested !== '') {
+                    return $nested;
+                }
             }
         }
 

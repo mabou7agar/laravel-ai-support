@@ -60,6 +60,7 @@ class AiNativeResponseFactory
      */
     public function alreadyCompleted(UnifiedActionContext $context, array $state): AgentResponse
     {
+        $this->closeAnsweredTask($state);
         $this->stateStore->put($context, $state);
 
         return $this->success($context, $state, $this->runtimeText('ai-engine::runtime.responses.already_completed', 'That action has already been completed.'), [
@@ -84,6 +85,8 @@ class AiNativeResponseFactory
      */
     public function toolCompleted(UnifiedActionContext $context, array $state, string $toolName, ActionResult $result): AgentResponse
     {
+        // Auto-finalized answers (a terminal tool's own message) end the task like final().
+        $this->closeAnsweredTask($state);
         $this->stateStore->put($context, $state);
 
         return $this->success(

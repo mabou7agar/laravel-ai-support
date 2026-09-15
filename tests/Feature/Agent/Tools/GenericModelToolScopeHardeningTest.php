@@ -72,6 +72,42 @@ class GenericModelToolScopeHardeningTest extends TestCase
         $this->assertSame(1, ScopedAccount::where('workspace_id', 'ws-b')->where('name', 'Acme')->count());
     }
 
+    public function test_create_requires_only_columns_the_database_cannot_fill(): void
+    {
+        $tool = new GenericModelUpsertTool(
+            name: 'create_account',
+            model: ScopedAccount::class,
+            identity: ['name'],
+            write: ['name', 'internal_note', 'api_token'],
+            defaultsResolver: static fn (): array => ['workspace_id' => 'ws-b'],
+            scope: $this->scopeFor('ws-b'),
+        );
+
+        $parameters = $tool->getParameters();
+        $this->assertTrue($parameters['name']['required'], 'name is NOT NULL without a default.');
+        $this->assertFalse($parameters['internal_note']['required'], 'nullable columns are optional.');
+        $this->assertFalse($parameters['api_token']['required']);
+
+        $result = $tool->execute(['name' => 'Only A Name'], new UnifiedActionContext('schema-required', 'user-b'));
+        $this->assertTrue($result->success, (string) $result->message);
+        $this->assertSame(1, ScopedAccount::where('name', 'Only A Name')->count());
+    }
+
+    public function test_an_explicit_required_list_is_still_honoured(): void
+    {
+        $tool = new GenericModelUpsertTool(
+            name: 'create_account',
+            model: ScopedAccount::class,
+            identity: ['name'],
+            write: ['name', 'internal_note'],
+            required: ['name', 'internal_note'],
+            scope: $this->scopeFor('ws-b'),
+        );
+
+        $this->assertTrue($tool->getParameters()['internal_note']['required']);
+        $this->assertTrue($tool->execute(['name' => 'Acme'], new UnifiedActionContext('explicit-required', 'user-b'))->requiresUserInput());
+    }
+
     public function test_create_still_updates_the_matching_record_inside_the_same_scope(): void
     {
         ScopedAccount::create(['name' => 'Acme', 'workspace_id' => 'ws-b']);
@@ -88,6 +124,19 @@ class GenericModelToolScopeHardeningTest extends TestCase
         $tool = new \LaravelAIEngine\Services\Agent\Tools\GenericModelLookupTool('find_account', ScopedAccount::class, ['name'], ['id', 'name'], scope: $this->scopeFor('ws-a'));
 
         $this->assertSame([], $tool->validate(['name' => 'Acme']));
+        $this->assertSame([], $tool->validate(['filters' => ['name' => 'Acme']]));
+    }
+
+    public function test_find_tool_returns_the_columns_it_searched_when_no_return_list_is_configured(): void
+    {
+        ScopedAccount::create(['name' => 'Acme', 'workspace_id' => 'ws-a', 'internal_note' => 'n1']);
+        $tool = new \LaravelAIEngine\Services\Agent\Tools\GenericModelLookupTool('find_account', ScopedAccount::class, ['name', 'internal_note'], scope: $this->scopeFor('ws-a'));
+
+        $result = $tool->execute(['query' => 'Acme'], new UnifiedActionContext('find-returns', 'user-a'));
+
+        $this->assertTrue($result->success);
+        $this->assertSame('Acme', $result->data['name']);
+        $this->assertSame('n1', $result->data['internal_note']);
         $this->assertNotSame([], $tool->validate([]));
     }
 
