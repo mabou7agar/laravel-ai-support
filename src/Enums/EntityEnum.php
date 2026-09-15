@@ -63,6 +63,8 @@ class EntityEnum
     public const CLAUDE_HAIKU_4_5 = 'claude-haiku-4-5-20251001';
     public const CLAUDE_SONNET_4_6 = 'claude-sonnet-4-6';
     public const CLAUDE_OPUS_4_6 = 'claude-opus-4-6';
+    public const CLAUDE_OPUS_5 = 'claude-opus-5';
+    public const CLAUDE_SONNET_5 = 'claude-sonnet-5';
     public const CLAUDE_3_HAIKU = 'claude-3-haiku-20240307';
     public const CLAUDE_3_OPUS = 'claude-3-opus-20240229';
 

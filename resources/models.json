@@ -339,6 +339,16 @@
         "supports_vision": true,
         "supports_streaming": true
     },
+    "claude-opus-5": {
+        "label": "Claude Opus 5",
+        "engine": "anthropic",
+        "driver_class": "LaravelAIEngine\\Drivers\\Anthropic\\AnthropicEngineDriver",
+        "credit_index": 4,
+        "content_type": "text",
+        "max_tokens": 1000000,
+        "supports_vision": true,
+        "supports_streaming": true
+    },
     "claude-sonnet-4-5": {
         "label": "Claude Sonnet 4.5",
         "engine": "anthropic",
@@ -356,6 +366,16 @@
         "credit_index": 2.5,
         "content_type": "text",
         "max_tokens": 200000,
+        "supports_vision": true,
+        "supports_streaming": true
+    },
+    "claude-sonnet-5": {
+        "label": "Claude Sonnet 5",
+        "engine": "anthropic",
+        "driver_class": "LaravelAIEngine\\Drivers\\Anthropic\\AnthropicEngineDriver",
+        "credit_index": 2,
+        "content_type": "text",
+        "max_tokens": 1000000,
         "supports_vision": true,
         "supports_streaming": true
     },

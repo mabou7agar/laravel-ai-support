@@ -55,9 +55,10 @@ return array_replace_recursive($defaults, [
         ],
         'anthropic' => [
             'api_key' => env('ANTHROPIC_API_KEY'),
-            // Mark stable system prompts cache_control: ephemeral (~0.1x input
-            // price on cache reads). Safe default: sub-minimum blocks simply
-            // aren't cached.
+            'default_model' => env('ANTHROPIC_DEFAULT_MODEL', data_get($defaults, 'engines.anthropic.default_model', 'claude-sonnet-5')),
+            // Mark the system prompt and the last tool definition
+            // cache_control: ephemeral (~0.1x input price on cache reads). Safe
+            // default: sub-minimum prefixes simply aren't cached.
             'prompt_caching' => (bool) env('ANTHROPIC_PROMPT_CACHING', true),
         ],
         'bedrock' => [

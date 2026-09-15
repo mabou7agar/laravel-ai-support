@@ -773,7 +773,7 @@ class AIResponse implements \JsonSerializable
         }
 
         return match ($engine->value) {
-            EngineEnum::Anthropic->value      => EntityEnum::from(EntityEnum::CLAUDE_3_5_SONNET),
+            EngineEnum::Anthropic->value      => EntityEnum::from(EntityEnum::CLAUDE_SONNET_5),
             EngineEnum::Gemini->value         => EntityEnum::from(EntityEnum::GEMINI_1_5_FLASH),
             EngineEnum::StableDiffusion->value => EntityEnum::from(EntityEnum::SD3_LARGE),
             EngineEnum::ElevenLabs->value     => EntityEnum::from(EntityEnum::ELEVEN_MULTILINGUAL_V2),

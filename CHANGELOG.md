@@ -29,6 +29,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (defaults: on, 3 attempts, 250 ms base, 2 s per wait, 4 s total).
 - **`EngineProxy::withRetry()` no longer retries permanent provider errors** (400/401/403/...)
   and each wait is capped by `ai-engine.http.retry.max_delay_ms` (was up to 4 s+ per attempt).
+- **Anthropic streaming is parsed per SSE event.** The driver read the body in fixed 1 KB
+  slices and only matched `data:` at the slice start, so events split across reads were lost.
+  `ParsesSseStream::parseSseEvents()` now buffers lines across reads (and flushes a trailing
+  event without a newline); the Anthropic stream handles `message_start`,
+  `content_block_start` (`text`/`tool_use`), `text_delta`, `input_json_delta` accumulation,
+  `content_block_stop`, `message_delta` (stop reason, usage) and `error`. Streaming requests
+  now send tools, and the generator returns an `AIResponse` with usage, finish reason and
+  streamed tool calls.
+- **Anthropic function calling.** Function definitions were sent as an OpenAI-style
+  `functions` key (rejected by the Messages API), `max_tokens` could be `null`, and
+  `tool_use` blocks were ignored. Functions are now converted to Anthropic `tools`
+  (`input_schema`), `function_call` maps to `tool_choice` (`parallel_tool_calls: false` sets
+  `disable_parallel_tool_use`), `max_tokens` defaults to `engines.anthropic.max_tokens`
+  (4096), and tool calls — streamed or not — are exposed in `metadata['tool_calls']`
+  (OpenAI shape, as OpenRouter/xAI do) plus `getFunctionCall()`, so the AiNative native tool
+  planner works on Anthropic. Temperature is omitted for models that reject sampling
+  parameters (Claude Opus 4.7+, Sonnet 5+).
+
+### Added
+
+- **Current Claude models.** `EntityEnum::CLAUDE_OPUS_5` (`claude-opus-5`) and
+  `EntityEnum::CLAUDE_SONNET_5` (`claude-sonnet-5`) alongside the existing
+  `CLAUDE_HAIKU_4_5` (`claude-haiku-4-5-20251001`), added to the model catalog
+  (`resources/models.json`), engine model/credit config, `AIModelRegistry`, the models seeder
+  and the driver's model list. `claude-sonnet-5` is the new Anthropic default
+  (`engines.anthropic.default_model`, `ANTHROPIC_DEFAULT_MODEL`). Older ids are kept.
+- **Anthropic prompt caching covers tools.** With `engines.anthropic.prompt_caching` (default
+  on) the last tool definition gets a `cache_control: ephemeral` breakpoint in addition to the
+  system prompt block. Cache usage (`cached_tokens`, `cache_creation_tokens`) is reported for
+  streamed responses too. OpenAI prefix caching needed no change: the system message is always
+  first and tools are sent in caller order.
 
 ## [3.4.4] — 2026-09-15
 
