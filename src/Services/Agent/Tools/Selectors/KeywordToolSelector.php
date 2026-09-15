@@ -14,13 +14,6 @@ class KeywordToolSelector implements ToolSelectorContract
 {
     use SelectsBoundedTools;
 
-    /** @var array<int, string> */
-    private const STOP_WORDS = [
-        'the', 'and', 'for', 'with', 'this', 'that', 'you', 'your', 'are', 'was', 'will',
-        'can', 'please', 'want', 'need', 'about', 'from', 'into', 'have', 'has', 'create',
-        'make', 'show', 'get', 'list', 'find', 'add', 'new',
-    ];
-
     public function select(array $tools, string $message, array $state, array $options): array
     {
         $limit = max(1, (int) config('ai-agent.ai_native.tool_selection.limit', 12));
@@ -36,14 +29,14 @@ class KeywordToolSelector implements ToolSelectorContract
             }
         }
 
-        $terms = $this->terms($message);
+        $terms = $this->keywordTerms($message);
         if ($terms === []) {
             return $this->fallbackTools($tools);
         }
 
         $scored = [];
         foreach ($candidates as $name => $tool) {
-            $score = $this->score($name, (string) $tool->getDescription(), $terms);
+            $score = $this->keywordScore($name, (string) $tool->getDescription(), $terms);
             if ($score > 0) {
                 $scored[$name] = $score;
             }
@@ -66,39 +59,4 @@ class KeywordToolSelector implements ToolSelectorContract
         return $selected;
     }
 
-    /**
-     * @param array<int, string> $terms
-     */
-    private function score(string $name, string $description, array $terms): int
-    {
-        $nameHay = ' ' . str_replace('_', ' ', mb_strtolower($name)) . ' ';
-        $descHay = mb_strtolower($description);
-
-        $score = 0;
-        foreach ($terms as $term) {
-            // A hit in the tool name is the strongest signal.
-            if (str_contains($nameHay, ' ' . $term . ' ')) {
-                $score += 3;
-            } elseif (str_contains($nameHay, $term)) {
-                $score += 2;
-            } elseif (str_contains($descHay, $term)) {
-                $score += 1;
-            }
-        }
-
-        return $score;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function terms(string $message): array
-    {
-        $tokens = preg_split('/[^a-z0-9]+/i', mb_strtolower($message)) ?: [];
-
-        return array_values(array_unique(array_filter(
-            $tokens,
-            static fn (string $t): bool => strlen($t) >= 3 && !in_array($t, self::STOP_WORDS, true)
-        )));
-    }
 }

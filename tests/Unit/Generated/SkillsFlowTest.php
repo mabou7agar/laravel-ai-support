@@ -1014,12 +1014,12 @@ class SkillsFlowTest extends UnitTestCase
             []
         ));
 
-        // plan.required_inputs non-empty -> false.
+        // plan.required_inputs asking for a required parameter -> false.
         $this->assertFalse($policy->needsFinalToolBeforeAsk(
             'create invoice',
             $payload,
             $options,
-            ['required_inputs' => ['customer_email']]
+            ['required_inputs' => ['items']]
         ));
 
         // empty current_payload -> false.
@@ -1050,9 +1050,24 @@ class SkillsFlowTest extends UnitTestCase
         $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['customer_id']]));
         $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => [['name' => 'customer_id']]]));
 
-        // A required parameter, or a field the tool does not know, is a genuine question.
+        // A required parameter is a genuine question, even when named loosely.
         $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['items']]));
-        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['customer_id', 'currency']]));
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['currency', 'Items']]));
+
+        // A field the final tool has no parameter for (e.g. currency) cannot change the call:
+        // push back once instead of stopping to ask.
+        $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => ['customer_id', 'currency']]));
+        $this->assertTrue($policy->needsFinalToolBeforeAsk('create invoice', $state, $options, ['required_inputs' => [['name' => 'currency']]]));
+
+        // A nested field of the draft (items.*.product_name) is a real input, and once the final
+        // tool itself reported a problem its question is grounded: let both through.
+        $nestedState = ['task_frame' => ['current_payload' => ['items' => [['product_name' => 'Widget', 'quantity' => 1]]]]];
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $nestedState, $options, ['required_inputs' => ['product_name']]));
+        $attempted = $state + ['tool_results' => [['tool' => 'create_invoice', 'result' => ['success' => false, 'error' => 'Unknown product']]]];
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', $attempted, $options, ['required_inputs' => ['currency']]));
+
+        // ...but never while a required parameter is still missing from the payload.
+        $this->assertFalse($policy->needsFinalToolBeforeAsk('create invoice', ['task_frame' => ['current_payload' => ['customer_id' => 5]]], $options, ['required_inputs' => ['currency']]));
 
         // Pushed back once already this turn: let the question through rather than loop.
         $pushedBack = $state + ['runtime_feedback' => [['reason' => 'final_tool_required_before_confirmation_question']]];

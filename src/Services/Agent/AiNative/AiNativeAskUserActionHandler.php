@@ -75,7 +75,7 @@ class AiNativeAskUserActionHandler
         if ($this->skillPolicy->needsFinalToolBeforeAsk($message, $state, $options, $plan)) {
             $state['runtime_feedback'][] = [
                 'reason' => 'final_tool_required_before_confirmation_question',
-                'message' => 'The plan asked the user to confirm a ready payload, or asked only for optional fields the final tool does not require. Call the skill final tool with the current payload instead; it fills defaults for optional fields and Laravel will handle the confirmation prompt before execution.',
+                'message' => 'The plan asked the user to confirm a ready payload, or asked only for optional fields or for details the final tool has no parameter for (it cannot use them). Call the skill final tool with the current payload instead; it fills defaults for optional fields and Laravel will handle the confirmation prompt before execution.',
                 'required_tools' => $this->skillPolicy->requiredFinalTools($message, $options, $state),
             ];
             $this->stateStore->put($context, $state);

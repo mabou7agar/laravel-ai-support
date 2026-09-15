@@ -164,6 +164,22 @@ class AiNativeToolCallActionHandler
             }
 
             $arguments = $preview['arguments'];
+
+            $omitted = $this->omittedUserDetails($message, $tool, $arguments, $state);
+            if ($omitted !== []) {
+                $state['runtime_feedback'][] = [
+                    'reason' => 'user_details_missing_from_write',
+                    'message' => 'The latest user message gives values for optional parameters of '.$toolName.' that the planned call left out: '
+                        .implode(', ', array_map(static fn (string $name, string $value): string => $name.' = "'.$value.'"', array_keys($omitted), $omitted))
+                        .'. Call '.$toolName.' again with the same arguments plus these values (keep the user\'s wording). Leave a value out only if it clearly belongs to a different record.',
+                    'tool' => $toolName,
+                    'fields' => $omitted,
+                ];
+                $this->stateStore->put($context, $state);
+
+                return AiNativeActionOutcome::continueLoop();
+            }
+
             $state['pending_tool'] = [
                 'name' => $toolName,
                 'params' => $arguments,
@@ -307,6 +323,30 @@ class AiNativeToolCallActionHandler
         $requiredFinalTools = $this->skillPolicy->requiredFinalTools($message, $options, $state);
 
         return $requiredFinalTools === [] || in_array($toolName, $requiredFinalTools, true);
+    }
+
+    /**
+     * Optional details the user literally wrote in the latest message that the planned write
+     * dropped. Reported once per turn; a planner that still leaves them out proceeds to the
+     * normal confirmation (the user can edit there). Kill switch:
+     * ai-agent.ai_native.omitted_detail_feedback.enabled.
+     *
+     * @param array<string, mixed> $arguments
+     * @param array<string, mixed> $state
+     * @return array<string, string>
+     */
+    private function omittedUserDetails(string $message, AgentTool $tool, array $arguments, array $state): array
+    {
+        if (!(bool) config('ai-agent.ai_native.omitted_detail_feedback.enabled', true)
+            || $this->skillPolicy->hasRuntimeFeedback($state, 'user_details_missing_from_write')) {
+            return [];
+        }
+
+        try {
+            return (new AiNativeOmittedDetailDetector())->detect($tool, $arguments, $message);
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     private function isLookupMiss(string $toolName, AgentTool $tool, ActionResult $result): bool
