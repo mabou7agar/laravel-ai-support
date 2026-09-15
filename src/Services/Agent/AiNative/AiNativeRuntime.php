@@ -1667,7 +1667,7 @@ class AiNativeRuntime
      */
     private function compactStateForPlanner(array &$state, UnifiedActionContext $context, array $options): void
     {
-        if (!(bool) config('ai-agent.ai_native.compaction.enabled', false)) {
+        if (!(bool) config('ai-agent.ai_native.compaction.enabled', true)) {
             return;
         }
 

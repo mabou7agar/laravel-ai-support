@@ -218,6 +218,13 @@ return [
         // entry's 'display' strings are capped (~200 chars). Prompt-only — the
         // persisted state is untouched. Kill switch; default ON.
         'snapshot_compact_outcomes' => (bool) env('AI_AGENT_AI_NATIVE_SNAPSHOT_COMPACT_OUTCOMES', true),
+        // Render-time cap per tool_results entry in the planner prompt (bytes). The
+        // persisted state keeps state_result_max_bytes; this tighter cap bounds what
+        // every planner step re-sends. 0 = no render cap.
+        'prompt_tool_result_max_bytes' => (int) env('AI_AGENT_AI_NATIVE_PROMPT_TOOL_RESULT_MAX_BYTES', 4096),
+        // Drop the context snapshot's recent_outcomes 'display' copy for results
+        // still rendered under tool_results (the same payload was sent twice per step).
+        'prompt_dedupe_tool_results' => (bool) env('AI_AGENT_AI_NATIVE_PROMPT_DEDUPE_TOOL_RESULTS', true),
         // Strip a host's TURN-CONTEXT preamble from REPLAYED user history at
         // prompt render: a user entry containing a "User request…:" fence
         // marker keeps only the text after the marker, so a prior turn's stale
@@ -256,8 +263,10 @@ return [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows
             // past the threshold so a smaller state is sent to the planner.
-            // Default OFF preserves today's behavior byte-for-byte.
-            'enabled' => env('AI_AGENT_AI_NATIVE_COMPACTION_ENABLED', false),
+            // Default ON since 3.5: only long turns cross the threshold, and the
+            // newest keep_recent_results entries (the ones the planner acts on)
+            // are never dropped. Conversation compaction below stays opt-in.
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_COMPACTION_ENABLED', true),
             'threshold' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_THRESHOLD', 12),
             'keep_recent_results' => (int) env('AI_AGENT_AI_NATIVE_COMPACTION_KEEP_RECENT_RESULTS', 6),
             // When enabled, also compact $context->conversationHistory via the

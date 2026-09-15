@@ -867,9 +867,87 @@ class AiNativePromptBuilder
      */
     private function stateForPrompt(array $state): array
     {
-        unset($state['task_frame'], $state['recent_outcomes']);
+        // last_turn_outcome is an in-memory mirror of the newest recent_outcomes entry.
+        unset($state['task_frame'], $state['recent_outcomes'], $state['last_turn_outcome']);
+
+        $maxBytes = (int) config('ai-agent.ai_native.prompt_tool_result_max_bytes', 4096);
+        if ($maxBytes > 0 && is_array($state['tool_results'] ?? null)) {
+            foreach ($state['tool_results'] as $index => $entry) {
+                if (is_array($entry)) {
+                    $state['tool_results'][$index] = $this->boundedToolResult($entry, $maxBytes);
+                }
+            }
+        }
 
         return $state;
+    }
+
+    /**
+     * Render-time cap for one tool_results entry (the persisted state keeps its own, larger
+     * state_result_max_bytes cap). Long strings and lists are pruned first; an entry that is
+     * still too large keeps its tool name, success flag, message/error and top-level scalars.
+     *
+     * @param array<string, mixed> $entry
+     * @return array<string, mixed>
+     */
+    private function boundedToolResult(array $entry, int $maxBytes): array
+    {
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        $encoded = json_encode($entry, $flags);
+        if (!is_string($encoded) || strlen($encoded) <= $maxBytes) {
+            return $entry;
+        }
+
+        $pruned = $this->prunePromptValue($entry);
+        $pruned['_prompt_truncated'] = true;
+        $pruned['_original_bytes'] = strlen($encoded);
+        $prunedEncoded = json_encode($pruned, $flags);
+        if (is_string($prunedEncoded) && strlen($prunedEncoded) <= $maxBytes) {
+            return $pruned;
+        }
+
+        $result = is_array($entry['result'] ?? null) ? $entry['result'] : [];
+        $data = is_array($result['data'] ?? null) ? $result['data'] : [];
+        $scalars = static fn (array $values): array => array_map(
+            static fn (mixed $value): mixed => is_string($value) && mb_strlen($value) > 120 ? mb_substr($value, 0, 120) . '…' : $value,
+            array_slice(array_filter($values, static fn (mixed $value): bool => is_scalar($value) || $value === null), 0, 30, true)
+        );
+
+        return array_filter([
+            'tool' => $entry['tool'] ?? null,
+            'params' => is_array($entry['params'] ?? null) ? $scalars($entry['params']) : null,
+            'result' => array_filter([
+                'success' => $result['success'] ?? null,
+                'message' => isset($result['message']) ? mb_substr((string) $result['message'], 0, 300) : null,
+                'error' => isset($result['error']) ? mb_substr((string) $result['error'], 0, 300) : null,
+                'data' => $scalars($data),
+            ], static fn (mixed $value): bool => $value !== null && $value !== []),
+            'task_closed' => $entry['task_closed'] ?? null,
+            '_prompt_truncated' => true,
+            '_original_bytes' => strlen($encoded),
+        ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    private function prunePromptValue(mixed $value, int $depth = 0): mixed
+    {
+        if (is_string($value)) {
+            return mb_strlen($value) > 300 ? mb_substr($value, 0, 300) . '…[truncated]' : $value;
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+        if ($depth >= 5) {
+            return '[pruned: too deep]';
+        }
+        if (array_is_list($value) && count($value) > 10) {
+            $omitted = count($value) - 10;
+            $list = array_map(fn (mixed $item): mixed => $this->prunePromptValue($item, $depth + 1), array_slice($value, 0, 10));
+            $list[] = sprintf('[pruned: +%d more entries]', $omitted);
+
+            return $list;
+        }
+
+        return array_map(fn (mixed $item): mixed => $this->prunePromptValue($item, $depth + 1), $value);
     }
 
     private function withoutLatestUserEcho(array $messages, string $message): array

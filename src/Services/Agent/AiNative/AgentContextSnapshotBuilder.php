@@ -20,6 +20,14 @@ class AgentContextSnapshotBuilder
             static fn (mixed $outcome): bool => is_array($outcome)
         ));
 
+        // Results still present under tool_results are rendered there in the runtime state
+        // block; their outcome 'display' copies only re-bill the entity payload a second time.
+        // Runs before compaction, which reorders/collapses entries.
+        // Kill switch: ai-agent.ai_native.prompt_dedupe_tool_results (default true).
+        if ($this->dedupeEnabled()) {
+            $outcomes = $this->withoutDisplayCoveredByToolResults($outcomes, (array) ($state['tool_results'] ?? []));
+        }
+
         // Prompt-size guard (render-time only; the persisted state is untouched):
         // a long session's recent_outcomes accumulate byte-identical entries (the
         // model retrying the same successful call) and multi-KB 'display' blobs
@@ -44,6 +52,38 @@ class AgentContextSnapshotBuilder
             'already_completed' => array_values((array) ($frame['completed_writes'] ?? [])),
             'open_questions' => array_values((array) ($frame['open_questions'] ?? [])),
         ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    private function dedupeEnabled(): bool
+    {
+        return !\function_exists('config')
+            || (bool) config('ai-agent.ai_native.prompt_dedupe_tool_results', true);
+    }
+
+    /**
+     * recent_outcomes and tool_results are appended in lockstep, so their tails pair up by
+     * tool name. Paired outcomes keep their summary fields (tool, outcome, entity, label) and
+     * lose only 'display'; unpaired (older, already trimmed from tool_results) keep it.
+     *
+     * @param array<int, array<string, mixed>> $outcomes
+     * @param array<int, mixed> $toolResults
+     * @return array<int, array<string, mixed>>
+     */
+    private function withoutDisplayCoveredByToolResults(array $outcomes, array $toolResults): array
+    {
+        $results = array_values(array_filter($toolResults, 'is_array'));
+        $j = count($results) - 1;
+        for ($i = count($outcomes) - 1; $i >= 0 && $j >= 0; $i--, $j--) {
+            if ((string) ($outcomes[$i]['tool'] ?? '') !== (string) ($results[$j]['tool'] ?? '')) {
+                break;
+            }
+            if (isset($outcomes[$i]['display'])) {
+                unset($outcomes[$i]['display']);
+                $outcomes[$i]['details_in'] = 'tool_results';
+            }
+        }
+
+        return $outcomes;
     }
 
     private function compactionEnabled(): bool
