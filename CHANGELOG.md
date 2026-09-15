@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.2] — 2026-09-15
+
+### Fixed
+
+- **Generated create tools require only what the database requires.** Without an explicit
+  `required` list, `GenericModelUpsertTool` requires the writable columns that are NOT NULL
+  with no default (inspected once per table; falls back to all writable fields when the
+  schema cannot be read). Previously every writable field was required, so the agent
+  demanded optional data such as a lead's phone number.
+- **"Not found" is a complete answer to a plain lookup.** The runtime only insists on a next
+  step (ask, offer to create, another tool) after a failed lookup when a draft or pending
+  write depends on it, or the matched skill declares a final tool. It previously pushed the
+  planner into proposing creates the user never asked for.
+- **Auto-finalized answers close the task.** `toolCompleted()` and `alreadyCompleted()` now
+  complete the task like `final()`, so a slow turn that ends on a terminal tool no longer
+  leaves the previous skill scoping the next request.
+- **Generated `find_*` tools** read a search value nested under `filters`/`where`/`criteria`,
+  and return the columns they searched when no return list is configured (a customer matched
+  by company name or code no longer comes back empty).
+
 ## [3.4.1] — 2026-09-15
 
 ### Added

@@ -39,6 +39,7 @@ class GenericModelLookupTool extends ModelBackedLookupTool
         $this->search = array_values($search);
         if ($returns !== []) {
             $this->returns = array_values($returns);
+            $this->explicitReturns = true;
         }
         $this->description = $description;
         $this->missingFields = array_values($missingFields);

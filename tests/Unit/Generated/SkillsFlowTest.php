@@ -788,6 +788,17 @@ class SkillsFlowTest extends UnitTestCase
 
         // Message does not match any skill.
         $this->assertFalse($policy->needsNextStepAfterMissingLookup('hello there', $stateMiss, [], ['data' => []]));
+
+        // A plain lookup skill (no final tool, no draft): "not found" is a complete answer.
+        $lookupOnly = $this->skillPolicy(
+            $this->skillRegistry([new AgentSkillDefinition(id: 'customers', name: 'Customers', description: 'Find customers', triggers: ['find customer'], tools: ['lookup_customer'])]),
+            $this->toolRegistryWithInvoiceTools()
+        );
+        $this->assertFalse($lookupOnly->needsNextStepAfterMissingLookup('find customer C-9', $stateMiss, [], ['data' => []]));
+
+        // The same lookup while a draft depends on it still needs a next step.
+        $stateDraft = $stateMiss + ['task_frame' => ['current_payload' => ['customer_name' => 'C-9']]];
+        $this->assertTrue($lookupOnly->needsNextStepAfterMissingLookup('find customer C-9', $stateDraft, [], ['data' => []]));
     }
 
     // =====================================================================

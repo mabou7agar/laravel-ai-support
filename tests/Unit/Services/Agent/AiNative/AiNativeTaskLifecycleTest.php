@@ -125,6 +125,16 @@ class AiNativeTaskLifecycleTest extends UnitTestCase
         $this->assertSame('completed', $context->metadata['ai_native']['task_frame']['status']);
     }
 
+    public function test_auto_finalized_tool_answer_also_completes_the_task(): void
+    {
+        $context = new UnifiedActionContext(sessionId: 'lifecycle-tool-completed');
+        $state = ['task_frame' => ['active_objective' => 'module_account', 'status' => 'working']];
+
+        $this->responses()->toolCompleted($context, $state, 'data_query', \LaravelAIEngine\DTOs\ActionResult::success('You have 1 customer.'));
+
+        $this->assertSame('completed', $context->metadata['ai_native']['task_frame']['status']);
+    }
+
     public function test_final_answer_keeps_a_task_that_is_still_collecting_or_confirming(): void
     {
         $collecting = new UnifiedActionContext(sessionId: 'lifecycle-collecting');

@@ -50,7 +50,10 @@ class GenericModelUpsertTool extends ModelBackedUpsertTool
         $this->model = $model;
         $this->identity = array_values($identity);
         $this->write = array_values($write);
+        // No explicit list: infer from the table schema (falls back to all writable fields
+        // when the schema cannot be inspected).
         $this->required = array_values($required !== [] ? $required : $write);
+        $this->inferRequiredFromSchema = $required === [];
         if ($returns !== []) {
             $this->returns = array_values($returns);
         }
