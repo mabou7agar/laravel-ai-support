@@ -45,11 +45,24 @@ class AiNativeSkillPolicy
             unset($state['task_frame']['active_objective']);
         }
 
+        $objective = $this->matcher->matchedSkillId($message, $options);
+
         if (!empty($state['task_frame']['active_objective'])) {
-            return;
+            if ($objective === null || !$this->finishedObjectiveGivesWayTo($state, $objective)) {
+                return;
+            }
+
+            // The previous task already wrote its record and nothing of it is pending: the
+            // new request is a different task, not a reply. Close the old one so its draft and
+            // skill scope do not leak into this request.
+            unset($state['task_frame']['current_payload'], $state['task_frame']['current_payload_source']);
+            foreach ((array) ($state['tool_results'] ?? []) as $index => $entry) {
+                if (is_array($entry)) {
+                    $state['tool_results'][$index]['task_closed'] = true;
+                }
+            }
         }
 
-        $objective = $this->matcher->matchedSkillId($message, $options);
         if ($objective === null) {
             return;
         }
@@ -58,6 +71,80 @@ class AiNativeSkillPolicy
             'active_objective' => $objective,
             'status' => 'working',
         ]);
+    }
+
+    /**
+     * A task frame stays "working" after its write when the write tool's name does not line
+     * up with the skill id (e.g. skill "module_lead" writing through "create_lead"), so the
+     * old objective used to survive into an unrelated next request. It gives way to a new
+     * request that matches a DIFFERENT skill only when nothing of the old task is still in
+     * flight: no pending confirmation, not collecting input, and either the skill's declared
+     * final tool has completed or the most recent thing the task did was a successful write.
+     *
+     * @param array<string, mixed> $state
+     */
+    private function finishedObjectiveGivesWayTo(array $state, string $newObjective): bool
+    {
+        $frame = (array) ($state['task_frame'] ?? []);
+        $current = trim((string) ($frame['active_objective'] ?? ''));
+        if ($current === '' || $current === $newObjective) {
+            return false;
+        }
+
+        if (is_array($state['pending_tool'] ?? null)
+            || is_array($frame['pending_tool'] ?? null)
+            || in_array($frame['status'] ?? null, ['confirming', 'collecting'], true)
+            || is_array($state['suggested_tool_continuation'] ?? null)) {
+            return false;
+        }
+
+        $completedWrites = array_values(array_filter((array) ($frame['completed_writes'] ?? []), 'is_array'));
+        if ($completedWrites === []) {
+            return false;
+        }
+
+        $finalTools = $this->declaredFinalTools($current);
+        if ($finalTools !== [] && array_intersect($finalTools, array_column($completedWrites, 'tool')) !== []) {
+            return true;
+        }
+
+        $outcomes = array_values(array_filter((array) ($frame['recent_outcomes'] ?? []), 'is_array'));
+        $last = $outcomes === [] ? null : $outcomes[count($outcomes) - 1];
+        $lastWrite = $completedWrites[count($completedWrites) - 1];
+
+        // A supporting write mid-task (creating the customer an invoice draft needs) leaves
+        // a parent draft the write did not cover; that task is not finished.
+        $draft = (array) ($frame['current_payload'] ?? []);
+        $written = (array) ($lastWrite['params'] ?? []);
+        if (array_diff_key($draft, $written) !== []) {
+            return false;
+        }
+
+        return is_array($last)
+            && ($last['success'] ?? false) === true
+            && ($last['needs_user_input'] ?? false) !== true
+            && (string) ($last['tool'] ?? '') === (string) ($lastWrite['tool'] ?? '')
+            && in_array((string) ($last['outcome'] ?? ''), ['created', 'updated', 'deleted', 'sent', 'completed'], true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function declaredFinalTools(string $skillId): array
+    {
+        foreach ($this->skills->skills() as $skill) {
+            if ((string) ($skill->id ?? '') !== $skillId) {
+                continue;
+            }
+
+            $metadata = (array) ($skill->metadata ?? []);
+            $tools = array_map('strval', (array) ($metadata['final_tools'] ?? []));
+            $tools[] = trim((string) ($metadata['final_tool'] ?? ''));
+
+            return array_values(array_filter($tools, static fn (string $tool): bool => $tool !== ''));
+        }
+
+        return [];
     }
 
     /**

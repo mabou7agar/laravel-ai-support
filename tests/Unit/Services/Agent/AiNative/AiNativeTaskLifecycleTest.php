@@ -172,4 +172,92 @@ class AiNativeTaskLifecycleTest extends UnitTestCase
         $this->responses()->final($pending, ['pending_tool' => ['name' => 'create_invoice'], 'task_frame' => ['active_objective' => 'invoice_create', 'status' => 'confirming']], 'Confirm?');
         $this->assertSame('confirming', $pending->metadata['ai_native']['task_frame']['status']);
     }
+
+    private function skillPolicyFor(array $skills): \LaravelAIEngine\Services\Agent\AiNative\AiNativeSkillPolicy
+    {
+        $registry = \Mockery::mock(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class);
+        $registry->shouldReceive('skills')->andReturn($skills);
+
+        return new \LaravelAIEngine\Services\Agent\AiNative\AiNativeSkillPolicy(
+            $registry,
+            new ToolRegistry(),
+            app(\LaravelAIEngine\Services\Agent\IntentSignalService::class)
+        );
+    }
+
+    private function moduleSkills(array $leadMetadata = []): array
+    {
+        return [
+            new \LaravelAIEngine\DTOs\AgentSkillDefinition(id: 'module_lead', name: 'Leads', description: 'Leads.', triggers: ['lead'], tools: ['create_lead'], metadata: $leadMetadata),
+            new \LaravelAIEngine\DTOs\AgentSkillDefinition(id: 'module_invoice', name: 'Invoices', description: 'Invoices.', triggers: ['invoices'], tools: ['find_invoice']),
+        ];
+    }
+
+    /**
+     * A lead written through create_lead under skill "module_lead": the names do not line up,
+     * so the frame stays "working" after the write.
+     */
+    private function stateAfterLeadWrite(): array
+    {
+        $state = ['task_frame' => [
+            'active_objective' => 'module_lead',
+            'status' => 'confirming',
+            'current_payload' => ['name' => 'Omar', 'phone' => '+201001234567'],
+        ]];
+        $this->taskState()->recordToolResult($state, 'create_lead', ['name' => 'Omar', 'phone' => '+201001234567', 'confirmed' => true], ActionResult::success('Lead created.', ['id' => 9, 'name' => 'Omar']), true);
+        $state['tool_results'][] = ['tool' => 'create_lead', 'result' => ['success' => true]];
+
+        return $state;
+    }
+
+    public function test_a_written_task_gives_way_to_a_request_for_a_different_skill(): void
+    {
+        $state = $this->stateAfterLeadWrite();
+        $this->assertSame('working', $state['task_frame']['status'], 'precondition: objective/tool names do not line up');
+
+        $this->skillPolicyFor($this->moduleSkills())->seedActiveTask('show my invoices from last month', $state, []);
+
+        $this->assertSame('module_invoice', $state['task_frame']['active_objective']);
+        $this->assertArrayNotHasKey('current_payload', $state['task_frame'], 'The written lead draft must not leak into the new task.');
+        $this->assertTrue($state['tool_results'][0]['task_closed']);
+    }
+
+    public function test_declared_final_tool_completion_also_frees_the_objective(): void
+    {
+        $state = $this->stateAfterLeadWrite();
+        // Something else ran after the write, but the skill's final tool has completed.
+        $state['task_frame']['recent_outcomes'][] = ['tool' => 'find_invoice', 'outcome' => 'found', 'success' => true];
+
+        $this->skillPolicyFor($this->moduleSkills(['final_tool' => 'create_lead']))->seedActiveTask('list invoices', $state, []);
+
+        $this->assertSame('module_invoice', $state['task_frame']['active_objective']);
+    }
+
+    public function test_an_unfinished_task_keeps_its_objective(): void
+    {
+        $policy = $this->skillPolicyFor($this->moduleSkills());
+
+        // A message without a skill match: unchanged.
+        $state = $this->stateAfterLeadWrite();
+        $policy->seedActiveTask('thanks!', $state, []);
+        $this->assertSame('module_lead', $state['task_frame']['active_objective']);
+
+        // A pending confirmation is still in flight.
+        $pending = $this->stateAfterLeadWrite();
+        $pending['pending_tool'] = ['name' => 'create_lead', 'params' => []];
+        $policy->seedActiveTask('show my invoices', $pending, []);
+        $this->assertSame('module_lead', $pending['task_frame']['active_objective']);
+
+        // No write yet: the user may be answering with words that happen to match a trigger.
+        $collecting = ['task_frame' => ['active_objective' => 'module_lead', 'status' => 'working', 'current_payload' => ['name' => 'Omar']]];
+        $policy->seedActiveTask('he asked about invoices', $collecting, []);
+        $this->assertSame('module_lead', $collecting['task_frame']['active_objective']);
+
+        // A supporting write that did not cover the parent draft.
+        $parentDraft = ['task_frame' => ['active_objective' => 'module_lead', 'status' => 'confirming', 'current_payload' => ['name' => 'Omar', 'items' => [['product' => 'Widget']]]]];
+        $this->taskState()->recordToolResult($parentDraft, 'create_customer', ['name' => 'Omar'], ActionResult::success('Customer created.'), true);
+        $policy->seedActiveTask('show invoices', $parentDraft, []);
+        $this->assertSame('module_lead', $parentDraft['task_frame']['active_objective']);
+        $this->assertSame('Omar', $parentDraft['task_frame']['current_payload']['name']);
+    }
 }
