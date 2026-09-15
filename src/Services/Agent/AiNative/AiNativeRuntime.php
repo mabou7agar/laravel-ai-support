@@ -1259,6 +1259,7 @@ class AiNativeRuntime
             'skills' => 'Available skills JSON:',
             'tools' => 'Available tools JSON',
             'conversation' => 'Recent conversation JSON:',
+            'request_context' => 'Request context JSON:',
             'snapshot' => 'Context snapshot JSON:',
             'runtime_state' => 'Current runtime state JSON:',
             'latest_message' => 'Latest user message:',

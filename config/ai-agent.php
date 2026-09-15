@@ -231,6 +231,19 @@ return [
         // instead. Unset (null) = derive from max_execution_time minus a 20s
         // margin (0/CLI = unlimited). Per-run override: options.turn_deadline_seconds.
         'turn_deadline_seconds' => env('AI_AGENT_AI_NATIVE_TURN_DEADLINE_SECONDS'),
+        // "Request context JSON" planner block: today's date/weekday in the
+        // request timezone (options.timezone > context metadata > this >
+        // app.timezone), the user's locale, user_id/workspace_id, and any
+        // host-provided options (or context metadata) user_context,
+        // workspace_context, page_context and request_context — each capped
+        // at max_bytes_per_section. Placed after the conversation block so it
+        // never fragments the cacheable prompt prefix. Per-run opt-out:
+        // options.prompt_context=false.
+        'prompt_context' => [
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_PROMPT_CONTEXT', true),
+            'timezone' => env('AI_AGENT_AI_NATIVE_PROMPT_TIMEZONE'),
+            'max_bytes_per_section' => (int) env('AI_AGENT_AI_NATIVE_PROMPT_CONTEXT_MAX_BYTES', 2000),
+        ],
         'compaction' => [
             // In-loop context compaction: before each planner call, trim the
             // oldest recorded tool results when the accumulated history grows
