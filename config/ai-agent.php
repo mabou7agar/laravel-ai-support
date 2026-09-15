@@ -239,6 +239,14 @@ return [
         // at max_bytes_per_section. Placed after the conversation block so it
         // never fragments the cacheable prompt prefix. Per-run opt-out:
         // options.prompt_context=false.
+        // Before showing a write confirmation, check the latest user message for
+        // optional parameters the planned call left empty but the user literally
+        // labelled ("phone +20…", "due date 2026-10-01"). When found, the planner
+        // gets one runtime_feedback round to include them; values are never
+        // guessed or filled by the runtime. Kill switch; default ON.
+        'omitted_detail_feedback' => [
+            'enabled' => (bool) env('AI_AGENT_AI_NATIVE_OMITTED_DETAIL_FEEDBACK', true),
+        ],
         'prompt_context' => [
             'enabled' => (bool) env('AI_AGENT_AI_NATIVE_PROMPT_CONTEXT', true),
             'timezone' => env('AI_AGENT_AI_NATIVE_PROMPT_TIMEZONE'),
