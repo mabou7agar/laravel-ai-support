@@ -205,6 +205,13 @@ class AiNativeAskUserConfirmationHandler
             }
         }
 
+        // Inside an active skill, only its own tools may take the payload. Falling back to
+        // every registered tool let loose field matches (customer_name -> name) stage an
+        // unrelated write; when the skill's tool does not fit, the planner is asked to call it.
+        if ($activeObjective !== '' && $toolNames !== []) {
+            return array_values(array_unique($toolNames));
+        }
+
         return array_values(array_unique(array_merge(
             $toolNames,
             array_map(static fn (AgentTool $tool): string => $tool->getName(), $this->tools->all())

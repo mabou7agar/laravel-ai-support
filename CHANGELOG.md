@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.4] — 2026-09-15
+
+### Fixed
+
+- **Create requests go straight to the real confirmation.** An `ask_user` plan that only asks
+  for fields the skill's final tool marks optional (dates, notes, terms), while the payload
+  already holds every required field, is sent back once with feedback to call the tool.
+  Questions about required or unknown fields still reach the user.
+- **A text confirmation can no longer stage an unrelated write.** Inside an active skill, the
+  free-text confirmation normalizer only considers the skill's own tools; before, loose field
+  matches (`customer_name` → `name`) could stage a different tool's write.
+- **A new request cancels the write awaiting approval.** A message that matches a skill
+  trigger and is not an approval now clears the pending confirmation, so a following "yes"
+  cannot run the abandoned write.
+- **A finished write no longer satisfies the next task for the same tool.** Tool results of a
+  completed objective are marked `task_closed` and stop counting once a new task starts, so
+  a second invoice in the same conversation is not treated as already created.
+- **Single-line actions given as flat arguments.** `ActionBackedTool` folds top-level fields
+  that only exist as list-item fields (`product`, `quantity`, `price`) into one list row when
+  the list itself is absent.
+
 ## [3.4.3] — 2026-09-15
 
 ### Fixed

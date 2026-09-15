@@ -15,6 +15,7 @@ class AiNativeSkillPolicy
     private AiNativeConfirmationIntent $confirmationIntent;
     private AiNativeFinalToolPolicy $finalToolPolicy;
     private AiNativeSkillPayloadResolver $payloadResolver;
+    private ToolRegistry $tools;
 
     public function __construct(
         private readonly AgentSkillRegistry $skills,
@@ -26,6 +27,7 @@ class AiNativeSkillPolicy
         ?AiNativeFinalToolPolicy $finalToolPolicy = null,
         ?AiNativeSkillPayloadResolver $payloadResolver = null
     ) {
+        $this->tools = $tools;
         $this->matcher = $matcher ?? new AiNativeSkillMatcher($skills);
         $this->lookupPolicy = $lookupPolicy ?? new AiNativeLookupPolicy($skills, $tools, $this->matcher);
         $this->confirmationIntent = $confirmationIntent ?? new AiNativeConfirmationIntent($signals);
@@ -56,6 +58,15 @@ class AiNativeSkillPolicy
             'active_objective' => $objective,
             'status' => 'working',
         ]);
+    }
+
+    /**
+     * Whether the message is itself a request that a skill handles (it matches a trigger),
+     * as opposed to a reply about the task already in progress.
+     */
+    public function startsSkillTask(string $message): bool
+    {
+        return $this->matcher->matchedSkillId($message, []) !== null;
     }
 
     /**
@@ -121,10 +132,6 @@ class AiNativeSkillPolicy
             return false;
         }
 
-        if ((array) ($plan['required_inputs'] ?? []) !== []) {
-            return false;
-        }
-
         if ((array) data_get($state, 'task_frame.current_payload', []) === []) {
             return false;
         }
@@ -132,6 +139,18 @@ class AiNativeSkillPolicy
         $requiredTools = $this->requiredFinalTools($message, $options, $state);
         if ($requiredTools === []) {
             return false;
+        }
+
+        // Asking for inputs is fine when at least one of them is something the final tool
+        // needs. Asking only for fields the tool treats as optional (dates, notes, terms) is
+        // a detour: the tool fills defaults and shows its own confirmation. Push back once
+        // per turn, so a planner that still insists is not looped to the step limit.
+        $requiredInputs = (array) ($plan['required_inputs'] ?? []);
+        if ($requiredInputs !== []) {
+            if ($this->hasRuntimeFeedback($state, 'final_tool_required_before_confirmation_question')
+                || !$this->onlyOptionalFinalToolInputs($requiredInputs, $requiredTools, (array) data_get($state, 'task_frame.current_payload', []))) {
+                return false;
+            }
         }
 
         foreach ($requiredTools as $toolName) {
@@ -368,4 +387,53 @@ class AiNativeSkillPolicy
         return $this->lookupPolicy->matchingLookupToolsForWrite($toolName, $state, $options);
     }
 
+    /**
+     * True when the payload already holds every required parameter of the final tools and
+     * every requested input names a parameter those tools mark optional. Unknown names count
+     * as genuinely needed.
+     *
+     * @param array<int|string, mixed> $requiredInputs
+     * @param array<int, string>       $finalTools
+     * @param array<string, mixed>     $payload
+     */
+    private function onlyOptionalFinalToolInputs(array $requiredInputs, array $finalTools, array $payload): bool
+    {
+        $optional = null;
+        foreach ($finalTools as $toolName) {
+            $tool = $this->tools->get($toolName);
+            if ($tool === null) {
+                return false;
+            }
+
+            $toolOptional = [];
+            foreach ($tool->getParameters() as $name => $definition) {
+                if (!is_array($definition) || ($definition['required'] ?? false) !== true) {
+                    $toolOptional[] = mb_strtolower((string) $name);
+                    continue;
+                }
+
+                $value = $payload[(string) $name] ?? null;
+                if ($value === null || $value === '' || $value === []) {
+                    return false;
+                }
+            }
+            $optional = $optional === null ? $toolOptional : array_values(array_intersect($optional, $toolOptional));
+        }
+
+        if ($optional === null || $optional === []) {
+            return false;
+        }
+
+        foreach ($requiredInputs as $input) {
+            $name = is_array($input)
+                ? (string) ($input['name'] ?? $input['id'] ?? $input['field'] ?? '')
+                : (string) $input;
+            $name = mb_strtolower(trim($name));
+            if ($name === '' || !in_array($name, $optional, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

@@ -141,8 +141,15 @@ class AiNativeFinalToolPolicy
      */
     public function hasSuccessfulToolResult(array $state, string $toolName): bool
     {
+        // Results of an earlier, finished task only count until the next task starts.
+        $ignoreClosed = data_get($state, 'task_frame.status') !== 'completed';
+
         foreach ((array) ($state['tool_results'] ?? []) as $toolResult) {
             if (!is_array($toolResult) || (string) ($toolResult['tool'] ?? '') !== $toolName) {
+                continue;
+            }
+
+            if ($ignoreClosed && ($toolResult['task_closed'] ?? false) === true) {
                 continue;
             }
 

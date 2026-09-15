@@ -84,6 +84,13 @@ class AgentTaskStateService
                 // Only when the task itself is done: a supporting write mid-task (e.g. creating
                 // a missing product) must keep the lookups the task still relies on.
                 $this->dropReadsOlderThanWrite($state, $frame, $toolName);
+                // What remains belongs to the finished task. A later request for the same kind
+                // of record must not count this write as its own final tool having run.
+                foreach ((array) ($state['tool_results'] ?? []) as $index => $entry) {
+                    if (is_array($entry)) {
+                        $state['tool_results'][$index]['task_closed'] = true;
+                    }
+                }
             }
             $frame['pending_tool'] = null;
             $frame['completed_writes'][] = [

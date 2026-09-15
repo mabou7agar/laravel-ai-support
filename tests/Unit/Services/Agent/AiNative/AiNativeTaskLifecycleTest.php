@@ -110,6 +110,29 @@ class AiNativeTaskLifecycleTest extends UnitTestCase
         $this->assertContains('lookup_customer', array_column($state['recent_outcomes'], 'tool'));
     }
 
+    public function test_a_finished_write_does_not_satisfy_the_next_task_for_the_same_tool(): void
+    {
+        $state = $this->draftState('invoice_create');
+        $state['tool_results'][] = ['tool' => 'create_invoice', 'result' => ['success' => true]];
+        $this->taskState()->recordToolResult($state, 'create_invoice', ['party_name' => 'First Customer'], ActionResult::success('Created.'), true);
+
+        $policy = new \LaravelAIEngine\Services\Agent\AiNative\AiNativeFinalToolPolicy(
+            \Mockery::mock(\LaravelAIEngine\Services\Agent\AgentSkillRegistry::class),
+            \Mockery::mock(\LaravelAIEngine\Services\Agent\AiNative\AiNativeSkillMatcher::class),
+            \Mockery::mock(\LaravelAIEngine\Services\Agent\AiNative\AiNativeConfirmationIntent::class)
+        );
+
+        // Same turn, task still marked completed: the write counts, so the turn can finish.
+        $this->assertTrue($policy->hasSuccessfulToolResult($state, 'create_invoice'));
+
+        // The next request starts a new task for the same skill: that write is not its own.
+        $state['task_frame'] = ['active_objective' => 'invoice_create', 'status' => 'working'];
+        $this->assertFalse($policy->hasSuccessfulToolResult($state, 'create_invoice'));
+
+        $state['tool_results'][] = ['tool' => 'create_invoice', 'result' => ['success' => true]];
+        $this->assertTrue($policy->hasSuccessfulToolResult($state, 'create_invoice'));
+    }
+
     private function responses(): AiNativeResponseFactory
     {
         return new AiNativeResponseFactory(new AiNativeStateStore(), new ToolRegistry(), new AiNativeConfirmationPresenter());
