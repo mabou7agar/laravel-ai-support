@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.1] — 2026-09-16
+
+### Fixed
+
+- `list_<resource>` now orders by the primary key as the last sort term. Ordering by
+  `created_at` alone is not a total order, so rows written in the same second could come
+  back in a different order on each call and a `position` from one listing named a
+  different row on the follow-up.
+
+### Added
+
+- `list_<resource>` accepts a `position` parameter: one call returns just the row at that
+  1-based position, so a reply of "1" or "the third one" to a numbered list resolves in a
+  single step instead of repeating the list.
+
 ## [3.6.0] — 2026-09-16
 
 ### Added
