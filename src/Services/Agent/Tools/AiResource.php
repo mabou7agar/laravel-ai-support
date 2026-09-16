@@ -43,6 +43,8 @@ class AiResource
 
     private bool $lookup = true;
 
+    private bool $listable = false;
+
     /** @var array<int, string> */
     private array $identity = [];
 
@@ -63,6 +65,8 @@ class AiResource
     private ?string $createDescription = null;
 
     private ?string $detailDescription = null;
+
+    private ?string $listDescription = null;
 
     private ?string $confirmationMessage = null;
 
@@ -85,7 +89,7 @@ class AiResource
     /**
      * Build a resource from a plain config array (for `ai-agent.resources`). Keys mirror
      * the fluent methods: model, name, search, returns, writable, identity, required,
-     * defaults, lookup_only, confirmation_message.
+     * defaults, lookup_only, list, confirmation_message.
      *
      * @param array<string, mixed> $config
      */
@@ -117,6 +121,9 @@ class AiResource
         }
         if (!empty($config['lookup_only'])) {
             $resource->lookupOnly();
+        }
+        if (array_key_exists('list', $config)) {
+            $resource->listable((bool) $config['list']);
         }
         if (!empty($config['with'])) {
             $resource->with((array) $config['with']);
@@ -202,6 +209,7 @@ class AiResource
     public function detailOnly(): self
     {
         $this->lookup = false;
+        $this->listable = false;
         $this->creatable = false;
         $this->detail = true;
 
@@ -267,11 +275,19 @@ class AiResource
         return $this;
     }
 
-    public function descriptions(?string $lookup = null, ?string $create = null, ?string $detail = null): self
+    public function listable(bool $listable = true): self
+    {
+        $this->listable = $listable;
+
+        return $this;
+    }
+
+    public function descriptions(?string $lookup = null, ?string $create = null, ?string $detail = null, ?string $list = null): self
     {
         $this->lookupDescription = $lookup;
         $this->createDescription = $create;
         $this->detailDescription = $detail;
+        $this->listDescription = $list;
 
         return $this;
     }
@@ -305,6 +321,18 @@ class AiResource
                 $this->returns,
                 (string) $this->lookupDescription,
                 [],
+                $this->scope
+            );
+        }
+
+        if ($this->listable) {
+            $listName = 'list_' . $this->name;
+            $tools[$listName] = new GenericModelListTool(
+                $listName,
+                $this->model,
+                $search,
+                $this->returns,
+                (string) $this->listDescription,
                 $this->scope
             );
         }

@@ -6,6 +6,7 @@ namespace LaravelAIEngine\Tests\Feature\Agent\Tools;
 
 use LaravelAIEngine\DTOs\UnifiedActionContext;
 use LaravelAIEngine\Services\Agent\Tools\AiResource;
+use LaravelAIEngine\Services\Agent\Tools\GenericModelListTool;
 use LaravelAIEngine\Services\Agent\Tools\GenericModelLookupTool;
 use LaravelAIEngine\Services\Agent\Tools\GenericModelUpsertTool;
 use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
@@ -36,6 +37,7 @@ class AiResourceTest extends TestCase
 
         $this->assertTrue($registry->has('find_person'));
         $this->assertTrue($registry->has('create_person'));
+        $this->assertFalse($registry->has('list_person'), 'Listing must remain opt-in.');
         $this->assertInstanceOf(GenericModelLookupTool::class, $registry->get('find_person'));
         $this->assertInstanceOf(GenericModelUpsertTool::class, $registry->get('create_person'));
 
@@ -79,10 +81,26 @@ class AiResourceTest extends TestCase
             'writable' => ['name', 'email'],
             'identity' => ['email'],
             'lookup_only' => false,
+            'list' => true,
         ])->tools();
 
         $this->assertArrayHasKey('find_widget', $tools);
+        $this->assertArrayHasKey('list_widget', $tools);
         $this->assertArrayHasKey('create_widget', $tools);
+        $this->assertInstanceOf(GenericModelListTool::class, $tools['list_widget']);
+    }
+
+    public function test_listable_registers_an_opt_in_list_tool(): void
+    {
+        $tools = AiResource::for(User::class)
+            ->name('person')
+            ->search(['name', 'email'])
+            ->listable()
+            ->tools();
+
+        $this->assertArrayHasKey('find_person', $tools);
+        $this->assertArrayHasKey('list_person', $tools);
+        $this->assertInstanceOf(GenericModelListTool::class, $tools['list_person']);
     }
 
     public function test_resources_declared_in_config_auto_register_at_boot(): void
@@ -120,6 +138,7 @@ class AiResourceTest extends TestCase
 
         $this->assertTrue($registry->has('find_reader'));
         $this->assertFalse($registry->has('create_reader'));
+        $this->assertFalse($registry->has('list_reader'), 'lookupOnly must not imply listing.');
     }
 
     public function test_detail_only_registers_just_the_show_tool(): void
@@ -135,6 +154,7 @@ class AiResourceTest extends TestCase
         $this->assertTrue($registry->has('show_record'), 'detailOnly must register the show tool.');
         $this->assertFalse($registry->has('find_record'), 'detailOnly must NOT register a find tool.');
         $this->assertFalse($registry->has('create_record'), 'detailOnly must NOT register a create tool.');
+        $this->assertFalse($registry->has('list_record'), 'detailOnly must NOT register a list tool.');
     }
 
     public function test_detail_only_via_config(): void

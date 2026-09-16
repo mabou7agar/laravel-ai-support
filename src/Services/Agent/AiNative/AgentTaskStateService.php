@@ -255,7 +255,7 @@ class AgentTaskStateService
 
     private function objectiveFromTool(string $toolName): string
     {
-        return Str::snake(preg_replace('/^(find|lookup|search|create|update|delete|remove|send|generate)_/', '', Str::snake($toolName)) ?: $toolName);
+        return Str::snake(preg_replace('/^(find|list|lookup|search|create|update|delete|remove|send|generate)_/', '', Str::snake($toolName)) ?: $toolName);
     }
 
     /**

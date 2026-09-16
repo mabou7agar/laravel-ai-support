@@ -578,7 +578,7 @@ class SkillBuilder
             return null;
         }
 
-        $name = preg_replace('/^(find|lookup|search|create|upsert|update|get|fetch|ensure|resolve)_+/', '', $name) ?: $name;
+        $name = preg_replace('/^(find|list|lookup|search|create|upsert|update|get|fetch|ensure|resolve)_+/', '', $name) ?: $name;
         $name = preg_replace('/_tool$/', '', $name) ?: $name;
         $parts = array_values(array_filter(explode('_', $name)));
         if ($parts === []) {

@@ -46,7 +46,7 @@ class ToolOutcomeNormalizer
         }
 
         $name = Str::snake($toolName);
-        $name = preg_replace('/^(create|find|lookup|search|update|delete|remove|send|generate)_/', '', $name) ?: $name;
+        $name = preg_replace('/^(create|find|list|lookup|search|update|delete|remove|send|generate)_/', '', $name) ?: $name;
 
         return Str::singular($name);
     }
@@ -57,6 +57,10 @@ class ToolOutcomeNormalizer
      */
     private function entityData(array $data): array
     {
+        if (isset($data['rows']) && is_array($data['rows'])) {
+            return $this->listSummary($data);
+        }
+
         foreach ($data as $value) {
             if (is_array($value) && $this->looksLikeEntity($value)) {
                 return $value;
@@ -103,7 +107,7 @@ class ToolOutcomeNormalizer
             str_starts_with($toolName, 'create_') => 'created',
             str_starts_with($toolName, 'update_') => 'updated',
             str_starts_with($toolName, 'delete_'), str_starts_with($toolName, 'remove_') => 'deleted',
-            str_starts_with($toolName, 'find_'), str_starts_with($toolName, 'lookup_'), str_starts_with($toolName, 'search_') => 'found',
+            str_starts_with($toolName, 'find_'), str_starts_with($toolName, 'list_'), str_starts_with($toolName, 'lookup_'), str_starts_with($toolName, 'search_') => 'found',
             str_starts_with($toolName, 'send_') => 'sent',
             default => 'completed',
         };
@@ -192,6 +196,36 @@ class ToolOutcomeNormalizer
                 && $key !== 'uuid'
                 && !str_ends_with($key, '_id');
         }, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Keep list outcomes useful but bounded; complete rows remain in tool_results.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function listSummary(array $data): array
+    {
+        $labels = [];
+        foreach (array_slice($data['rows'], 0, 3) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $label = $this->label($row, [], '');
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+        }
+
+        return array_filter([
+            'count' => $data['count'] ?? count($data['rows']),
+            'total' => $data['total'] ?? count($data['rows']),
+            'offset' => $data['offset'] ?? null,
+            'limit' => $data['limit'] ?? null,
+            'has_more' => $data['has_more'] ?? null,
+            'labels' => $labels,
+        ], static fn (mixed $value): bool => $value !== null && $value !== []);
     }
 
     /**

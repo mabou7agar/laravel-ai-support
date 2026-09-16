@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `AiResource::listable()` support generates paginated, scope-aware `list_<resource>`
+  agent tools whose stable row positions and ids can be referenced on follow-up turns.
+
 ## [3.5.0] — 2026-09-15
 
 ### Agent quality
