@@ -124,6 +124,75 @@ class GenericModelListToolTest extends TestCase
         );
     }
 
+    public function test_position_returns_only_that_row_of_the_full_result_set(): void
+    {
+        $this->createUser('First Person', 'first@example.com', minute: 0);
+        $this->createUser('Second Person', 'second@example.com', minute: 1);
+        $this->createUser('Third Person', 'third@example.com', minute: 2);
+
+        $result = $this->tool()->execute(['position' => 3], new UnifiedActionContext('list-test'));
+
+        $this->assertTrue($result->success);
+        $this->assertTrue($result->data['found']);
+        $this->assertSame(1, $result->data['count']);
+        $this->assertSame(3, $result->data['total'], 'total stays the size of the whole result set');
+        $this->assertCount(1, $result->data['rows']);
+        $this->assertSame(3, $result->data['rows'][0]['position'], 'the row keeps its original position');
+
+        // Position N must name the same row the un-narrowed listing showed at N.
+        $whole = $this->tool()->execute([], new UnifiedActionContext('list-test'));
+        $this->assertSame($whole->data['rows'][2]['id'], $result->data['rows'][0]['id']);
+        $this->assertSame($whole->data['rows'][2]['name'], $result->data['rows'][0]['name']);
+    }
+
+    public function test_position_past_the_end_is_a_successful_empty_result(): void
+    {
+        $this->createUser('Only Person', 'only@example.com');
+
+        $result = $this->tool()->execute(['position' => 7], new UnifiedActionContext('list-test'));
+
+        $this->assertTrue($result->success, 'asking for a position that is not there is not an error');
+        $this->assertFalse($result->data['found']);
+        $this->assertSame([], $result->data['rows']);
+        $this->assertSame(1, $result->data['total']);
+    }
+
+    public function test_position_still_obeys_the_tenant_scope(): void
+    {
+        $this->createUser('Mine', 'mine@example.com', scope: 'tenant-a');
+        $this->createUser('Theirs', 'theirs@example.com', scope: 'tenant-b');
+
+        $result = $this->tool('tenant-a')->execute(['position' => 1], new UnifiedActionContext('list-test'));
+
+        $this->assertSame('Mine', $result->data['rows'][0]['name']);
+        $this->assertSame(1, $result->data['total'], 'the other tenant\'s row is not counted either');
+    }
+
+    public function test_rows_tied_on_created_at_keep_a_stable_order_across_calls(): void
+    {
+        // Same timestamp on every row: without a tiebreaker the database is free to
+        // return them in any order, and `position` would mean nothing on the follow-up.
+        foreach (['Aa', 'Bb', 'Cc', 'Dd', 'Ee'] as $i => $name) {
+            $this->createUser($name, strtolower($name) . '@example.com', minute: 0);
+        }
+
+        $first = $this->tool()->execute([], new UnifiedActionContext('list-test'));
+        $again = $this->tool()->execute([], new UnifiedActionContext('list-test'));
+
+        $this->assertSame(
+            array_column($first->data['rows'], 'id'),
+            array_column($again->data['rows'], 'id'),
+            'Two identical listings must return the rows in the same order.'
+        );
+
+        $picked = $this->tool()->execute(['position' => 4], new UnifiedActionContext('list-test'));
+        $this->assertSame(
+            $first->data['rows'][3]['id'],
+            $picked->data['rows'][0]['id'],
+            'position 4 must be the row the listing showed at position 4.'
+        );
+    }
+
     public function test_reports_read_kind_and_unprefixed_entity_type(): void
     {
         $tool = $this->tool();

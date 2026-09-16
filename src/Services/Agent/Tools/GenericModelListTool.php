@@ -51,8 +51,13 @@ class GenericModelListTool extends ModelBackedLookupTool
 
         $label = str_replace('_', ' ', $this->getEntityType());
 
-        return "List {$label} records. Returns a page of rows with their ids; use it when "
-            . 'the user asks to see, list or browse records rather than to find one specific record.';
+        return "List {$label} records. Returns a page of rows, each with an `id` and a 1-based "
+            . '`position`; use it when the user asks to see, list or browse records rather than to '
+            . 'find one specific record. Number the lines of your answer by those positions. If the '
+            . 'user then replies with only a number or an ordinal ("1", "the third one"), they mean '
+            . 'that position in the list you just showed: call this tool again with `position` set '
+            . 'to that number and describe the single row it returns. Never repeat the whole list '
+            . 'in answer to such a reply.';
     }
 
     public function getParameters(): array
@@ -79,6 +84,14 @@ class GenericModelListTool extends ModelBackedLookupTool
                 'required' => false,
                 'default' => 0,
                 'description' => 'Number of matching rows to skip for paging.',
+            ],
+            'position' => [
+                'type' => 'integer',
+                'required' => false,
+                'description' => 'Return only the row at this 1-based position from a list already '
+                    . 'shown to the user. Use it when the user answers a numbered list with just a '
+                    . 'number or an ordinal ("1", "the third one") so you can fetch that record '
+                    . 'instead of repeating the whole list.',
             ],
         ];
     }
@@ -161,6 +174,17 @@ class GenericModelListTool extends ModelBackedLookupTool
         $limit = max(1, min($maxLimit, (int) ($parameters['limit'] ?? 10)));
         $offset = max(0, (int) ($parameters['offset'] ?? 0));
 
+        // "1" / "the third one" answering a numbered list: fetch that single row
+        // rather than repeating the list. Positions are 1-based over the whole
+        // result set, so position N is simply offset N-1 with a limit of 1.
+        $position = isset($parameters['position']) && is_numeric($parameters['position'])
+            ? (int) $parameters['position']
+            : null;
+        if ($position !== null && $position > 0) {
+            $offset = $position - 1;
+            $limit = 1;
+        }
+
         $query = $modelClass::query();
         foreach ($this->scope($context, $parameters) as $column => $value) {
             if ($this->columnExists($modelClass, (string) $column) && $value !== null && $value !== '') {
@@ -202,11 +226,16 @@ class GenericModelListTool extends ModelBackedLookupTool
 
         $total = (clone $query)->count();
         $model = new $modelClass();
+        $key = $model->getKeyName();
+
+        // The key is always the last sort term. Ordering by created_at alone is not a
+        // total order - rows written in the same second tie - and an unstable order
+        // makes `position` meaningless: the row at position 1 could differ between the
+        // listing and the follow-up that picks it.
         if ($this->columnExists($modelClass, 'created_at')) {
-            $query->latest();
-        } else {
-            $query->orderByDesc($model->getKeyName());
+            $query->orderByDesc('created_at');
         }
+        $query->orderByDesc($key);
 
         $rows = $query->offset($offset)->limit($limit)->get()
             ->values()
@@ -221,9 +250,16 @@ class GenericModelListTool extends ModelBackedLookupTool
         $count = count($rows);
         $found = $count > 0;
         $entity = Str::plural(str_replace('_', ' ', $this->getEntityType()), $total);
-        $message = $found
-            ? sprintf('Found %d %s (showing %d-%d).', $total, $entity, $offset + 1, $offset + $count)
-            : sprintf('No %s found.', Str::plural(str_replace('_', ' ', $this->getEntityType())));
+        $singular = str_replace('_', ' ', $this->getEntityType());
+        if ($position !== null && $position > 0) {
+            $message = $found
+                ? sprintf('The %s at position %d of %d.', $singular, $position, $total)
+                : sprintf('There is no %s at position %d; there are %d in total.', $singular, $position, $total);
+        } else {
+            $message = $found
+                ? sprintf('Found %d %s (showing %d-%d).', $total, $entity, $offset + 1, $offset + $count)
+                : sprintf('No %s found.', Str::plural($singular));
+        }
 
         return ActionResult::success($message, [
             'found' => $found,
