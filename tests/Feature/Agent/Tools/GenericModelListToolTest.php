@@ -193,6 +193,17 @@ class GenericModelListToolTest extends TestCase
         );
     }
 
+    public function test_discovery_aliases_always_name_the_entity(): void
+    {
+        foreach ($this->tool()->getDiscoveryAliases() as $alias) {
+            $this->assertTrue(
+                str_contains($alias, 'person') || str_contains($alias, 'people'),
+                "Alias '{$alias}' does not name the entity, so every model's list tool would advertise it "
+                . 'and keyword ranking could surface the wrong one.'
+            );
+        }
+    }
+
     public function test_reports_read_kind_and_unprefixed_entity_type(): void
     {
         $tool = $this->tool();

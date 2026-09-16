@@ -147,11 +147,12 @@ class GenericModelListTool extends ModelBackedLookupTool
         $name = str_replace('_', ' ', $this->getEntityType());
         $plural = Str::plural($name);
 
+        // Every alias names the entity. Bare verbs like "list" or "browse" would be
+        // advertised identically by every model's list tool, so keyword ranking could
+        // surface this one for a question about something else entirely.
         return array_values(array_unique([
-            'list',
-            'show all',
-            'browse',
             "list {$plural}",
+            "list {$name}",
             "show all {$plural}",
             "browse {$plural}",
             "all {$name}",

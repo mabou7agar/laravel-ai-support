@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.2] — 2026-09-16
+
+### Fixed
+
+- `list_<resource>` discovery aliases now always name their entity. `list`, `show all` and
+  `browse` were advertised identically by every model's list tool, so keyword ranking could
+  surface the wrong one - a question about customers pulled in the sales-invoice list tool.
+
 ## [3.6.1] — 2026-09-16
 
 ### Fixed
