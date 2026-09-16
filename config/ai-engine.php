@@ -235,6 +235,12 @@ return array_replace_recursive($defaults, [
         'max_limit' => (int) env('AI_ENGINE_DATA_QUERY_MAX_LIMIT', data_get($defaults, 'data_query.max_limit', 50)),
     ],
 
+    'agent_tools' => [
+        // Generated list_<resource> tools enforce this page-size cap. Values above 50
+        // are still capped at 50; hosts may lower it for smaller planner payloads.
+        'list_max_limit' => (int) env('AI_ENGINE_AGENT_TOOLS_LIST_MAX_LIMIT', data_get($defaults, 'agent_tools.list_max_limit', 50)),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | File Analysis (generic "upload -> extract -> suggest create X")

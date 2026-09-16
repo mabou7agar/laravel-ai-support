@@ -53,6 +53,32 @@ class AiNativeContextIntelligenceTest extends UnitTestCase
         $this->assertSame('Northwind', $outcome['label']);
     }
 
+    public function test_tool_outcome_normalizer_treats_list_tools_as_found_entities_without_copying_rows_to_display(): void
+    {
+        $outcome = (new ToolOutcomeNormalizer())->normalize(
+            'list_thing',
+            [],
+            ActionResult::success('Found 2 things.', [
+                'found' => true,
+                'count' => 2,
+                'total' => 2,
+                'offset' => 0,
+                'limit' => 10,
+                'has_more' => false,
+                'rows' => [
+                    ['position' => 1, 'id' => 11, 'name' => 'One'],
+                    ['position' => 2, 'id' => 12, 'name' => 'Two'],
+                ],
+            ])
+        );
+
+        $this->assertSame('thing', $outcome['entity_type']);
+        $this->assertSame('found', $outcome['outcome']);
+        $this->assertArrayNotHasKey('rows', $outcome['display']);
+        $this->assertSame(['One', 'Two'], $outcome['display']['labels']);
+        $this->assertSame(2, $outcome['display']['total']);
+    }
+
     public function test_task_state_tracks_pending_confirmation_and_completed_write_signature(): void
     {
         $state = [];
