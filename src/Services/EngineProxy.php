@@ -332,7 +332,7 @@ class EngineProxy
     {
         $finalOptions = $this->releaseOptions();
         $engine = $finalOptions['engine'] ?? config('ai-engine.default', 'openai');
-        $model = $finalOptions['model'] ?? config('ai-engine.default_model', 'gpt-4o');
+        $model = $finalOptions['model'] ?? config('ai-engine.default_model', 'gpt-6-luna');
 
         return $this->manager->estimateCost([[
             'prompt' => $prompt,

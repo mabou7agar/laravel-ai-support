@@ -90,7 +90,7 @@ class AIEngineServiceTranscriptionNormalizationTest extends UnitTestCase
         $localDriver = $this->driver(EngineEnum::LocalAudio, $localResponse);
         $normalizerDriver = $this->driver(EngineEnum::OpenAI, $normalizedResponse, function (AIRequest $request): void {
             $this->assertSame('openai', $request->getEngine()->value);
-            $this->assertSame('gpt-4o-mini', $request->getModel()->value);
+            $this->assertSame('gpt-6-luna', $request->getModel()->value);
             $this->assertStringContainsString('Normalize this speech-to-text transcript.', $request->getPrompt());
         });
 

@@ -148,7 +148,7 @@ class SendMessageRequest extends FormRequest
             message: $validated['message'],
             sessionId: $validated['session_id'],
             engine: $validated['engine'] ?? 'openai',
-            model: $validated['model'] ?? 'gpt-4o',
+            model: $validated['model'] ?? config('ai-engine.default_model', 'gpt-6-luna'),
             memory: $validated['memory'] ?? true,
             actions: $validated['actions'] ?? true,
             streaming: $validated['streaming'] ?? false,

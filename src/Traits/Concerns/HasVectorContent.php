@@ -815,7 +815,7 @@ PROMPT;
             $aiRequest = new \LaravelAIEngine\DTOs\AIRequest(
                 prompt: $prompt,
                 engine: \LaravelAIEngine\Enums\EngineEnum::from(config('ai-engine.default', 'openai')),
-                model: new \LaravelAIEngine\Enums\EntityEnum('gpt-4o-mini')
+                model: new \LaravelAIEngine\Enums\EntityEnum((string) config('ai-engine.default_model', 'gpt-6-luna'))
             );
 
             $response = app(\LaravelAIEngine\Services\AIEngineService::class)->generate($aiRequest);

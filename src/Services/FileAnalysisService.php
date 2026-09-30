@@ -46,7 +46,7 @@ class FileAnalysisService
         string $message,
         string $sessionId,
         string $engine = 'openai',
-        string $model = 'gpt-4o',
+        string $model = 'gpt-6-luna',
         bool $useRag = true,
         array $ragCollections = [],
         $userId = null
@@ -82,9 +82,10 @@ class FileAnalysisService
         
         $systemPrompt = "You are an expert at analyzing images and extracting information. Extract all relevant visible data in a structured format. Be thorough and accurate. For transactional documents, include parties, dates, line items, totals, taxes, and payment details when visible.";
         
+        $visionModel = (string) config('ai-engine.file_analysis.vision_model', config('ai-engine.default_model', 'gpt-6-luna'));
         $response = $client->chat()->create([
-            'model' => 'gpt-4o',
-            'max_tokens' => 2000,
+            'model' => $visionModel,
+            'max_completion_tokens' => 2000,
             'messages' => [
                 [
                     'role' => 'system',
@@ -119,7 +120,7 @@ class FileAnalysisService
         // Store in conversation history for follow-up support
         if (!empty($sessionId) && !empty($userId)) {
             try {
-                $conversationId = $this->conversationService->getOrCreateConversation($sessionId, $userId, $engine, 'gpt-4o');
+                $conversationId = $this->conversationService->getOrCreateConversation($sessionId, $userId, $engine, $visionModel);
                 $conversationManager = app(\LaravelAIEngine\Services\ConversationManager::class);
                 
                 $fileName = $file->getClientOriginalName();
@@ -141,7 +142,7 @@ class FileAnalysisService
                 $aiResponse = new \LaravelAIEngine\DTOs\AIResponse(
                     content: $content,
                     engine: \LaravelAIEngine\Enums\EngineEnum::from($engine),
-                    model: new \LaravelAIEngine\Enums\EntityEnum('gpt-4o'),
+                    model: new \LaravelAIEngine\Enums\EntityEnum($visionModel),
                     metadata: [
                         'file_analysis' => true,
                         'image_analysis' => true,
@@ -334,8 +335,8 @@ class FileAnalysisService
         $dataUrl = 'data:' . $mimeType . ';base64,' . base64_encode((string) file_get_contents($path));
 
         $response = \OpenAI::client($apiKey)->chat()->create([
-            'model' => (string) config('ai-engine.file_analysis.vision_model', 'gpt-4o'),
-            'max_tokens' => (int) config('ai-engine.file_analysis.vision_max_tokens', 2000),
+            'model' => (string) config('ai-engine.file_analysis.vision_model', 'gpt-6-luna'),
+            'max_completion_tokens' => (int) config('ai-engine.file_analysis.vision_max_tokens', 2000),
             'messages' => [
                 ['role' => 'system', 'content' => 'Transcribe ALL text and structured data visible in this document image (parties, dates, line items, quantities, unit prices, totals, taxes). Output the raw extracted text only.'],
                 ['role' => 'user', 'content' => [

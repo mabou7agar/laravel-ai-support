@@ -77,7 +77,7 @@ class TemplateEngine
             'user_prompt' => $templateData['user_prompt'] ?? '',
             'variables' => $templateData['variables'] ?? [],
             'default_engine' => $templateData['default_engine'] ?? 'openai',
-            'default_model' => $templateData['default_model'] ?? 'gpt-4o',
+            'default_model' => $templateData['default_model'] ?? config('ai-engine.default_model', 'gpt-6-luna'),
             'default_parameters' => $templateData['default_parameters'] ?? [],
             'is_custom' => true,
             'created_at' => now()->toIso8601String(),
@@ -144,7 +144,7 @@ class TemplateEngine
 
         // Get engine and model
         $engine = $options['engine'] ?? $template['default_engine'] ?? 'openai';
-        $model = $options['model'] ?? $template['default_model'] ?? 'gpt-4o';
+        $model = $options['model'] ?? $template['default_model'] ?? config('ai-engine.default_model', 'gpt-6-luna');
         $parameters = array_merge($template['default_parameters'] ?? [], $options['parameters'] ?? []);
 
         if (!$this->aiService) {
@@ -200,7 +200,7 @@ class TemplateEngine
                     ['name' => 'length', 'description' => 'Summary length (brief, detailed, comprehensive)', 'required' => false, 'default' => 'brief'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o-mini',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 500],
             ],
 
@@ -216,7 +216,7 @@ class TemplateEngine
                     ['name' => 'tone', 'description' => 'Target tone (professional, casual, formal, friendly)', 'required' => false, 'default' => 'professional'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 1000],
             ],
 
@@ -232,7 +232,7 @@ class TemplateEngine
                     ['name' => 'target_length', 'description' => 'Target length (paragraph, page, article)', 'required' => false, 'default' => 'paragraph'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 2000],
             ],
 
@@ -249,7 +249,7 @@ class TemplateEngine
                     ['name' => 'target_language', 'description' => 'Target language', 'required' => true],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 2000],
             ],
 
@@ -266,7 +266,7 @@ class TemplateEngine
                     ['name' => 'language', 'description' => 'Programming language', 'required' => false, 'default' => 'php'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 2000],
             ],
 
@@ -283,7 +283,7 @@ class TemplateEngine
                     ['name' => 'level', 'description' => 'Explanation level (beginner, intermediate, advanced)', 'required' => false, 'default' => 'intermediate'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 1500],
             ],
 
@@ -299,7 +299,7 @@ class TemplateEngine
                     ['name' => 'language', 'description' => 'Programming language', 'required' => false, 'default' => 'php'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 3000],
             ],
 
@@ -315,7 +315,7 @@ class TemplateEngine
                     ['name' => 'content', 'description' => 'The content to analyze', 'required' => true],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o-mini',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 500],
             ],
 
@@ -330,7 +330,7 @@ class TemplateEngine
                     ['name' => 'content', 'description' => 'The content to analyze', 'required' => true],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o-mini',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 1000],
             ],
 
@@ -348,7 +348,7 @@ class TemplateEngine
                     ['name' => 'tone', 'description' => 'Email tone (professional, friendly, formal)', 'required' => false, 'default' => 'professional'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 1000],
             ],
 
@@ -366,7 +366,7 @@ class TemplateEngine
                     ['name' => 'tone', 'description' => 'Email tone', 'required' => false, 'default' => 'professional'],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 1000],
             ],
 
@@ -383,7 +383,7 @@ class TemplateEngine
                     ['name' => 'requirements', 'description' => 'Additional requirements or context', 'required' => false, 'default' => ''],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 2000],
             ],
 
@@ -400,7 +400,7 @@ class TemplateEngine
                     ['name' => 'target_format', 'description' => 'Target format', 'required' => true],
                 ],
                 'default_engine' => 'openai',
-                'default_model' => 'gpt-4o',
+                'default_model' => 'gpt-6-luna',
                 'default_parameters' => ['max_tokens' => 3000],
             ],
         ];

@@ -111,7 +111,7 @@ class SuggestValueTool extends AgentTool
             $request = new AIRequest(
                 prompt: $prompt,
                 engine: EngineEnum::from('openai'),
-                model: EntityEnum::from('gpt-4o-mini'),
+                model: EntityEnum::from((string) config('ai-engine.default_model', 'gpt-6-luna')),
                 maxTokens: 100,
                 temperature: 0.7
             );

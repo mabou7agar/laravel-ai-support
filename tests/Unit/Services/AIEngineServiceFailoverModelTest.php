@@ -98,6 +98,24 @@ final class AIEngineServiceFailoverModelTest extends TestCase
         self::assertSame('claude-opus-5', $anthropic->received[1]->getModel()->value);
     }
 
+    public function test_luna_failover_maps_between_openai_and_openrouter(): void
+    {
+        config()->set('ai-engine.engines.openrouter.api_key', 'test-key');
+        config()->set('ai-engine.error_handling.fallback_engines.openai', ['openrouter']);
+        $router = new FailoverCapturingDriver(EngineEnum::OpenRouter, succeed: true);
+        $service = $this->service(new FailoverCapturingDriver(EngineEnum::OpenAI, succeed: false), $router);
+
+        $service->generate(new AIRequest('hello', EngineEnum::OpenAI, 'gpt-6-luna'));
+        self::assertSame('openai/gpt-6-luna', $router->received[0]->getModel()->value);
+
+        config()->set('ai-engine.engines.openai.api_key', 'test-key');
+        config()->set('ai-engine.error_handling.fallback_engines.openrouter', ['openai']);
+        $openai = new FailoverCapturingDriver(EngineEnum::OpenAI, succeed: true);
+        $service = $this->service(new FailoverCapturingDriver(EngineEnum::OpenRouter, succeed: false), $openai);
+        $service->generate(new AIRequest('hello', EngineEnum::OpenRouter, 'openai/gpt-6-luna'));
+        self::assertSame('gpt-6-luna', $openai->received[0]->getModel()->value);
+    }
+
     public function test_stream_failover_maps_model_and_preserves_functions(): void
     {
         config()->set('ai-engine.error_handling.fallback_models.anthropic', 'claude-sonnet-5');
@@ -124,8 +142,8 @@ final class AIEngineServiceFailoverModelTest extends TestCase
     private function service(EngineDriverInterface $primary, EngineDriverInterface $fallback): AIEngineService
     {
         $registry = new DriverRegistry($this->app);
-        $registry->register(EngineEnum::OpenAI, static fn () => $primary);
-        $registry->register(EngineEnum::Anthropic, static fn () => $fallback);
+        $registry->register($primary->getEngine(), static fn () => $primary);
+        $registry->register($fallback->getEngine(), static fn () => $fallback);
 
         return new AIEngineService(
             Mockery::mock(CreditManager::class)->shouldIgnoreMissing(),

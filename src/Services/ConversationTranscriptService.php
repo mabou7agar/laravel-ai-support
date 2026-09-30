@@ -23,7 +23,7 @@ class ConversationTranscriptService
         string $sessionId,
         string|int|null $userId = null,
         string $engine = 'openai',
-        string $model = 'gpt-4o-mini'
+        string $model = 'gpt-6-luna'
     ): string {
         $query = DB::table('ai_conversations')
             ->where('title', $sessionId);

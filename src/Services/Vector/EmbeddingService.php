@@ -358,7 +358,7 @@ class EmbeddingService
                             new AIRequest(
                                 prompt: 'embedding batch',
                                 engine: config('ai-engine.default', 'openai'),
-                                model: config('ai-engine.default_model', 'gpt-4o')
+                                model: config('ai-engine.default_model', 'gpt-6-luna')
                             ),
                             $tokensUsed
                         );

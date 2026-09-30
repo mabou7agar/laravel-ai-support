@@ -16,6 +16,23 @@ class AIModelsSeeder extends Seeder
             // OpenAI Models
             [
                 'provider' => 'openai',
+                'model_id' => 'gpt-6-luna',
+                'name' => 'GPT-6 Luna',
+                'version' => null,
+                'description' => 'Cost-efficient multimodal model with reasoning, tools and structured outputs',
+                'capabilities' => ['chat', 'vision', 'reasoning', 'function_calling', 'json_mode'],
+                'context_window' => ['input' => 1050000, 'output' => null],
+                'pricing' => ['unit' => 'usd_per_1k_tokens', 'input' => 0.0001, 'output' => 0.0005],
+                'max_tokens' => 1050000,
+                'supports_streaming' => true,
+                'supports_vision' => true,
+                'supports_function_calling' => true,
+                'supports_json_mode' => true,
+                'is_active' => true,
+                'released_at' => null,
+            ],
+            [
+                'provider' => 'openai',
                 'model_id' => 'gpt-4o',
                 'name' => 'GPT-4o',
                 'version' => '2024-11-20',

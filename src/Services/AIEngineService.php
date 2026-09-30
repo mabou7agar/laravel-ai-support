@@ -988,7 +988,7 @@ class AIEngineService
         }
 
         $engine = $this->normalizationStringOption($parameters, $settings, 'normalization_engine', 'engine', 'openai');
-        $model = $this->normalizationStringOption($parameters, $settings, 'normalization_model', 'model', 'gpt-4o-mini');
+        $model = $this->normalizationStringOption($parameters, $settings, 'normalization_model', 'model', 'gpt-6-luna');
         $systemPrompt = $this->normalizationStringOption(
             $parameters,
             $settings,

@@ -118,7 +118,7 @@ class AgentResponse
         return new AIResponse(
             content: $this->message,
             engine: \LaravelAIEngine\Enums\EngineEnum::from('openai'),
-            model: \LaravelAIEngine\Enums\EntityEnum::from('gpt-4o'),
+            model: \LaravelAIEngine\Enums\EntityEnum::from((string) config('ai-engine.default_model', 'gpt-6-luna')),
             metadata: array_merge($this->metadata ?? [], [
                 'strategy' => $this->strategy,
                 'needs_user_input' => $this->needsUserInput,

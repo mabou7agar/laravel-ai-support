@@ -913,7 +913,7 @@ class AiNativeRuntime
     ): array
     {
         $engine = $options['engine'] ?? config('ai-engine.default', 'openai');
-        $model = $options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini'));
+        $model = $options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-6-luna'));
         $maxTokens = (int) ($options['max_tokens'] ?? config('ai-agent.ai_native.max_tokens', 1200));
         $temperature = (float) ($options['temperature'] ?? config('ai-agent.ai_native.temperature', 0.1));
         $redactedState = $this->stateStore->redactedState($state);

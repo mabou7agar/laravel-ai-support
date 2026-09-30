@@ -24,7 +24,7 @@ class VisionService
     ) {
         $this->client = $client;
         $this->creditManager = $creditManager;
-        $this->model = config('ai-engine.vector.media.vision_model', 'gpt-4o');
+        $this->model = config('ai-engine.vector.media.vision_model', config('ai-engine.default_model', 'gpt-6-luna'));
     }
 
     /**

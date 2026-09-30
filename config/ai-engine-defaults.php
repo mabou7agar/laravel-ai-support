@@ -61,7 +61,7 @@ return [
     | This should be a fast, cost-effective model since it's called frequently.
     |
     */
-    'orchestration_model' => env('AI_ORCHESTRATION_MODEL', 'gpt-4o-mini'),
+    'orchestration_model' => env('AI_ORCHESTRATION_MODEL', 'gpt-6-luna'),
 
     /*
     |--------------------------------------------------------------------------
@@ -772,6 +772,7 @@ return [
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
             'timeout' => env('OPENAI_TIMEOUT', 30),
             'models' => [
+                'gpt-6-luna' => ['enabled' => true, 'credit_index' => 0.3],
                 'gpt-5-mini' => ['enabled' => true, 'credit_index' => 1.0],
                 'gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.5],
                 'gpt-4o' => ['enabled' => true, 'credit_index' => 2.0],
@@ -1002,6 +1003,7 @@ return [
                 ],
             ],
             'models' => [
+                'openai/gpt-6-luna' => ['enabled' => true, 'credit_index' => 0.3],
                 'openai/gpt-5-mini' => ['enabled' => true, 'credit_index' => 2.5],
                 'openai/gpt-4o-mini' => ['enabled' => true, 'credit_index' => 0.6],
                 'openai/gpt-image-2' => ['enabled' => true, 'credit_index' => 6.0, 'content_type' => 'image'],
@@ -1343,7 +1345,11 @@ return [
         // When unset (or when the content type differs from the source model), the
         // engine's default_model / built-in default models are used instead.
         'fallback_models' => [
-            'openai' => env('AI_ENGINE_FALLBACK_MODEL_OPENAI', 'gpt-4o-mini'),
+            'openai' => [
+                'openai/gpt-6-luna' => env('AI_ENGINE_FALLBACK_MODEL_OPENAI', 'gpt-6-luna'),
+                'default' => env('AI_ENGINE_FALLBACK_MODEL_OPENAI', 'gpt-6-luna'),
+            ],
+            'openrouter' => ['gpt-6-luna' => 'openai/gpt-6-luna'],
             'anthropic' => env('AI_ENGINE_FALLBACK_MODEL_ANTHROPIC', 'claude-sonnet-5'),
             'gemini' => env('AI_ENGINE_FALLBACK_MODEL_GEMINI', 'gemini-2.5-flash'),
         ],
@@ -1459,7 +1465,7 @@ return [
     | Canonical defaults for direct requests and provider selection.
     |
     */
-    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'),
+    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', 'gpt-6-luna'),
 
     /*
     |--------------------------------------------------------------------------
@@ -1573,7 +1579,7 @@ return [
         'transcription_normalization' => [
             'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', false),
             'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', 'openai'),
-            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', 'gpt-4o-mini'),
+            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', 'gpt-6-luna'),
             'max_tokens' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MAX_TOKENS', 500),
             'temperature' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_TEMPERATURE', 0.0),
             'system_prompt' => env(
@@ -1647,7 +1653,7 @@ return [
             'chat' => [
                 'endpoint' => '/api/v1/agent/chat',
                 'provider' => env('AI_ENGINE_REALTIME_FALLBACK_CHAT_PROVIDER', env('AI_ENGINE_DEFAULT', 'openai')),
-                'model' => env('AI_ENGINE_REALTIME_FALLBACK_CHAT_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini')),
+                'model' => env('AI_ENGINE_REALTIME_FALLBACK_CHAT_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-6-luna')),
             ],
             'tts' => [
                 'endpoint' => '/api/v1/ai/generate/tts',
@@ -1924,7 +1930,7 @@ return [
         // Media embedding configuration
         'media' => [
             'enabled' => env('VECTOR_MEDIA_ENABLED', true),
-            'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-4o'),
+            'vision_model' => env('OPENAI_VISION_MODEL', 'gpt-6-luna'),
             'whisper_model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
 
             // Supported file formats
@@ -2090,7 +2096,7 @@ return [
 
         // Model to use for query analysis (fast model recommended: gpt-4o-mini, gpt-4o)
         // GPT-5 models are slower due to reasoning overhead - not recommended for analysis
-        'analysis_model' => env('AI_ENGINE_RAG_ANALYSIS_MODEL', 'gpt-4o-mini'),
+        'analysis_model' => env('AI_ENGINE_RAG_ANALYSIS_MODEL', 'gpt-6-luna'),
 
         // Model to use for final response generation
         // gpt-4o-mini is faster and cheaper, gpt-4o is more capable

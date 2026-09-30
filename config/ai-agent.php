@@ -966,7 +966,7 @@ return [
         'intent_matching' => [
             'enabled' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENABLED', true),
             'engine' => env('AI_AGENT_SKILL_INTENT_MATCHING_ENGINE', env('AI_ENGINE_DEFAULT')),
-            'model' => env('AI_AGENT_SKILL_INTENT_MATCHING_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
+            'model' => env('AI_AGENT_SKILL_INTENT_MATCHING_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-6-luna'))),
             'max_tokens' => env('AI_AGENT_SKILL_INTENT_MATCHING_MAX_TOKENS', 450),
             'temperature' => env('AI_AGENT_SKILL_INTENT_MATCHING_TEMPERATURE', 0.05),
             'min_confidence' => env('AI_AGENT_SKILL_INTENT_MATCHING_MIN_CONFIDENCE', 72),
@@ -1005,7 +1005,7 @@ return [
     'intent_understanding' => [
         'mode' => env('AI_AGENT_INTENT_UNDERSTANDING_MODE', 'heuristic'),
         'engine' => env('AI_AGENT_INTENT_ENGINE', env('AI_ENGINE_DEFAULT')),
-        'model' => env('AI_AGENT_INTENT_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o-mini'))),
+        'model' => env('AI_AGENT_INTENT_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-6-luna'))),
         'max_tokens' => (int) env('AI_AGENT_INTENT_MAX_TOKENS', 500),
         'temperature' => (float) env('AI_AGENT_INTENT_TEMPERATURE', 0.0),
         'cache_ttl_seconds' => (int) env('AI_AGENT_INTENT_CACHE_TTL', 120),
@@ -1085,7 +1085,7 @@ return [
     'action_payload_extraction' => [
         'enabled' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_ENABLED', true),
         'engine' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_ENGINE', env('AI_ENGINE_DEFAULT')),
-        'model' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-4o'))),
+        'model' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MODEL', env('AI_ENGINE_ORCHESTRATION_MODEL', env('AI_ENGINE_DEFAULT_MODEL', 'gpt-6-luna'))),
         'max_tokens' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_MAX_TOKENS', 1400),
         'temperature' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_TEMPERATURE', 0.1),
         'numeric_date_order' => env('AI_AGENT_ACTION_PAYLOAD_EXTRACTION_DATE_ORDER', 'dmy'),

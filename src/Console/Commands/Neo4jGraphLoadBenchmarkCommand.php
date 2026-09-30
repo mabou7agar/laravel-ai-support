@@ -170,7 +170,7 @@ class Neo4jGraphLoadBenchmarkCommand extends Command
                 message: $message,
                 sessionId: 'load-benchmark-' . $iteration,
                 engine: (string) ($this->option('engine') ?: config('ai-engine.default', 'openai')),
-                model: (string) ($this->option('model') ?: config('ai-engine.default_model', 'gpt-4o-mini')),
+                model: (string) ($this->option('model') ?: config('ai-engine.default_model', 'gpt-6-luna')),
                 useMemory: false,
                 useActions: false,
                 useRag: true,

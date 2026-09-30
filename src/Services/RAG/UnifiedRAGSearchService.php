@@ -153,7 +153,7 @@ class UnifiedRAGSearchService
             $response = $this->aiEngine->generateText(new AIRequest(
                 prompt: $prompt,
                 engine: 'openai',
-                model: 'gpt-4o-mini',
+                model: config('ai-engine.default_model', 'gpt-6-luna'),
                 temperature: 0.1,
                 maxTokens: 200
             ));

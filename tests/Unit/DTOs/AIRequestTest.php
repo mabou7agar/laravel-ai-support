@@ -26,6 +26,19 @@ class AIRequestTest extends TestCase
         $this->assertEquals('user-123', $request->userId);
     }
 
+    public function test_package_default_resolves_to_luna_and_explicit_config_remains_supported()
+    {
+        $defaults = \LaravelAIEngine\Support\Config\AIEngineConfigDefaults::defaults();
+        $this->assertSame('gpt-6-luna', $defaults['default_model']);
+        $this->assertSame('gpt-6-luna', config('ai-engine.file_analysis.vision_model'));
+
+        config()->set('ai-engine.default_model', 'gpt-6-luna');
+        $this->assertSame('gpt-6-luna', (new AIRequest('Hello'))->getModel()->value);
+
+        config()->set('ai-engine.default_model', 'gpt-4o');
+        $this->assertSame('gpt-4o', (new AIRequest('Hello'))->getModel()->value);
+    }
+
     public function test_ai_request_with_default_values()
     {
         $request = new AIRequest(

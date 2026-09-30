@@ -18,7 +18,7 @@ return array_replace_recursive($defaults, [
     |
     */
     'default' => env('AI_ENGINE_DEFAULT', $defaults['default'] ?? 'openai'),
-    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', $defaults['default_model'] ?? 'gpt-4o'),
+    'default_model' => env('AI_ENGINE_DEFAULT_MODEL', $defaults['default_model'] ?? 'gpt-6-luna'),
 
     /*
     |--------------------------------------------------------------------------
@@ -268,7 +268,7 @@ return array_replace_recursive($defaults, [
         'max_content_chars' => (int) data_get($defaults, 'file_analysis.max_content_chars', 12000),
         'extraction_max_tokens' => (int) data_get($defaults, 'file_analysis.extraction_max_tokens', 1500),
         // Vision model used to OCR image/scanned uploads into text.
-        'vision_model' => env('AI_ENGINE_FILE_ANALYSIS_VISION_MODEL', data_get($defaults, 'file_analysis.vision_model', 'gpt-4o')),
+        'vision_model' => env('AI_ENGINE_FILE_ANALYSIS_VISION_MODEL', data_get($defaults, 'file_analysis.vision_model', 'gpt-6-luna')),
         'vision_max_tokens' => (int) data_get($defaults, 'file_analysis.vision_max_tokens', 2000),
         // pattern => action mapping. Generic: add one entry per entity you want detected.
         //   ['pattern' => '/\\binvoice\\b/i', 'action_id' => 'create_invoice',
@@ -352,7 +352,7 @@ return array_replace_recursive($defaults, [
         'transcription_normalization' => [
             'enabled' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENABLED', data_get($defaults, 'media.transcription_normalization.enabled', false)),
             'engine' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_ENGINE', data_get($defaults, 'media.transcription_normalization.engine', 'openai')),
-            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', data_get($defaults, 'media.transcription_normalization.model', 'gpt-4o-mini')),
+            'model' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MODEL', data_get($defaults, 'media.transcription_normalization.model', 'gpt-6-luna')),
             'max_tokens' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_MAX_TOKENS', data_get($defaults, 'media.transcription_normalization.max_tokens', 500)),
             'temperature' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_TEMPERATURE', data_get($defaults, 'media.transcription_normalization.temperature', 0.0)),
             'system_prompt' => env('AI_ENGINE_TRANSCRIPTION_NORMALIZATION_SYSTEM_PROMPT', data_get($defaults, 'media.transcription_normalization.system_prompt')),

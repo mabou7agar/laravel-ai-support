@@ -20,6 +20,18 @@ class SeedAIModelsCommandTest extends TestCase
         $this->assertEquals(2.0, $gpt4o->metadata['credit_index']);
         $this->assertSame('text', $gpt4o->metadata['content_type']);
 
+        $luna = AIModel::where('model_id', 'gpt-6-luna')->first();
+        $this->assertNotNull($luna);
+        $this->assertSame('openai', $luna->provider);
+        $this->assertTrue($luna->supports_vision);
+        $this->assertSame(0.0001, $luna->pricing['input']);
+        $this->assertSame(0.0005, $luna->pricing['output']);
+
+        $routerLuna = AIModel::where('model_id', 'openai/gpt-6-luna')->first();
+        $this->assertNotNull($routerLuna);
+        $this->assertSame('openrouter', $routerLuna->provider);
+        $this->assertTrue($routerLuna->supports_vision);
+
         $gptImage2 = AIModel::where('model_id', 'openai/gpt-image-2')->first();
         $this->assertNotNull($gptImage2);
         $this->assertSame('openrouter', $gptImage2->provider);
@@ -69,6 +81,13 @@ class SeedAIModelsCommandTest extends TestCase
     public function test_catalog_serves_metadata_without_database_rows(): void
     {
         $this->assertSame(0, AIModel::count());
+
+        foreach (['gpt-6-luna' => 'openai', 'openai/gpt-6-luna' => 'openrouter'] as $id => $provider) {
+            $luna = EntityEnum::from($id);
+            $this->assertSame($provider, $luna->engine()->value);
+            $this->assertSame(1050000, $luna->maxTokens());
+            $this->assertTrue($luna->supportsVision());
+        }
 
         $entity = EntityEnum::from('gpt-4o');
         $this->assertEquals(2.0, $entity->creditIndex());

@@ -62,7 +62,7 @@ class AIRequest
         }
         
         if ($model === null) {
-            $defaultModel = config('ai-engine.default_model', 'gpt-4o');
+            $defaultModel = config('ai-engine.default_model', 'gpt-6-luna');
             $model = $this->resolveModel($defaultModel);
         } else {
             $model = $this->resolveModel($model);

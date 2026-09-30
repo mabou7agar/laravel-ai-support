@@ -1149,6 +1149,21 @@
         "supports_vision": false,
         "supports_streaming": true
     },
+    "gpt-6-luna": {
+        "label": "GPT-6 Luna",
+        "engine": "openai",
+        "driver_class": "LaravelAIEngine\\Drivers\\OpenAI\\GPT4ODriver",
+        "credit_index": 0.3,
+        "content_type": "text",
+        "max_tokens": 1050000,
+        "capabilities": ["chat", "vision", "reasoning", "function_calling", "json_mode"],
+        "context_window": {"input": 1050000, "output": null},
+        "pricing": {"unit": "usd_per_1k_tokens", "input": 0.0001, "output": 0.0005},
+        "supports_vision": true,
+        "supports_streaming": true,
+        "supports_function_calling": true,
+        "supports_json_mode": true
+    },
     "gpt-image-2": {
         "label": "GPT Image 2",
         "engine": "openai",
@@ -1648,6 +1663,21 @@
         "max_tokens": 128000,
         "supports_vision": false,
         "supports_streaming": true
+    },
+    "openai/gpt-6-luna": {
+        "label": "GPT-6 Luna (OpenRouter)",
+        "engine": "openrouter",
+        "driver_class": "LaravelAIEngine\\Drivers\\OpenRouter\\OpenRouterEngineDriver",
+        "credit_index": 0.3,
+        "content_type": "text",
+        "max_tokens": 1050000,
+        "capabilities": ["chat", "vision", "reasoning", "function_calling", "json_mode"],
+        "context_window": {"input": 1050000, "output": null},
+        "pricing": {"unit": "usd_per_1k_tokens", "input": 0.0001, "output": 0.0005},
+        "supports_vision": true,
+        "supports_streaming": true,
+        "supports_function_calling": true,
+        "supports_json_mode": true
     },
     "openai/gpt-image-2": {
         "label": "GPT Image 2 (OpenRouter)",

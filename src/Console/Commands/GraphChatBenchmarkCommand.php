@@ -51,7 +51,7 @@ class GraphChatBenchmarkCommand extends Command
         $collections = array_values(array_filter(array_map('strval', (array) $this->option('collection'))));
         $iterations = max(1, (int) ($this->option('iterations') ?: config('ai-engine.graph.benchmark.default_iterations', 5)));
         $engine = trim((string) ($this->option('engine') ?: config('ai-engine.default', 'openai')));
-        $model = trim((string) ($this->option('model') ?: config('ai-engine.default_model', 'gpt-4o-mini')));
+        $model = trim((string) ($this->option('model') ?: config('ai-engine.default_model', 'gpt-6-luna')));
         $sessionId = trim((string) ($this->option('session') ?: ('chat-benchmark-' . uniqid())));
         $userId = ($this->option('user') !== null && $this->option('user') !== '') ? (string) $this->option('user') : null;
         $memory = $this->asBool($this->option('memory'));

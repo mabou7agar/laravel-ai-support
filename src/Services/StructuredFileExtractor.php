@@ -50,7 +50,7 @@ class StructuredFileExtractor
             $response = $this->ai->generateDirect(new AIRequest(
                 prompt: $prompt,
                 engine: (string) ($options['engine'] ?? config('ai-engine.default', 'openai')),
-                model: (string) ($options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini'))),
+                model: (string) ($options['model'] ?? config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-6-luna'))),
                 maxTokens: (int) config('ai-engine.file_analysis.extraction_max_tokens', 1500),
                 temperature: 0.0,
                 metadata: ['context' => 'file_field_extraction']

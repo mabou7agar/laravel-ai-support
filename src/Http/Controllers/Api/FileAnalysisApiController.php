@@ -26,7 +26,7 @@ class FileAnalysisApiController extends Controller
                 $request->input('message', 'Analyze this file and extract relevant information.'),
                 (string) $request->input('session_id'),
                 $request->input('engine', 'openai'),
-                $request->input('model', 'gpt-4o'),
+                $request->input('model', config('ai-engine.default_model', 'gpt-6-luna')),
                 $request->boolean('use_rag', true),
                 $request->ragCollections(),
                 ApiRequestIdentity::userId($request, $request->input('user_id'))

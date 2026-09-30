@@ -218,6 +218,7 @@ enum EngineEnum: string
     {
         $ids = match ($this) {
             self::OpenAI => [
+                EntityEnum::GPT_6_LUNA,
                 EntityEnum::GPT_4O,
                 EntityEnum::GPT_4O_MINI,
                 EntityEnum::GPT_IMAGE_1_MINI,
@@ -286,6 +287,7 @@ enum EngineEnum: string
                 EntityEnum::PEXELS_SEARCH,
             ],
             self::OpenRouter => [
+                EntityEnum::OPENROUTER_GPT_6_LUNA,
                 EntityEnum::OPENROUTER_GPT_5,
                 EntityEnum::OPENROUTER_GEMINI_2_5_PRO,
                 EntityEnum::OPENROUTER_CLAUDE_4_OPUS,

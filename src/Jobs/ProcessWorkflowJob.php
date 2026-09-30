@@ -28,7 +28,7 @@ class ProcessWorkflowJob implements ShouldQueue
         public string $sessionId,
         public string $userId,
         public string $engine = 'openai',
-        public string $model = 'gpt-4o-mini',
+        public string $model = 'gpt-6-luna',
         public bool $useMemory = true,
         public bool $useActions = true,
         public bool $useRag = true,

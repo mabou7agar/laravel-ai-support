@@ -182,7 +182,7 @@ class RealtimeToolBrokerService
                 message: $message,
                 sessionId: $sessionId,
                 engine: (string) ($arguments['engine'] ?? $context->metadata['engine'] ?? config('ai-engine.default', 'openai')),
-                model: (string) ($arguments['model'] ?? $context->metadata['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini')),
+                model: (string) ($arguments['model'] ?? $context->metadata['model'] ?? config('ai-engine.default_model', 'gpt-6-luna')),
                 useMemory: (bool) ($arguments['memory'] ?? $arguments['use_memory'] ?? $context->metadata['memory'] ?? true),
                 useActions: (bool) ($arguments['actions'] ?? $arguments['use_actions'] ?? $context->metadata['actions'] ?? true),
                 useRag: (bool) ($arguments['use_rag'] ?? $context->metadata['use_rag'] ?? false),

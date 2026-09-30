@@ -202,7 +202,7 @@ PROMPT;
         $request = new AIRequest(
             prompt: $prompt,
             engine: EngineEnum::from($options['engine'] ?? 'openai'),
-            model: EntityEnum::from($options['model'] ?? 'gpt-4o-mini'),
+            model: EntityEnum::from($options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna')),
             maxTokens: (int) ($options['max_tokens'] ?? config('ai-agent.conversational.max_tokens', 200)),
             temperature: 0.7,
         );

@@ -45,7 +45,7 @@ class EngineCatalogController extends Controller
                 'engines' => $engines,
                 'count' => count($engines),
                 'default_engine' => config('ai-engine.default', EngineEnum::OpenAI->value),
-                'default_model' => config('ai-engine.default_model', 'gpt-4o'),
+                'default_model' => config('ai-engine.default_model', 'gpt-6-luna'),
             ],
         ]);
     }
@@ -60,7 +60,7 @@ class EngineCatalogController extends Controller
                 'engines' => $catalog,
                 'count' => count($catalog),
                 'default_engine' => config('ai-engine.default', EngineEnum::OpenAI->value),
-                'default_model' => config('ai-engine.default_model', 'gpt-4o'),
+                'default_model' => config('ai-engine.default_model', 'gpt-6-luna'),
             ],
         ]);
     }

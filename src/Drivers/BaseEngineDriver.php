@@ -570,14 +570,16 @@ abstract class BaseEngineDriver implements EngineDriverInterface
     }
 
     /**
-     * Check if model is GPT-5 family (gpt-5, gpt-5-mini, gpt-5-nano, gpt-5.1, etc.)
+     * Check models using GPT-5-style reasoning token and temperature rules.
      *
      * @param string $model
      * @return bool
      */
     protected function isGpt5FamilyModel(string $model): bool
     {
-        return str_starts_with($this->normalizeModelId($model), 'gpt-5');
+        $model = $this->normalizeModelId($model);
+
+        return str_starts_with($model, 'gpt-5') || $model === 'gpt-6-luna';
     }
 
     /**

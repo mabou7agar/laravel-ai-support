@@ -80,7 +80,7 @@ class AgentSkillMatcher
             $response = $this->ai->generate(new AIRequest(
                 prompt: $this->intentPrompt($message, $context, $skills),
                 engine: $this->intentConfig('engine', config('ai-engine.default', 'openai')),
-                model: $this->intentConfig('model', config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-4o-mini'))),
+                model: $this->intentConfig('model', config('ai-engine.orchestration_model', config('ai-engine.default_model', 'gpt-6-luna'))),
                 maxTokens: (int) $this->intentConfig('max_tokens', 450),
                 temperature: (float) $this->intentConfig('temperature', 0.05),
                 metadata: ['context' => 'agent_skill_intent_match']

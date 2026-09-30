@@ -76,7 +76,7 @@ class ChatServiceTest extends UnitTestCase
         $transcripts = Mockery::mock(ConversationTranscriptService::class);
         $transcripts->shouldReceive('getOrCreateConversation')
             ->once()
-            ->with('chat-persist', 9, 'openai', 'gpt-4o-mini')
+            ->with('chat-persist', 9, 'openai', 'gpt-6-luna')
             ->andReturn('conversation-123');
         $transcripts->shouldReceive('getConversationHistory')
             ->once()
@@ -118,7 +118,7 @@ class ChatServiceTest extends UnitTestCase
         $transcripts = Mockery::mock(ConversationTranscriptService::class);
         $transcripts->shouldReceive('getOrCreateConversation')
             ->once()
-            ->with('chat-persist-fail', 9, 'openai', 'gpt-4o-mini')
+            ->with('chat-persist-fail', 9, 'openai', 'gpt-6-luna')
             ->andReturn('conversation-456');
         $transcripts->shouldReceive('getConversationHistory')
             ->once()

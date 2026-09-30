@@ -143,7 +143,7 @@ class StructuredCollectionSessionService
                 ? $this->nativePrompt($message, $state, $definition)
                 : $this->prompt($message, $state, $definition),
             engine: EngineEnum::from((string) ($options['engine'] ?? config('ai-engine.default', 'openai'))),
-            model: EntityEnum::from((string) ($options['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini'))),
+            model: EntityEnum::from((string) ($options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna'))),
             maxTokens: (int) config('ai-agent.structured_collection.max_tokens', 900),
             temperature: (float) config('ai-agent.structured_collection.temperature', 0.1),
             metadata: [
@@ -549,7 +549,7 @@ PROMPT;
         return AIResponse::success(
             content: $message,
             engine: (string) ($options['engine'] ?? 'openai'),
-            model: (string) ($options['model'] ?? 'gpt-4o-mini'),
+            model: (string) ($options['model'] ?? 'gpt-6-luna'),
             metadata: [
                 'collection' => $collection,
             ]

@@ -11,11 +11,11 @@ class RAGDecisionPolicy
         if (function_exists('config')) {
             return (string) config(
                 'ai-engine.vector.rag.analysis_model',
-                config('ai-engine.default_model', 'gpt-4o-mini')
+                config('ai-engine.default_model', 'gpt-6-luna')
             );
         }
 
-        return 'gpt-4o-mini';
+        return 'gpt-6-luna';
     }
 
     public function itemsPerPage(): int

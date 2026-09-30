@@ -41,7 +41,7 @@ class ChatService
         string $message,
         string $sessionId,
         string $engine = 'openai',
-        string $model = 'gpt-4o-mini',
+        string $model = 'gpt-6-luna',
         bool $useMemory = true,
         bool $useActions = true,
         bool $useRag = true,

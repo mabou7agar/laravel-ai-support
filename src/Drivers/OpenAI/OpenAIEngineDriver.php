@@ -898,7 +898,7 @@ class OpenAIEngineDriver extends BaseEngineDriver
         ?string $model = null,
         int $maxTokens = 300
     ): string {
-        $model = $model ?? config('ai-engine.engines.openai.model', 'gpt-4o');
+        $model = $model ?? config('ai-engine.engines.openai.model', config('ai-engine.default_model', 'gpt-6-luna'));
         
         try {
             $payload = [

@@ -44,6 +44,8 @@ class ChatTokenParametersTest extends UnitTestCase
     public static function gpt5ModelProvider(): iterable
     {
         yield 'bare gpt-5' => ['gpt-5'];
+        yield 'bare gpt-6-luna' => ['gpt-6-luna'];
+        yield 'openrouter gpt-6-luna' => ['openai/gpt-6-luna'];
         yield 'gpt-5-mini' => ['gpt-5-mini'];
         yield 'openrouter-prefixed' => ['openai/gpt-5'];
         yield 'gateway double-prefixed' => ['openrouter/openai/gpt-5-nano'];

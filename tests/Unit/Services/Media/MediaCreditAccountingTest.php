@@ -20,6 +20,14 @@ use LaravelAIEngine\Tests\TestCase;
 
 class MediaCreditAccountingTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // These accounting examples explicitly exercise the supported GPT-4o model.
+        config()->set('ai-engine.vector.media.vision_model', 'gpt-4o');
+    }
+
     public function test_audio_transcription_deducts_whisper_credits_through_credit_manager(): void
     {
         $user = $this->createTestUser([

@@ -350,7 +350,7 @@ Please provide a helpful answer based on the information above.
 PROMPT;
 
         $engine = $options['engine'] ?? config('ai-engine.default');
-        $model = $options['model'] ?? 'gpt-4o';
+        $model = $options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna');
 
         $request = new \LaravelAIEngine\DTOs\AIRequest(
             prompt: $prompt,
@@ -377,7 +377,7 @@ PROMPT;
         $prompt = "Summarize the following in {$maxWords} words or less:\n\n{$content}";
 
         $engine = $options['engine'] ?? config('ai-engine.default');
-        $model = $options['model'] ?? 'gpt-4o-mini';
+        $model = $options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna');
 
         $request = new \LaravelAIEngine\DTOs\AIRequest(
             prompt: $prompt,
@@ -404,7 +404,7 @@ PROMPT;
         $prompt = "Extract {$maxTags} relevant tags/keywords from the following text. Return only the tags as a comma-separated list:\n\n{$content}";
 
         $engine = $options['engine'] ?? config('ai-engine.default');
-        $model = $options['model'] ?? 'gpt-4o-mini';
+        $model = $options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna');
 
         $request = new \LaravelAIEngine\DTOs\AIRequest(
             prompt: $prompt,

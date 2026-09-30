@@ -84,7 +84,7 @@ class AiDoctorCommand extends Command
                 'skills_enabled' => (bool) config('ai-agent.skills.enabled', true),
                 'manifest_fallback_discovery' => (bool) config('ai-agent.manifest.fallback_discovery', true),
                 'default_engine' => $defaultEngine,
-                'orchestration_model' => (string) config('ai-engine.orchestration_model', 'gpt-4o-mini'),
+                'orchestration_model' => (string) config('ai-engine.orchestration_model', 'gpt-6-luna'),
                 'nodes_enabled' => (bool) config('ai-engine.nodes.enabled', true),
                 'vector_driver' => $vectorDriver,
             ],

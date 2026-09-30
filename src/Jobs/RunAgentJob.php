@@ -233,7 +233,7 @@ class RunAgentJob implements ShouldQueue
         $aiResponse = new AIResponse(
             content: $response->message,
             engine: $options['engine'] ?? config('ai-engine.default', 'openai'),
-            model: $options['model'] ?? config('ai-engine.default_model', 'gpt-4o-mini'),
+            model: $options['model'] ?? config('ai-engine.default_model', 'gpt-6-luna'),
             metadata: array_merge($contextData, $response->metadata ?? [], $entityTracking, [
                 'runtime_active' => !$response->isComplete,
                 'runtime_data' => $response->data ?? [],

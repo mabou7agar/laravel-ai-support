@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.7.0] — 2026-09-16
+
+### Changed
+
+- Make `gpt-6-luna` the default OpenAI model, including file-analysis vision and implicit request fallbacks; register native and OpenRouter model metadata, pricing, and bidirectional failover mappings. Explicit env/config model choices remain unchanged.
+
+### Upgrade notes
+
+- Apps that relied on the implicit `gpt-4o` default should set `AI_ENGINE_DEFAULT_MODEL=gpt-4o` to keep it.
+
 ## [3.6.2] — 2026-09-16
 
 ### Fixed

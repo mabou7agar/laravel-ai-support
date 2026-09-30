@@ -237,24 +237,26 @@ class AIModelCapabilityDetector
 
         if (str_contains($modelId, 'vision')
             || str_contains($modelId, 'gpt-4')
-            || str_contains($modelId, 'gpt-5')) {
+            || str_contains($modelId, 'gpt-5')
+            || str_contains($modelId, 'gpt-6-luna')) {
             $capabilities[] = 'vision';
         }
 
         if (str_contains($modelId, 'o1')
             || str_contains($modelId, 'o3')
-            || str_contains($modelId, 'gpt-5')) {
+            || str_contains($modelId, 'gpt-5')
+            || str_contains($modelId, 'gpt-6-luna')) {
             $capabilities[] = 'reasoning';
         }
 
-        if ((str_contains($modelId, 'gpt-4') || str_contains($modelId, 'gpt-3.5') || str_contains($modelId, 'gpt-5'))
+        if ((str_contains($modelId, 'gpt-4') || str_contains($modelId, 'gpt-3.5') || str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-6-luna'))
             && !str_starts_with($modelId, 'o1')
             && !str_starts_with($modelId, 'o3')) {
             $capabilities[] = 'function_calling';
             $capabilities[] = 'json_mode';
         }
 
-        if (str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-4o')) {
+        if (str_contains($modelId, 'gpt-5') || str_contains($modelId, 'gpt-6-luna') || str_contains($modelId, 'gpt-4o')) {
             $capabilities[] = 'coding';
         }
 

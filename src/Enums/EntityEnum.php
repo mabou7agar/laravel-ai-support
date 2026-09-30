@@ -37,6 +37,7 @@ class EntityEnum
     public const GPT_4O = 'gpt-4o';
     public const GPT_4O_MINI = 'gpt-4o-mini';
     public const GPT_3_5_TURBO = 'gpt-3.5-turbo';
+    public const GPT_6_LUNA = 'gpt-6-luna';
     public const GPT_5 = 'gpt-5';
     public const GPT_5_MINI = 'gpt-5-mini';
     public const GPT_5_NANO = 'gpt-5-nano';
@@ -192,6 +193,7 @@ class EntityEnum
 
     // OpenRouter Models (Latest models available through OpenRouter)
     // GPT-5 Models (Latest Generation - August 2025)
+    public const OPENROUTER_GPT_6_LUNA = 'openai/gpt-6-luna';
     public const OPENROUTER_GPT_5 = 'openai/gpt-5';
     public const OPENROUTER_GPT_5_MINI = 'openai/gpt-5-mini';
     public const OPENROUTER_GPT_5_NANO = 'openai/gpt-5-nano';

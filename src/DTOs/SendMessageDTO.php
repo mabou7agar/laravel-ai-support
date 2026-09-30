@@ -10,7 +10,7 @@ class SendMessageDTO
         public readonly string $message,
         public readonly string $sessionId,
         public readonly string $engine = 'openai',
-        public readonly string $model = 'gpt-4o',
+        public readonly string $model = 'gpt-6-luna',
         public readonly bool $memory = true,
         public readonly bool $actions = true,
         public readonly bool $streaming = false,
