@@ -1,6 +1,6 @@
 # ADR 0002 — Adopting the official laravel/ai SDK
 
-Status: **Accepted. Steps 1–3 done; step 4 evaluated, gate stays closed.**
+Status: **Accepted. Steps 1–3 done. Step 4: technical gates closed; default/required deferred to a major release.**
 Date: 2026-10-19
 Context: Laravel shipped the official `laravel/ai` SDK (v1.0.0 on 2026-09-23, v1.2.3 at the time of writing). It needs PHP ^8.3 and Laravel 12/13. This package supports PHP ^8.1 and Laravel 8–13.
 
@@ -54,21 +54,24 @@ The split of responsibilities: `laravel/ai` covers provider access, agents, tool
 - **Cancelled runs were resurrected.** `RunAgentJob` never checked run status. A job queued or retried after a cancel ran the runtime and overwrote `cancelled` with `completed`, and a cancel during processing was overwritten the same way. The job now skips cancelled or expired runs, and keeps the cancellation if it happens while the runtime works.
 - **Per-request runtime selection was misattributed.** `RunAgentJob` recorded the configured default runtime, not the one the request selected, so an approval paused on a non-default runtime resumed on the wrong one. Attribution now follows the selected runtime for registered runtimes. Built-in-only setups keep the historical attribution exactly.
 
-## Step 4 — default or required? Not yet.
+## Step 4 — default or required?
 
-The gate stays closed. Making `laravel_ai` the default, or requiring `laravel/ai`, is not justified today:
+First evaluation (2026-10-19, at the merge of steps 1–3): **not yet**. Six blockers were found. Five of them were then closed on the same day:
 
-1. **Requiring the SDK is a breaking change.** It would raise the package floor from PHP ^8.1 and Laravel 8–13 to PHP ^8.3 and Laravel 12–13.
-2. **Package tools are not bridged.** The runtime only sees `laravel/ai` Tool classes. The package's tool registry, skills, sub-agents, `search_knowledge` RAG, `data_query` and federation routing are not available to it. The built-in runtime's AiNative planner uses all of them.
-3. **Credit billing is not integrated.** Credits are charged per engine request inside `AIEngineService`. The SDK runtime bypasses that service, so `laravel_ai` runs record tokens but deduct no credits, and cost-based budgets see zero cost.
-4. **Hidden model calls.** The SDK makes an extra model call to title each new conversation. Its tokens never reach the run budget. Hosts can disable it with `ai.conversations.generate_title = false`.
-5. **Capabilities are narrower.** Artifacts and sub-agents report `false`.
-6. **Live-provider behaviour is unverified.** Parity is proven against the SDK's fakes, not against real providers.
+| Blocker | Status | How |
+| --- | --- | --- |
+| Package tools not bridged | Closed | `PackageAgentTool` exposes package `AgentTool`s to the SDK agent, selected with `ai-agent.runtime.laravel_ai.package_tools`. Calls run through `AiNativeToolExecutor`, so the execution policy applies. The run's tenant and workspace scope reach the tool. Tools that require confirmation become SDK approvals and so package step approvals. Skills (`run_skill`), sub-agents (`run_sub_agent`), `search_knowledge`, `data_query` and federation routing are themselves package tools, so they come across the same way. |
+| Credit billing not integrated | Closed | `LaravelAiCreditBiller` prices each turn like an engine call: units × the model's catalog credit index × the engine rate. Units come from the SDK's token usage. Credits are accumulated on the run as `credits_used` and, with `ai-engine.credits.enabled`, deducted from the user after a balance check before the SDK is called. |
+| Hidden title-generation calls | Closed | The runtime opens new SDK conversations itself, titled from the first message, so the SDK makes no extra model call. `generate_titles` restores the SDK behaviour. |
+| Narrower capabilities | Mostly closed | `sub_agents` is reported when `run_sub_agent` is bridged. `artifacts` is still `false`. |
+| Live providers unverified | Closed | `LaravelAiLiveProviderSmokeTest` runs a streamed turn and a confirm-then-approve package tool against a live provider. It passed on OpenRouter with `anthropic/claude-haiku-4.5`. It is opt-in because it spends provider usage. |
+| Requiring the SDK is a breaking change | Open, by nature | Requiring `laravel/ai` raises the package floor from PHP ^8.1 and Laravel 8–13 to PHP ^8.3 and Laravel 12–13. |
 
-### Exit criteria to reopen step 4
+### Verdict
 
-- A bridge that exposes package `AgentTool`s and skills to the SDK as `laravel/ai` tools, with approval policies preserved.
-- Credit billing for SDK turns, pricing SDK token usage through the package's model catalog so credit deduction and cost budgets apply.
-- Title-generation usage either attributed to the run or disabled by the runtime.
-- A smoke suite against at least one live provider.
-- A major version that is allowed to drop PHP < 8.3 and Laravel < 12, if the SDK is to become required rather than default.
+The runtime is ready for production use **as an opt-in**. It should not become the default or a requirement inside 3.x:
+
+- Making `laravel_ai` the default without requiring the SDK would break every install that has not installed `laravel/ai`.
+- Requiring the SDK is a semver-major change. It belongs in a 4.0 release that deliberately drops PHP < 8.3 and Laravel < 12, which is a maintainer decision, not an engineering one.
+
+If 4.0 takes that step, the remaining work is: an `artifacts` mapping for SDK file outputs, a decision about retiring the built-in provider drivers that duplicate the SDK, and running the live smoke test on each provider the project supports.

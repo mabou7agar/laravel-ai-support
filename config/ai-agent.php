@@ -709,6 +709,23 @@ return [
             // How many streamed text deltas pass between cancellation checks
             // (tool events and the first event are always checked).
             'cancellation_check_every' => (int) env('AI_AGENT_LARAVEL_AI_CANCELLATION_CHECK_EVERY', 20),
+            // The SDK titles each new conversation with an extra model call that
+            // the turn's usage does not include. Off: the runtime opens the
+            // conversation itself with a title taken from the first message.
+            'generate_titles' => env('AI_AGENT_LARAVEL_AI_GENERATE_TITLES', false),
+            // laravel/ai turns are billed like built-in engine calls: credits are
+            // accumulated on the run and, with ai-engine.credits.enabled, deducted
+            // from the user. Units come from the turn's token usage.
+            'billing' => [
+                'enabled' => env('AI_AGENT_LARAVEL_AI_BILLING', true),
+                'words_per_token' => 0.75,
+                'characters_per_token' => 4,
+                // laravel/ai provider name => package engine, where they differ.
+                'engines' => [],
+            ],
+            // Package agent tools (ai-agent.tools) to expose to the SDK agent.
+            // true = every registered tool, or a list of tool names.
+            'package_tools' => env('AI_AGENT_LARAVEL_AI_PACKAGE_TOOLS', false),
         ],
     ],
 

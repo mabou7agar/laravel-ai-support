@@ -195,6 +195,24 @@ class AgentRuntimeConfigValidator
             }
         }
 
+        $packageTools = config('ai-agent.runtime.laravel_ai.package_tools', false);
+        if (is_string($packageTools) || is_array($packageTools)) {
+            $registered = array_keys(app(\LaravelAIEngine\Services\Agent\Tools\ToolRegistry::class)->all());
+            $names = is_string($packageTools) ? explode(',', $packageTools) : $packageTools;
+
+            foreach ($names as $name) {
+                $name = is_string($name) ? trim($name) : '';
+                if ($name !== '' && !in_array($name, $registered, true)) {
+                    $issues[] = $this->issue(
+                        'warning',
+                        'unknown_laravel_ai_package_tool',
+                        "laravel_ai package tool [{$name}] is not a registered agent tool and will not be exposed.",
+                        'ai-agent.runtime.laravel_ai.package_tools'
+                    );
+                }
+            }
+        }
+
         return $issues;
     }
 

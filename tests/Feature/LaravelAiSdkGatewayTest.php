@@ -18,7 +18,10 @@ use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\EngineAgent;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\LaravelAiInvocation;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\LaravelAiSdk;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\SdkLaravelAiGateway;
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\PackageAgentTool;
+use LaravelAIEngine\Services\Agent\Tools\ToolRegistry;
 use LaravelAIEngine\Tests\Support\Stubs\LaravelAi\NotAnSdkAgent;
+use LaravelAIEngine\Tests\Support\Stubs\RecordingAgentTool;
 use LaravelAIEngine\Tests\Support\Stubs\LaravelAi\SupportDeskAgent;
 use LaravelAIEngine\Tests\TestCase;
 
@@ -46,9 +49,10 @@ class LaravelAiSdkGatewayTest extends TestCase
 
         config()->set('ai-agent.runtime.laravel_ai.enabled', true);
         config()->set('ai-agent.runtime.laravel_ai.instructions', 'You are a test agent.');
-        // The SDK titles each new conversation with an extra model call that the
-        // turn's usage does not include (see docs/decisions); keep it out of these fakes.
-        config()->set('ai.conversations.generate_title', false);
+        config()->set('ai-engine.credits.enabled', false);
+        RecordingAgentTool::reset();
+        // The SDK's own conversation titling is left ON here on purpose: the
+        // runtime must avoid the extra, unaccounted title call by itself.
     }
 
     protected function getPackageProviders($app): array
@@ -131,7 +135,9 @@ class LaravelAiSdkGatewayTest extends TestCase
 
         $this->assertTrue($turn->cancelled);
         $this->assertSame('one', $turn->text);
-        $this->assertNull($turn->conversationId);
+        // The conversation the turn ran in is kept, but the abandoned turn was not stored in it.
+        $this->assertNotNull($turn->conversationId);
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('agent_conversation_messages')->where('conversation_id', $turn->conversationId)->count());
     }
 
     public function test_pending_approval_is_mapped_and_resume_sends_decisions(): void
@@ -241,6 +247,127 @@ class LaravelAiSdkGatewayTest extends TestCase
         $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->status);
         $this->assertSame('Refund issued.', $run->final_response['message']);
         $this->assertTrue($run->final_response['metadata']['laravel_ai']['resumed']);
+    }
+
+    public function test_new_conversations_are_opened_without_the_sdk_title_call(): void
+    {
+        config()->set('ai.conversations.generate_title', true);
+        EngineAgent::fake(['Only answer.'])->preventStrayPrompts();
+
+        $turn = app(SdkLaravelAiGateway::class)->run($this->invocation('Plan my week around three client meetings', stream: false));
+
+        $this->assertSame('Only answer.', $turn->text, 'the single scripted response was not spent on a title');
+        $this->assertNotNull($turn->conversationId);
+        $this->assertSame(
+            'Plan my week around three client meetings',
+            \Illuminate\Support\Facades\DB::table('agent_conversations')->where('id', $turn->conversationId)->value('title')
+        );
+    }
+
+    public function test_sdk_titling_can_be_opted_back_into(): void
+    {
+        config()->set('ai.conversations.generate_title', true);
+        config()->set('ai-agent.runtime.laravel_ai.generate_titles', true);
+        // The SDK answers first and titles the conversation afterwards.
+        EngineAgent::fake(['The answer.', 'Weekly plan']);
+
+        $turn = app(SdkLaravelAiGateway::class)->run($this->invocation('Plan my week', stream: false));
+
+        $this->assertSame('The answer.', $turn->text);
+        $this->assertNotNull($turn->conversationId);
+        $this->assertSame('Weekly plan', \Illuminate\Support\Facades\DB::table('agent_conversations')->where('id', $turn->conversationId)->value('title'));
+    }
+
+    public function test_package_tool_schema_is_exposed_to_the_sdk(): void
+    {
+        $tool = new PackageAgentTool(new RecordingAgentTool(), static fn () => new \LaravelAIEngine\DTOs\UnifiedActionContext('s', 1));
+        $schema = (new \Laravel\Ai\ObjectSchema($tool->schema(new \Illuminate\JsonSchema\JsonSchemaTypeFactory())))->toSchema();
+
+        $this->assertSame('lookup_order', $tool->name());
+        $this->assertSame('integer', $schema['properties']['order']['type']);
+        $this->assertSame(['order'], $schema['required']);
+    }
+
+    public function test_package_tool_runs_through_the_policy_checked_executor_with_run_scope(): void
+    {
+        $this->registerPackageTool(new RecordingAgentTool());
+        EngineAgent::fake([
+            new \Laravel\Ai\Responses\Data\ToolCall('call-1', 'lookup_order', ['order' => 42]),
+            'Order 42 has shipped.',
+        ]);
+
+        $turn = app(SdkLaravelAiGateway::class)->run(new LaravelAiInvocation(
+            message: 'Where is order 42?',
+            sessionId: 'tool-session',
+            userId: 9,
+            stream: false,
+            options: ['tenant_id' => 'tenant-a', 'workspace_id' => 'workspace-a']
+        ));
+
+        $this->assertSame('Order 42 has shipped.', $turn->text);
+        $this->assertCount(1, RecordingAgentTool::$calls);
+        $this->assertSame(42, RecordingAgentTool::$calls[0]['parameters']['order']);
+        $this->assertSame('tenant-a', RecordingAgentTool::$calls[0]['request_options']['tenant_id']);
+        $this->assertSame('tool-session', RecordingAgentTool::$calls[0]['session_id']);
+        $this->assertSame('lookup_order', $turn->toolResults[0]['name']);
+        $this->assertTrue($turn->toolResults[0]['successful']);
+        $this->assertStringContainsString('has shipped', json_encode($turn->toolResults[0]['result']));
+    }
+
+    public function test_execution_policy_still_blocks_a_bridged_package_tool(): void
+    {
+        config()->set('ai-agent.execution_policy.tool_deny', ['lookup_order']);
+        $this->registerPackageTool(new RecordingAgentTool());
+        EngineAgent::fake([
+            new \Laravel\Ai\Responses\Data\ToolCall('call-2', 'lookup_order', ['order' => 7]),
+            'I could not look that up.',
+        ]);
+
+        $turn = app(SdkLaravelAiGateway::class)->run($this->invocation('Where is order 7?', stream: false));
+
+        $this->assertSame([], RecordingAgentTool::$calls);
+        $this->assertStringContainsString('blocked', json_encode($turn->toolResults[0]['result']));
+    }
+
+    public function test_package_tool_that_needs_confirmation_pauses_the_run_and_runs_after_approval(): void
+    {
+        config()->set('ai-agent.runtime.default', 'laravel_ai');
+        $this->registerPackageTool(new RecordingAgentTool('refund_order', confirm: true));
+        EngineAgent::fake([
+            new \Laravel\Ai\Responses\Data\ToolCall('call-3', 'refund_order', ['order' => 7]),
+            'Refund issued.',
+        ]);
+
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'confirm-session',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+        $this->handle(new RunAgentJob($run->id, 'Refund order 7', 'confirm-session', '9'));
+
+        $run->refresh();
+        $approvalKey = $run->final_response['data']['approval_key'];
+        $approval = app(\LaravelAIEngine\Repositories\ProviderToolApprovalRepository::class)->findByKeyOrFail($approvalKey);
+
+        $this->assertSame(AIAgentRun::STATUS_WAITING_APPROVAL, $run->status);
+        $this->assertSame('refund_order', $approval->tool_name);
+        $this->assertSame('Refunds need approval.', $approval->tool_payload['decision']['reason'] ?? $run->final_response['data']['pending_approvals'][0]['reason']);
+        $this->assertSame([], RecordingAgentTool::$calls, 'nothing runs before approval');
+
+        app(AgentRunRuntimeControlService::class)->resume($run, ['approval_key' => $approvalKey, 'actor_id' => 'admin-1']);
+
+        // The SDK's fakes do not execute approved tools on resume (only a real
+        // provider does), so tool execution after approval is covered by the
+        // live-provider smoke test; here the resume must complete the run.
+        $run->refresh();
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame('Refund issued.', $run->final_response['message']);
+    }
+
+    private function registerPackageTool(RecordingAgentTool $tool): void
+    {
+        app(ToolRegistry::class)->register($tool->getName(), $tool);
+        config()->set('ai-agent.runtime.laravel_ai.package_tools', [$tool->getName()]);
     }
 
     private function invocation(string $message, bool $stream = true, ?string $conversationId = null): LaravelAiInvocation

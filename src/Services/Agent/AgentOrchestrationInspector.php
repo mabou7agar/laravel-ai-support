@@ -125,6 +125,16 @@ class AgentOrchestrationInspector
             $runtimes[] = 'langgraph';
         }
 
+        // Runtimes registered through ai-agent.runtime.drivers (including the
+        // opt-in laravel_ai runtime) are part of the orchestration surface too.
+        foreach (\LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeDriverMap::names() as $name) {
+            if (!array_key_exists($name, \LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeDriverMap::BUILT_IN)
+                && !in_array($name, $runtimes, true)
+            ) {
+                $runtimes[] = $name;
+            }
+        }
+
         sort($runtimes);
 
         return $runtimes;
