@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\Runtime;
 
+use Illuminate\Contracts\Container\Container;
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\AgentRuntimeCapabilities;
@@ -12,11 +13,20 @@ use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
 
 class AgentRuntimeManager implements AgentRuntimeContract
 {
+    /**
+     * Runtimes resolved so far, keyed by runtime name. Entries from the
+     * `ai-agent.runtime.drivers` map are built on first use, never eagerly.
+     *
+     * @var array<string, AgentRuntimeContract>
+     */
+    protected array $resolved = [];
+
     public function __construct(
         protected LaravelAgentRuntime $laravelRuntime,
         protected LangGraphAgentRuntime $langGraphRuntime,
         protected ?AgentExecutionPolicyService $policy = null,
-        protected ?AIScopeOptionsService $scopeOptions = null
+        protected ?AIScopeOptionsService $scopeOptions = null,
+        protected ?Container $container = null
     ) {
         $this->scopeOptions ??= app()->bound(AIScopeOptionsService::class)
             ? app(AIScopeOptionsService::class)
@@ -33,12 +43,79 @@ class AgentRuntimeManager implements AgentRuntimeContract
         return $this->runtime()->capabilities();
     }
 
+    /**
+     * Capabilities of every registered runtime (built-ins plus the
+     * `ai-agent.runtime.drivers` map), keyed by runtime name. A driver that
+     * cannot be built is reported instead of aborting the whole report.
+     *
+     * @return array<string, array<string, mixed>>
+     */
     public function availableCapabilities(): array
     {
-        return [
-            'laravel' => $this->laravelRuntime->capabilities()->toArray(),
-            'langgraph' => $this->langGraphRuntime->capabilities()->toArray(),
-        ];
+        $capabilities = [];
+
+        foreach ($this->registeredRuntimes() as $name => $class) {
+            try {
+                $capabilities[$name] = $this->resolveRuntime($name)->capabilities()->toArray();
+            } catch (\Throwable $e) {
+                $capabilities[$name] = [
+                    'available' => false,
+                    'class' => $class,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return $capabilities;
+    }
+
+    /**
+     * Registered runtime drivers, keyed by runtime name.
+     *
+     * @return array<string, string>
+     */
+    public function registeredRuntimes(): array
+    {
+        return AgentRuntimeDriverMap::fromConfig();
+    }
+
+    public function hasRuntime(string $name): bool
+    {
+        return array_key_exists(AgentRuntimeDriverMap::normalizeName($name), $this->registeredRuntimes());
+    }
+
+    /**
+     * Resolve a registered runtime by name. Built-in names return the injected
+     * instances; other names are built from the container on first use and
+     * cached for the lifetime of the manager.
+     *
+     * @throws \InvalidArgumentException when the name is not registered or the
+     *                                   configured class does not implement AgentRuntimeContract
+     */
+    public function resolveRuntime(string $name): AgentRuntimeContract
+    {
+        $name = AgentRuntimeDriverMap::normalizeName($name);
+
+        if (isset($this->resolved[$name])) {
+            return $this->resolved[$name];
+        }
+
+        $class = $this->registeredRuntimes()[$name] ?? null;
+        if ($class === null) {
+            throw new \InvalidArgumentException(
+                "Agent runtime [{$name}] is not registered. Add it to ai-agent.runtime.drivers."
+            );
+        }
+
+        $runtime = $this->builtInInstance($class) ?? $this->container()->make($class);
+
+        if (!$runtime instanceof AgentRuntimeContract) {
+            throw new \InvalidArgumentException(
+                "Agent runtime [{$name}] resolved to [" . get_debug_type($runtime) . '] which does not implement ' . AgentRuntimeContract::class . '.'
+            );
+        }
+
+        return $this->resolved[$name] = $runtime;
     }
 
     public function process(
@@ -59,14 +136,15 @@ class AgentRuntimeManager implements AgentRuntimeContract
 
         $missing = $this->missingRequiredCapabilities($runtime->capabilities(), $options);
         if ($this->langGraphFallbackWillBeUsed($runtimeName, $options)) {
-            $fallbackRuntimeName = $this->laravelRuntime->name();
+            $fallbackRuntime = $this->fallbackRuntime();
+            $fallbackRuntimeName = $fallbackRuntime->name();
             if (!$this->policy()->canUseRuntime($fallbackRuntimeName, $options)) {
                 return AgentResponse::failure(
                     message: $this->policy()->blockedMessage('runtime', $fallbackRuntimeName)
                 );
             }
 
-            $fallbackMissing = $this->missingRequiredCapabilities($this->laravelRuntime->capabilities(), $options);
+            $fallbackMissing = $this->missingRequiredCapabilities($fallbackRuntime->capabilities(), $options);
             if ($fallbackMissing !== []) {
                 return AgentResponse::failure(
                     message: "Fallback runtime [{$fallbackRuntimeName}] for requested runtime [{$runtimeName}] is missing required capabilities: " . implode(', ', $fallbackMissing) . '.',
@@ -74,7 +152,7 @@ class AgentRuntimeManager implements AgentRuntimeContract
                         'runtime' => $fallbackRuntimeName,
                         'requested_runtime' => $runtimeName,
                         'missing_capabilities' => $fallbackMissing,
-                        'capabilities' => $this->laravelRuntime->capabilities()->toArray(),
+                        'capabilities' => $fallbackRuntime->capabilities()->toArray(),
                     ]
                 );
             }
@@ -116,14 +194,51 @@ class AgentRuntimeManager implements AgentRuntimeContract
         ]);
     }
 
+    /**
+     * Select the runtime for a request: the `agent_runtime` option, else the
+     * configured default. A name that is not registered falls back to the
+     * built-in Laravel runtime, matching the pre-driver-map behaviour.
+     */
     protected function runtime(array $options = []): AgentRuntimeContract
     {
-        $runtime = strtolower(trim((string) ($options['agent_runtime'] ?? config('ai-agent.runtime.default', 'laravel'))));
+        $name = AgentRuntimeDriverMap::normalizeName(
+            $options['agent_runtime'] ?? AgentRuntimeDriverMap::defaultName()
+        );
 
-        return match ($runtime) {
-            'langgraph' => $this->langGraphRuntime,
-            default => $this->laravelRuntime,
-        };
+        if ($name === '' || !$this->hasRuntime($name)) {
+            $name = AgentRuntimeDriverMap::DEFAULT_RUNTIME;
+        }
+
+        return $this->resolveRuntime($name);
+    }
+
+    /**
+     * The runtime an unavailable LangGraph request falls back to.
+     */
+    protected function fallbackRuntime(): AgentRuntimeContract
+    {
+        return $this->resolveRuntime(AgentRuntimeDriverMap::DEFAULT_RUNTIME);
+    }
+
+    /**
+     * Return the constructor-injected instance when the configured class is
+     * (or extends) one of the built-in runtimes, so the map never rebuilds
+     * what the service registrar already wired.
+     */
+    protected function builtInInstance(string $class): ?AgentRuntimeContract
+    {
+        foreach ([$this->laravelRuntime, $this->langGraphRuntime] as $instance) {
+            if ($instance instanceof $class) {
+                return $instance;
+            }
+        }
+
+        return null;
+    }
+
+    protected function container(): Container
+    {
+        return $this->container ??= app();
     }
 
     protected function langGraphFallbackWillBeUsed(string $runtimeName, array $options): bool

@@ -135,7 +135,16 @@ final class MyRuntime implements AgentRuntimeContract
 }
 ```
 
-Register the runtime in the container and select it with `agent_runtime` or `ai-agent.runtime.default`.
+Register it by name in `ai-agent.runtime.drivers` and select it with `agent_runtime` or `ai-agent.runtime.default`. The built-in `laravel` and `langgraph` runtimes are always registered; the manager builds additional runtimes from the container on first use, and `php artisan ai:validate-runtime-config` rejects entries that do not implement the contract.
+
+```php
+'runtime' => [
+    'default' => 'my_runtime',
+    'drivers' => [
+        'my_runtime' => \App\AI\Runtime\MyRuntime::class,
+    ],
+],
+```
 
 ## Routing Model
 
