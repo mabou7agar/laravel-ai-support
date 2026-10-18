@@ -166,6 +166,33 @@ class AgentRuntimeDriverRegistrationTest extends TestCase
         $this->assertSame(1, $events->where('name', AgentRunEventStreamService::RUN_COMPLETED)->count());
     }
 
+    public function test_selecting_a_misconfigured_runtime_fails_the_run_instead_of_leaving_it_pending(): void
+    {
+        config()->set('ai-agent.runtime.drivers', [
+            'recording' => RecordingAgentRuntime::class,
+            'broken' => \stdClass::class,
+        ]);
+
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'broken-runtime',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+
+        try {
+            $this->handle(new RunAgentJob($run->id, 'hello', 'broken-runtime', '9', ['agent_runtime' => 'broken']));
+            $this->fail('Expected the misconfigured runtime to fail the job.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('does not implement', $e->getMessage());
+        }
+
+        $run->refresh();
+        $this->assertSame(AIAgentRun::STATUS_FAILED, $run->status);
+        $this->assertStringContainsString('does not implement', $run->failure_reason);
+        $this->assertSame([], RecordingAgentRuntime::$calls);
+        $this->assertContains(AgentRunEventStreamService::RUN_FAILED, collect($run->metadata['events'] ?? [])->pluck('name')->all());
+    }
+
     private function handle(RunAgentJob $job): void
     {
         $job->handle(

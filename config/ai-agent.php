@@ -686,6 +686,30 @@ return [
             'retry_sleep_ms' => (int) env('AI_AGENT_LANGGRAPH_RETRY_SLEEP_MS', 100),
             'fallback_to_laravel' => env('AI_AGENT_LANGGRAPH_FALLBACK_TO_LARAVEL', true),
         ],
+
+        // Optional runtime backed by the official laravel/ai SDK. Requires
+        // `composer require laravel/ai` (PHP 8.3+, Laravel 12+) plus the SDK's
+        // conversation migrations. When enabled and installed it registers as
+        // `laravel_ai`; select it with AI_AGENT_RUNTIME=laravel_ai or the
+        // `agent_runtime` request option. Nothing changes until you opt in.
+        'laravel_ai' => [
+            'enabled' => env('AI_AGENT_LARAVEL_AI_ENABLED', false),
+            // A class implementing Laravel\Ai\Contracts\Agent. Null uses the
+            // package's EngineAgent with the instructions and tools below.
+            'agent' => env('AI_AGENT_LARAVEL_AI_AGENT'),
+            'instructions' => env('AI_AGENT_LARAVEL_AI_INSTRUCTIONS', 'You are a helpful assistant.'),
+            // laravel/ai Tool classes for the default agent.
+            'tools' => [],
+            // Null defers to the SDK's own `ai.default` provider and model.
+            'provider' => env('AI_AGENT_LARAVEL_AI_PROVIDER'),
+            'model' => env('AI_AGENT_LARAVEL_AI_MODEL'),
+            'timeout' => env('AI_AGENT_LARAVEL_AI_TIMEOUT'),
+            // Stream turns and mirror SDK events into the run event stream.
+            'stream' => env('AI_AGENT_LARAVEL_AI_STREAM', true),
+            // How many streamed text deltas pass between cancellation checks
+            // (tool events and the first event are always checked).
+            'cancellation_check_every' => (int) env('AI_AGENT_LARAVEL_AI_CANCELLATION_CHECK_EVERY', 20),
+        ],
     ],
 
     'sub_agents' => [

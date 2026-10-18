@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\Runtime;
 
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\LaravelAiAgentRuntime;
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\LaravelAiSdk;
+
 /**
  * Normalised view of the `ai-agent.runtime.drivers` class map.
  *
@@ -30,6 +33,10 @@ final class AgentRuntimeDriverMap
      * runtime name. Entries that are not a non-empty name => non-empty string
      * are dropped here; the config validator reports them.
      *
+     * The optional laravel/ai-backed runtime is appended as `laravel_ai` only
+     * when laravel/ai is installed and `ai-agent.runtime.laravel_ai.enabled`
+     * is true; a host-configured `laravel_ai` entry wins.
+     *
      * @return array<string, string>
      */
     public static function fromConfig(): array
@@ -45,7 +52,13 @@ final class AgentRuntimeDriverMap
             $drivers[$name] = ltrim(trim($class), '\\');
         }
 
-        return $drivers + self::BUILT_IN;
+        $drivers += self::BUILT_IN;
+
+        if (!isset($drivers[LaravelAiSdk::RUNTIME]) && LaravelAiSdk::shouldRegister()) {
+            $drivers[LaravelAiSdk::RUNTIME] = LaravelAiAgentRuntime::class;
+        }
+
+        return $drivers;
     }
 
     /**
