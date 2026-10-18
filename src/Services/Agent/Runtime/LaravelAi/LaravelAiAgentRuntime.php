@@ -8,6 +8,7 @@ use LaravelAIEngine\Contracts\AgentRuntimeContract;
 use LaravelAIEngine\DTOs\AgentResponse;
 use LaravelAIEngine\DTOs\AgentRuntimeCapabilities;
 use LaravelAIEngine\DTOs\UnifiedActionContext;
+use LaravelAIEngine\Exceptions\InsufficientCreditsException;
 use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIProviderToolApproval;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
@@ -58,7 +59,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             tools: $available,
             artifacts: false,
             humanApprovals: $available,
-            subAgents: false,
+            subAgents: $available && $this->packageToolEnabled('run_sub_agent'),
             remoteCallbacks: false,
             metadata: [
                 'runtime' => $this->name(),
@@ -112,6 +113,12 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             options: $options
         );
 
+        try {
+            $this->biller()->assertCanAfford($message, $userId, $invocation->provider, $invocation->model);
+        } catch (InsufficientCreditsException $e) {
+            return $this->insufficientCredits($e, $context);
+        }
+
         $mirror = new LaravelAiStreamMirror(
             $this->events(),
             $options,
@@ -121,10 +128,18 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
         $turn = $gateway->run($invocation, $invocation->stream ? $mirror->listener() : null);
         $mirror->finish($turn);
 
+        try {
+            $billing = $this->biller()->charge($turn, $message, $userId, $invocation->provider, $invocation->model);
+        } catch (InsufficientCreditsException $e) {
+            // Same outcome as a built-in engine call whose deduction fails after the
+            // provider answered: the turn's credits are accumulated, the reply is not delivered.
+            return $this->insufficientCredits($e, $context);
+        }
+
         $this->rememberTurn($context, $invocation, $turn);
 
         if ($turn->hasPendingApprovals() && !$turn->cancelled) {
-            return $this->approvalResponse($turn, $invocation, $context, $options);
+            return $this->approvalResponse($turn, $invocation, $context, $options, $billing);
         }
 
         $response = AgentResponse::success(
@@ -134,16 +149,29 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             ], static fn (mixed $value): bool => $value !== null),
             context: $context
         );
-        $response->metadata = $this->metadata($turn, $invocation, $options);
+        $response->metadata = $this->metadata($turn, $invocation, $options, $billing);
 
         return $response;
+    }
+
+    protected function insufficientCredits(InsufficientCreditsException $e, ?UnifiedActionContext $context): AgentResponse
+    {
+        return AgentResponse::failure(
+            message: $e->getMessage() !== '' ? $e->getMessage() : 'Insufficient credits for this request.',
+            data: [
+                'runtime' => $this->name(),
+                'error_code' => 'insufficient_credits',
+            ],
+            context: $context
+        );
     }
 
     protected function approvalResponse(
         LaravelAiTurn $turn,
         LaravelAiInvocation $invocation,
         ?UnifiedActionContext $context,
-        array $options
+        array $options,
+        array $billing = []
     ): AgentResponse {
         $pending = $turn->pendingApprovals;
         $tools = array_values(array_unique(array_map(static fn (array $approval): string => (string) $approval['tool'], $pending)));
@@ -169,7 +197,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             needsUserInput: true,
             isComplete: false
         );
-        $metadata = $this->metadata($turn, $invocation, $options);
+        $metadata = $this->metadata($turn, $invocation, $options, $billing);
 
         $step = isset($options['agent_run_step_id'])
             ? $this->steps()->find($options['agent_run_step_id'])
@@ -270,7 +298,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
     /**
      * @return array<string, mixed>
      */
-    protected function metadata(LaravelAiTurn $turn, LaravelAiInvocation $invocation, array $options): array
+    protected function metadata(LaravelAiTurn $turn, LaravelAiInvocation $invocation, array $options, array $billing = []): array
     {
         $usage = array_filter([
             'input_tokens' => $turn->inputTokens(),
@@ -296,6 +324,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
                 'tool_calls' => count($turn->toolCalls),
                 'tool_results' => count($turn->toolResults),
                 'cancelled' => $turn->cancelled ?: null,
+                'billing' => $billing !== [] ? $billing : null,
             ], static fn (mixed $value): bool => $value !== null),
         ];
 
@@ -369,6 +398,22 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             : null;
     }
 
+    /**
+     * Whether `ai-agent.runtime.laravel_ai.package_tools` exposes this package tool.
+     */
+    protected function packageToolEnabled(string $name): bool
+    {
+        $setting = config('ai-agent.runtime.laravel_ai.package_tools', false);
+
+        if ($setting === true) {
+            return true;
+        }
+
+        $names = is_string($setting) ? explode(',', $setting) : (is_array($setting) ? $setting : []);
+
+        return in_array($name, array_map(static fn (mixed $value): string => is_string($value) ? trim($value) : '', $names), true);
+    }
+
     protected function streamingEnabled(): bool
     {
         return (bool) config('ai-agent.runtime.laravel_ai.stream', true);
@@ -398,6 +443,11 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
         $value = $options[$key] ?? null;
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    protected function biller(): LaravelAiCreditBiller
+    {
+        return app(LaravelAiCreditBiller::class);
     }
 
     protected function events(): AgentRunEventStreamService

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Tests\Unit\Services\Agent;
 
+use LaravelAIEngine\Services\Agent\AgentOrchestrationInspector;
 use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeConfigValidator;
 use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeDriverMap;
 use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeManager;
@@ -20,6 +21,14 @@ use Mockery;
 
 class LaravelAiAgentRuntimeTest extends UnitTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // No users table in unit tests; billing is covered by LaravelAiRuntimeParityTest.
+        config()->set('ai-engine.credits.enabled', false);
+    }
+
     public function test_runtime_is_not_registered_unless_enabled(): void
     {
         config()->set('ai-agent.runtime.laravel_ai.enabled', false);
@@ -215,6 +224,47 @@ class LaravelAiAgentRuntimeTest extends UnitTestCase
         config()->set('ai-agent.runtime.default', 'recording');
         $this->assertSame('recording', $manager->runtimeNameFor([]));
         $this->assertSame('laravel', $manager->runtimeNameFor(['agent_runtime' => 'laravel']));
+    }
+
+    public function test_orchestration_inspector_lists_registered_runtimes(): void
+    {
+        $before = $this->app->make(AgentOrchestrationInspector::class)->inspect()->nodes['runtimes'];
+        $this->assertSame(['laravel'], $before, 'existing installs report the same runtimes as before');
+
+        config()->set('ai-agent.runtime.drivers', ['laravel_ai' => LaravelAiAgentRuntime::class]);
+
+        $after = $this->app->make(AgentOrchestrationInspector::class)->inspect()->nodes['runtimes'];
+        $this->assertSame(['laravel', 'laravel_ai'], $after);
+    }
+
+    public function test_sub_agent_capability_follows_the_bridged_package_tools(): void
+    {
+        $runtime = new LaravelAiAgentRuntime(new FakeLaravelAiGateway());
+        $this->assertFalse($runtime->capabilities()->subAgents);
+
+        config()->set('ai-agent.runtime.laravel_ai.package_tools', 'lookup_order, run_sub_agent');
+        $this->assertTrue($runtime->capabilities()->subAgents);
+
+        config()->set('ai-agent.runtime.laravel_ai.package_tools', true);
+        $this->assertTrue($runtime->capabilities()->subAgents);
+    }
+
+    public function test_validator_warns_about_package_tools_that_are_not_registered(): void
+    {
+        config()->set('ai-agent.runtime.laravel_ai.enabled', true);
+        config()->set('ai-agent.runtime.laravel_ai.package_tools', ['run_skill', 'no_such_tool']);
+
+        if (!LaravelAiSdk::installed()) {
+            // Without the SDK the missing-SDK warning short-circuits the laravel_ai checks.
+            $codes = array_column((new AgentRuntimeConfigValidator())->validate()['issues'], 'code');
+            $this->assertSame(['laravel_ai_sdk_missing'], $codes);
+
+            return;
+        }
+
+        $issues = collect((new AgentRuntimeConfigValidator())->validate()['issues'])->where('code', 'unknown_laravel_ai_package_tool');
+        $this->assertCount(1, $issues);
+        $this->assertStringContainsString('[no_such_tool]', $issues->first()['message']);
     }
 
     private function skipWhenSdkInstalled(): void

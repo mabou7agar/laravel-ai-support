@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Tests\Feature;
 
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\Enums\EntityEnum;
 use LaravelAIEngine\Jobs\ContinueAgentRunJob;
 use LaravelAIEngine\Jobs\RunAgentJob;
 use LaravelAIEngine\Models\AIAgentRun;
@@ -46,6 +47,8 @@ class LaravelAiRuntimeParityTest extends TestCase
 
         config()->set('ai-agent.runtime.drivers', ['laravel_ai' => LaravelAiAgentRuntime::class]);
         config()->set('ai-agent.runtime.default', 'laravel_ai');
+        // These runs use a user id with no user row; billing tests turn credits on with a real user.
+        config()->set('ai-engine.credits.enabled', false);
     }
 
     public function test_streamed_turn_mirrors_events_and_persists_completed_run_with_usage(): void
@@ -377,6 +380,86 @@ class LaravelAiRuntimeParityTest extends TestCase
         $this->assertNull($invocation->decisions);
         $this->assertNotSame('conv-victim', $invocation->conversationId);
         $this->assertSame(AIAgentRun::STATUS_COMPLETED, $attacker->refresh()->status);
+    }
+
+    public function test_turn_is_billed_like_an_engine_call_and_recorded_on_the_run(): void
+    {
+        config()->set('ai-engine.credits.enabled', true);
+        $user = $this->createTestUser(['entity_credits' => json_encode([
+            'openai' => ['gpt-4o-mini' => ['balance' => 1000.0, 'is_unlimited' => false]],
+        ])]);
+
+        $this->gateway->push(new LaravelAiTurn(
+            text: 'Billed answer.',
+            usage: ['input_tokens' => 60, 'output_tokens' => 20],
+            provider: 'openai',
+            model: 'gpt-4o-mini'
+        ));
+
+        $run = $this->createRun('billing-session', ['user_id' => (string) $user->id]);
+        $this->handle(new RunAgentJob($run->id, 'Bill me', 'billing-session', (string) $user->id));
+
+        // 80 tokens x 0.75 words per token = 60 words, priced like an engine call.
+        $expected = round(60 * EntityEnum::from('gpt-4o-mini')->creditIndex() * (float) (config('ai-engine.credits.engine_rates.openai') ?? 1.0), 8);
+        $run->refresh();
+        $billing = $run->final_response['metadata']['laravel_ai']['billing'];
+
+        $this->assertGreaterThan(0, $expected);
+        $this->assertSame('charged', $billing['status']);
+        $this->assertSame(60.0, (float) $billing['units']);
+        $this->assertEqualsWithDelta($expected, $billing['credits'], 0.00001);
+        $this->assertEqualsWithDelta($expected, (float) $run->metadata['credits_used'], 0.00001);
+        $this->assertEqualsWithDelta(
+            1000.0 - $expected,
+            (float) data_get($user->fresh()->entity_credits, 'openai.gpt-4o-mini.balance'),
+            0.00001
+        );
+    }
+
+    public function test_turn_the_user_cannot_afford_is_refused_before_the_sdk_is_called(): void
+    {
+        config()->set('ai-engine.credits.enabled', true);
+        config()->set('ai-agent.runtime.laravel_ai.model', 'gpt-4o-mini');
+        config()->set('ai-agent.runtime.laravel_ai.provider', 'openai');
+        $user = $this->createTestUser(['entity_credits' => json_encode([
+            'openai' => ['gpt-4o-mini' => ['balance' => 0.0, 'is_unlimited' => false]],
+        ])]);
+        $this->gateway->push($this->turn('Should never run.'));
+
+        $run = $this->createRun('broke-session', ['user_id' => (string) $user->id]);
+        $this->handle(new RunAgentJob($run->id, 'Write me a long essay', 'broke-session', (string) $user->id));
+
+        $run->refresh();
+        $this->assertSame([], $this->gateway->invocations);
+        $this->assertFalse($run->final_response['success']);
+        $this->assertSame('insufficient_credits', $run->final_response['data']['error_code']);
+    }
+
+    public function test_credits_are_accumulated_but_not_deducted_when_credits_are_disabled(): void
+    {
+        config()->set('ai-engine.credits.enabled', false);
+        $this->gateway->push(new LaravelAiTurn(text: 'Free.', usage: ['input_tokens' => 8, 'output_tokens' => 4], provider: 'openai', model: 'gpt-4o-mini'));
+
+        $run = $this->createRun('free-session');
+        $this->handle(new RunAgentJob($run->id, 'hi', 'free-session', '9'));
+
+        $billing = $run->refresh()->final_response['metadata']['laravel_ai']['billing'];
+        $this->assertSame('accumulated', $billing['status']);
+        $this->assertGreaterThan(0, $billing['credits']);
+        $this->assertEqualsWithDelta($billing['credits'], (float) $run->metadata['credits_used'], 0.00001);
+    }
+
+    public function test_turn_without_a_reported_model_is_marked_unpriced(): void
+    {
+        $this->gateway->push(new LaravelAiTurn(text: 'Mystery model.', usage: ['input_tokens' => 5, 'output_tokens' => 5]));
+
+        $run = $this->createRun('unpriced-session');
+        $this->handle(new RunAgentJob($run->id, 'hi', 'unpriced-session', '9'));
+
+        $this->assertSame(
+            ['status' => 'unpriced', 'reason' => 'model_unknown'],
+            $run->refresh()->final_response['metadata']['laravel_ai']['billing']
+        );
     }
 
     private function turn(string $text, array $overrides = []): LaravelAiTurn
