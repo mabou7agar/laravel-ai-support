@@ -49,6 +49,16 @@ php artisan migrate
 - `UnifiedEngineManager` is the public fluent entrypoint
 - `AIEngineService` is the direct typed execution API for internal services and explicit `AIRequest` flows
 - `DriverRegistry` is the single driver construction path
+- `AgentRuntimeContract` is the agent execution boundary; `AgentRuntimeManager` selects a runtime by name from `ai-agent.runtime.drivers` (built-in `laravel` and `langgraph`, plus any host-registered implementation) and resolves it lazily from the container
+
+### Positioning vs the official laravel/ai SDK
+
+Laravel ships an official `laravel/ai` SDK. The two are not competitors for the same job:
+
+- Use `laravel/ai` directly when you need provider access, agents, tools, and standard retrieval.
+- Choose Laravel AI Engine when you need persisted run ownership, approval and recovery workflows, execution budgets, tenant-scoped retrieval, billing integration, or federation across apps.
+
+An SDK-backed runtime is planned behind `AgentRuntimeContract`. It will register through `ai-agent.runtime.drivers` like any other runtime, so adopting it will be an opt-in config change rather than a migration. The package does not depend on `laravel/ai` today.
 
 ## Breaking Upgrade Note
 

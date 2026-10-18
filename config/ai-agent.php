@@ -662,9 +662,20 @@ return [
     | Runtime selection is explicit in v2. Laravel stays the default runtime.
     | LangGraph is optional and must be enabled/configured by the host app.
     |
+    | `drivers` maps a runtime name (what `agent_runtime` and `default` select)
+    | to a class implementing LaravelAIEngine\Contracts\AgentRuntimeContract.
+    | The built-in `laravel` and `langgraph` runtimes are always registered, so
+    | you only need to list additional runtimes here. Entries are resolved
+    | lazily from the container the first time that runtime is selected or its
+    | capabilities are enumerated; `php artisan ai:validate-runtime-config`
+    | checks every entry before boot.
+    |
     */
     'runtime' => [
         'default' => env('AI_AGENT_RUNTIME', 'laravel'),
+        'drivers' => [
+            // 'my_runtime' => \App\AI\Runtime\MyAgentRuntime::class,
+        ],
         'langgraph' => [
             'enabled' => env('AI_AGENT_LANGGRAPH_ENABLED', false),
             'base_url' => env('AI_AGENT_LANGGRAPH_URL'),

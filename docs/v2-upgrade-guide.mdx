@@ -74,6 +74,9 @@ Runtime config lives under `ai-agent.runtime`:
 ```php
 'runtime' => [
     'default' => 'laravel',
+    // Additional AgentRuntimeContract implementations, keyed by runtime name.
+    // `laravel` and `langgraph` are always registered.
+    'drivers' => [],
     'langgraph' => [
         'enabled' => false,
         'base_url' => null,

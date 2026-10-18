@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LaravelAIEngine\Services\Agent\Runtime;
 
+use LaravelAIEngine\Contracts\AgentRuntimeContract;
+
 class AgentRuntimeConfigValidator
 {
     /**
@@ -12,6 +14,7 @@ class AgentRuntimeConfigValidator
     public function validate(): array
     {
         $issues = array_merge(
+            $this->runtimeDriverIssues(),
             $this->runtimeIssues(),
             $this->toolIssues()
         );
@@ -30,8 +33,8 @@ class AgentRuntimeConfigValidator
     protected function runtimeIssues(): array
     {
         $issues = [];
-        $default = strtolower(trim((string) config('ai-agent.runtime.default', 'laravel')));
-        $allowed = ['laravel', 'langgraph'];
+        $default = AgentRuntimeDriverMap::defaultName();
+        $allowed = AgentRuntimeDriverMap::names();
 
         if (!in_array($default, $allowed, true)) {
             $issues[] = $this->issue(
@@ -62,6 +65,79 @@ class AgentRuntimeConfigValidator
                 'LangGraph timeout must be greater than zero.',
                 'ai-agent.runtime.langgraph.timeout'
             );
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Every `ai-agent.runtime.drivers` entry must name a loadable class that
+     * implements AgentRuntimeContract; the manager resolves these lazily, so a
+     * bad entry would otherwise only surface on the first request that selects it.
+     *
+     * @return array<int,array{severity:string,code:string,message:string,subject:string}>
+     */
+    protected function runtimeDriverIssues(): array
+    {
+        $configured = config('ai-agent.runtime.drivers', []);
+        if ($configured !== null && !is_array($configured)) {
+            return [$this->issue(
+                'error',
+                'invalid_runtime_drivers',
+                'Agent runtime drivers must be an array of runtime name => class name.',
+                'ai-agent.runtime.drivers'
+            )];
+        }
+
+        $issues = [];
+
+        foreach (AgentRuntimeDriverMap::configuredEntries() as $name => $class) {
+            $label = (string) $name;
+            $subject = "ai-agent.runtime.drivers.{$label}";
+
+            if (AgentRuntimeDriverMap::normalizeName($name) === '') {
+                $issues[] = $this->issue(
+                    'error',
+                    'invalid_runtime_driver_name',
+                    'Agent runtime drivers must be keyed by a non-empty runtime name.',
+                    $subject
+                );
+
+                continue;
+            }
+
+            if (!is_string($class) || trim($class) === '') {
+                $issues[] = $this->issue(
+                    'error',
+                    'invalid_runtime_driver_class',
+                    "Agent runtime driver [{$label}] must be configured with a class name.",
+                    $subject
+                );
+
+                continue;
+            }
+
+            $class = ltrim(trim($class), '\\');
+
+            if (!class_exists($class)) {
+                $issues[] = $this->issue(
+                    'error',
+                    'missing_runtime_driver_class',
+                    "Agent runtime driver [{$label}] references missing class [{$class}].",
+                    $subject
+                );
+
+                continue;
+            }
+
+            if (!is_subclass_of($class, AgentRuntimeContract::class)) {
+                $issues[] = $this->issue(
+                    'error',
+                    'runtime_driver_contract_mismatch',
+                    "Agent runtime driver [{$label}] class [{$class}] must implement " . AgentRuntimeContract::class . '.',
+                    $subject
+                );
+            }
         }
 
         return $issues;

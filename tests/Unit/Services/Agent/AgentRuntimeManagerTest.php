@@ -21,6 +21,7 @@ use LaravelAIEngine\Services\Agent\Runtime\LangGraphRunMapper;
 use LaravelAIEngine\Services\Agent\Runtime\LangGraphRuntimeClient;
 use LaravelAIEngine\Services\Agent\Runtime\LaravelAgentRuntime;
 use LaravelAIEngine\Services\Scope\AIScopeOptionsService;
+use LaravelAIEngine\Tests\Support\Stubs\RecordingAgentRuntime;
 use LaravelAIEngine\Tests\UnitTestCase;
 use Mockery;
 
@@ -477,5 +478,178 @@ class AgentRuntimeManagerTest extends UnitTestCase
         $this->assertArrayHasKey('laravel', $report['available']);
         $this->assertArrayHasKey('langgraph', $report['available']);
         $this->assertArrayHasKey('remote_callbacks', $report['available']['langgraph']);
+    }
+
+    public function test_runtime_config_drivers_default_to_empty_map_with_built_ins_always_registered(): void
+    {
+        $this->assertSame([], config('ai-agent.runtime.drivers'));
+
+        $manager = new AgentRuntimeManager(
+            Mockery::mock(LaravelAgentRuntime::class),
+            Mockery::mock(LangGraphAgentRuntime::class)
+        );
+
+        $this->assertSame([
+            'laravel' => LaravelAgentRuntime::class,
+            'langgraph' => LangGraphAgentRuntime::class,
+        ], $manager->registeredRuntimes());
+        $this->assertTrue($manager->hasRuntime('laravel'));
+        $this->assertTrue($manager->hasRuntime('LangGraph'));
+        $this->assertFalse($manager->hasRuntime('recording'));
+    }
+
+    public function test_runtime_manager_resolves_registered_runtime_lazily_from_container(): void
+    {
+        RecordingAgentRuntime::reset();
+        config()->set('ai-agent.runtime.drivers', ['recording' => RecordingAgentRuntime::class]);
+
+        $laravel = Mockery::mock(LaravelAgentRuntime::class);
+        $langGraph = Mockery::mock(LangGraphAgentRuntime::class);
+        $laravel->shouldReceive('capabilities')->andReturn(AgentRuntimeCapabilities::laravel());
+        $langGraph->shouldReceive('capabilities')->andReturn(AgentRuntimeCapabilities::langGraph(false));
+        $laravel->shouldNotReceive('process');
+        $langGraph->shouldNotReceive('process');
+
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $this->assertSame(0, RecordingAgentRuntime::$instances, 'registered runtimes must not be built eagerly');
+        $this->assertSame(RecordingAgentRuntime::class, $manager->registeredRuntimes()['recording']);
+        $this->assertTrue($manager->hasRuntime('recording'));
+        $this->assertSame(0, RecordingAgentRuntime::$instances, 'enumerating names must not build runtimes');
+
+        $available = $manager->availableCapabilities();
+
+        $this->assertSame(['recording', 'laravel', 'langgraph'], array_keys($available));
+        $this->assertTrue($available['recording']['tools']);
+        $this->assertSame('recording', $available['recording']['metadata']['runtime']);
+        $this->assertSame(1, RecordingAgentRuntime::$instances);
+
+        $response = $manager->process('record this', 'runtime-session', 7, ['agent_runtime' => 'recording']);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('Recorded response.', $response->message);
+        $this->assertSame('recording', $response->metadata['agent_runtime']);
+        $this->assertSame(1, RecordingAgentRuntime::$instances, 'a resolved runtime is cached per manager');
+        $this->assertSame(7, RecordingAgentRuntime::$calls[0]['user_id']);
+        $this->assertSame('recording', RecordingAgentRuntime::$calls[0]['options']['agent_runtime']);
+        $this->assertSame($manager->resolveRuntime('recording'), $manager->resolveRuntime('RECORDING'));
+    }
+
+    public function test_runtime_manager_uses_registered_runtime_as_configured_default(): void
+    {
+        RecordingAgentRuntime::reset();
+        config()->set('ai-agent.runtime.drivers', ['recording' => RecordingAgentRuntime::class]);
+        config()->set('ai-agent.runtime.default', 'recording');
+
+        $laravel = Mockery::mock(LaravelAgentRuntime::class);
+        $langGraph = Mockery::mock(LangGraphAgentRuntime::class);
+        $laravel->shouldNotReceive('process');
+        $langGraph->shouldNotReceive('process');
+
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $this->assertSame('recording', $manager->name());
+        $this->assertTrue($manager->capabilities()->tools);
+        $this->assertFalse($manager->capabilities()->streaming);
+
+        $response = $manager->process('default to recording', 'runtime-session', 7);
+
+        $this->assertTrue($response->success);
+        $this->assertCount(1, RecordingAgentRuntime::$calls);
+        $this->assertSame('default to recording', RecordingAgentRuntime::$calls[0]['message']);
+    }
+
+    public function test_runtime_manager_enforces_policy_and_capabilities_for_registered_runtime(): void
+    {
+        RecordingAgentRuntime::reset();
+        config()->set('ai-agent.runtime.drivers', ['recording' => RecordingAgentRuntime::class]);
+
+        $manager = new AgentRuntimeManager(
+            Mockery::mock(LaravelAgentRuntime::class),
+            Mockery::mock(LangGraphAgentRuntime::class)
+        );
+
+        $missing = $manager->process('stream it', 'runtime-session', 7, [
+            'agent_runtime' => 'recording',
+            'requires_capabilities' => ['streaming'],
+        ]);
+
+        $this->assertFalse($missing->success);
+        $this->assertSame('recording', $missing->data['runtime']);
+        $this->assertSame(['streaming'], $missing->data['missing_capabilities']);
+
+        config()->set('ai-agent.execution_policy.runtime_deny', ['recording']);
+
+        $blocked = $manager->process('record', 'runtime-session', 7, ['agent_runtime' => 'recording']);
+
+        $this->assertFalse($blocked->success);
+        $this->assertStringContainsString('runtime [recording] is blocked', $blocked->message);
+        $this->assertSame([], RecordingAgentRuntime::$calls);
+    }
+
+    public function test_runtime_manager_falls_back_to_laravel_for_unregistered_runtime_name(): void
+    {
+        $laravel = Mockery::mock(LaravelAgentRuntime::class);
+        $langGraph = Mockery::mock(LangGraphAgentRuntime::class);
+        $laravel->shouldReceive('name')->andReturn('laravel');
+        $laravel->shouldReceive('capabilities')->andReturn(AgentRuntimeCapabilities::laravel());
+        $laravel->shouldReceive('process')->once()->andReturn(AgentResponse::success('laravel handled it'));
+        $langGraph->shouldNotReceive('process');
+
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+        $response = $manager->process('hello', 'runtime-session', 7, ['agent_runtime' => 'not-registered']);
+
+        $this->assertTrue($response->success);
+        $this->assertSame('laravel handled it', $response->message);
+    }
+
+    public function test_runtime_manager_prefers_injected_built_in_instances_over_rebuilding_them(): void
+    {
+        config()->set('ai-agent.runtime.drivers', [
+            'laravel' => LaravelAgentRuntime::class,
+            'langgraph' => '\\' . LangGraphAgentRuntime::class,
+        ]);
+
+        $laravel = Mockery::mock(LaravelAgentRuntime::class);
+        $langGraph = Mockery::mock(LangGraphAgentRuntime::class);
+
+        $manager = new AgentRuntimeManager($laravel, $langGraph);
+
+        $this->assertSame($laravel, $manager->resolveRuntime('laravel'));
+        $this->assertSame($langGraph, $manager->resolveRuntime('langgraph'));
+    }
+
+    public function test_runtime_manager_rejects_registered_class_that_does_not_implement_contract(): void
+    {
+        config()->set('ai-agent.runtime.drivers', ['plain' => \stdClass::class]);
+
+        $manager = new AgentRuntimeManager(
+            Mockery::mock(LaravelAgentRuntime::class),
+            Mockery::mock(LangGraphAgentRuntime::class)
+        );
+
+        $available = $manager->availableCapabilities();
+
+        $this->assertFalse($available['plain']['available']);
+        $this->assertSame(\stdClass::class, $available['plain']['class']);
+        $this->assertStringContainsString(AgentRuntimeContract::class, $available['plain']['error']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('does not implement ' . AgentRuntimeContract::class);
+
+        $manager->resolveRuntime('plain');
+    }
+
+    public function test_runtime_manager_rejects_unregistered_name_on_direct_resolution(): void
+    {
+        $manager = new AgentRuntimeManager(
+            Mockery::mock(LaravelAgentRuntime::class),
+            Mockery::mock(LangGraphAgentRuntime::class)
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Agent runtime [ghost] is not registered');
+
+        $manager->resolveRuntime('ghost');
     }
 }
