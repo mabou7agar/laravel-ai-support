@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LaravelAIEngine\Services\Agent\Runtime;
 
 use LaravelAIEngine\Contracts\AgentRuntimeContract;
+use LaravelAIEngine\Services\Agent\Runtime\LaravelAi\LaravelAiSdk;
 
 class AgentRuntimeConfigValidator
 {
@@ -15,6 +16,7 @@ class AgentRuntimeConfigValidator
     {
         $issues = array_merge(
             $this->runtimeDriverIssues(),
+            $this->laravelAiIssues(),
             $this->runtimeIssues(),
             $this->toolIssues()
         );
@@ -136,6 +138,59 @@ class AgentRuntimeConfigValidator
                     'runtime_driver_contract_mismatch',
                     "Agent runtime driver [{$label}] class [{$class}] must implement " . AgentRuntimeContract::class . '.',
                     $subject
+                );
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * The optional laravel/ai runtime: switched on without the SDK installed,
+     * or pointed at an agent or tool class that is not a laravel/ai type.
+     *
+     * @return array<int,array{severity:string,code:string,message:string,subject:string}>
+     */
+    protected function laravelAiIssues(): array
+    {
+        if (!LaravelAiSdk::enabled()) {
+            return [];
+        }
+
+        if (!LaravelAiSdk::installed()) {
+            return [$this->issue(
+                AgentRuntimeDriverMap::defaultName() === LaravelAiSdk::RUNTIME ? 'error' : 'warning',
+                'laravel_ai_sdk_missing',
+                'Agent runtime [laravel_ai] is enabled but laravel/ai is not installed. Run `composer require laravel/ai` (requires PHP 8.3+ and Laravel 12+) or set AI_AGENT_LARAVEL_AI_ENABLED=false.',
+                'ai-agent.runtime.laravel_ai.enabled'
+            )];
+        }
+
+        $issues = [];
+        $agent = config('ai-agent.runtime.laravel_ai.agent');
+
+        if (is_string($agent) && trim($agent) !== '') {
+            $agent = ltrim(trim($agent), '\\');
+
+            if (!class_exists($agent) || !is_subclass_of($agent, LaravelAiSdk::AGENT_CONTRACT)) {
+                $issues[] = $this->issue(
+                    'error',
+                    'invalid_laravel_ai_agent',
+                    "laravel/ai agent [{$agent}] must be an existing class implementing " . LaravelAiSdk::AGENT_CONTRACT . '.',
+                    'ai-agent.runtime.laravel_ai.agent'
+                );
+            }
+        }
+
+        foreach ((array) config('ai-agent.runtime.laravel_ai.tools', []) as $index => $tool) {
+            $tool = is_string($tool) ? ltrim(trim($tool), '\\') : '';
+
+            if ($tool === '' || !class_exists($tool) || !is_subclass_of($tool, 'Laravel\\Ai\\Contracts\\Tool')) {
+                $issues[] = $this->issue(
+                    'error',
+                    'invalid_laravel_ai_tool',
+                    'laravel/ai tool [' . ($tool === '' ? (string) $index : $tool) . '] must be an existing class implementing Laravel\\Ai\\Contracts\\Tool.',
+                    "ai-agent.runtime.laravel_ai.tools.{$index}"
                 );
             }
         }

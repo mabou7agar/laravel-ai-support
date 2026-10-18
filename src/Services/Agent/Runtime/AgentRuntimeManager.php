@@ -118,6 +118,31 @@ class AgentRuntimeManager implements AgentRuntimeContract
         return $this->resolved[$name] = $runtime;
     }
 
+    /**
+     * The runtime name a run executed with these options should be attributed
+     * to (RunAgentJob records it on the run and step, and approval resume
+     * routes back to it).
+     *
+     * When the selected runtime and the configured default are both built-in,
+     * this keeps the historical attribution (the default runtime's name) so
+     * existing installs record and resume runs exactly as before. A request
+     * that selects, or defaults to, a registered runtime is attributed to that
+     * runtime, so its approvals resume on the runtime that paused them.
+     */
+    public function runtimeNameFor(array $options = []): string
+    {
+        $selected = $this->runtime($options)->name();
+        $default = $this->name();
+
+        if (array_key_exists($selected, AgentRuntimeDriverMap::BUILT_IN)
+            && array_key_exists($default, AgentRuntimeDriverMap::BUILT_IN)
+        ) {
+            return $default;
+        }
+
+        return $selected;
+    }
+
     public function process(
         string $message,
         string $sessionId,

@@ -68,6 +68,7 @@
         "cboden/ratchet": "Required for WebSocket streaming support (^0.4)",
         "ext-mongodb": "Required for MongoDB memory driver support",
         "mongodb/mongodb": "Required for MongoDB memory driver support (^1.8)",
+        "laravel/ai": "Enables the optional `laravel_ai` agent runtime backed by the official Laravel AI SDK (^1.2; requires PHP 8.3+ and Laravel 12+). Opt in with AI_AGENT_LARAVEL_AI_ENABLED=true.",
         "m-tech-stack/laravel-ai-engine-federation": "Add multi-node / remote-node federation (composer require m-tech-stack/laravel-ai-engine-federation). Not required for core; node features and node tests activate only when it is installed.",
         "firebase/php-jwt": "Required for node JWT authentication (^6.0)",
         "tymon/jwt-auth": "Alternative JWT library for node authentication (^2.0)",

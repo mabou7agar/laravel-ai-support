@@ -22,6 +22,7 @@ use LaravelAIEngine\Services\Agent\AgentRunRetentionService;
 use LaravelAIEngine\Services\Agent\AgentRunSafetyService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\AgentTraceMetadataService;
+use LaravelAIEngine\Services\Agent\Runtime\AgentRuntimeManager;
 
 class RunAgentJob implements ShouldQueue
 {
@@ -71,6 +72,17 @@ class RunAgentJob implements ShouldQueue
         try {
             $safety->withRunLock($this->runId, function () use ($runtime, $runs, $steps, $safety, $events, $budget): void {
             $run = $runs->findOrFail($this->runId);
+            if ($this->runWasStopped($run)) {
+                // A cancelled or expired run must not be resurrected by a job
+                // that was already queued (or retried) when it was stopped.
+                \Illuminate\Support\Facades\Log::channel('ai-engine')->info('Skipping agent run job for a stopped run', [
+                    'run_id' => $run->id,
+                    'run_uuid' => $run->uuid,
+                    'status' => $run->status,
+                ]);
+
+                return;
+            }
             $this->assertPolicyAllowsRun($run);
             $scopedOptions = $safety->applyScopeToMetadata($this->options);
             $scope = $safety->currentScope($scopedOptions);
@@ -83,7 +95,7 @@ class RunAgentJob implements ShouldQueue
                 'options' => $scopedOptions,
             ];
             $retention = app(AgentRunRetentionService::class);
-            $runtimeName = $runtime->name();
+            $runtimeName = $this->attributedRuntimeName($runtime, $scopedOptions);
 
             $runAttributes = [
                 'runtime' => $runtimeName,
@@ -127,6 +139,13 @@ class RunAgentJob implements ShouldQueue
             try {
                 $budget->startAccumulatingCredits();
                 $response = $runtime->process($this->message, $this->sessionId, $this->userId, $runtimeOptions);
+                if ($this->runWasStopped($run->refresh())) {
+                    $this->recordStoppedRun($steps, $run, $step, $response);
+                    $budget->recordRunUsage($run->refresh(), $response->metadata['usage'] ?? []);
+                    $budget->finishAccumulatingCredits($run->refresh());
+
+                    return;
+                }
                 $budget->assertRuntimeBudgetAllows($run->refresh(), $this->options);
                 $response = $traceMetadata->enrichResponse($response, $runtimeOptions, $run, $step);
                 $response = $this->applyResponsePresentation($response, $runtimeOptions);
@@ -136,6 +155,13 @@ class RunAgentJob implements ShouldQueue
                 $this->emitTerminalEvent($events, $status, $run, $step, $response, $runtimeOptions);
             } catch (\Throwable $e) {
                 $budget->finishAccumulatingCredits($run->refresh());
+                if ($this->runWasStopped($run)) {
+                    // Cancelled while the runtime was working: keep the
+                    // cancellation, record the step, and do not retry.
+                    $this->recordStoppedRun($steps, $run, $step, null, $e);
+
+                    return;
+                }
                 $this->failRun($runs, $steps, $run, $step, $e);
                 $events->emit(AgentRunEventStreamService::RUN_FAILED, $run, $step, [
                     'error' => $e->getMessage(),
@@ -318,6 +344,55 @@ class RunAgentJob implements ShouldQueue
             'failure_reason' => $e->getMessage(),
             'failed_at' => now(),
         ]);
+    }
+
+    /**
+     * Name the run and step are attributed to. A misconfigured runtime must
+     * not throw here, before the run is marked running: fall back to the
+     * manager's default name and let process() fail the run with the reason.
+     */
+    protected function attributedRuntimeName(AgentRuntimeContract $runtime, array $options): string
+    {
+        if ($runtime instanceof AgentRuntimeManager) {
+            try {
+                return $runtime->runtimeNameFor($options);
+            } catch (\Throwable) {
+                // Reported by process() inside the run lifecycle below.
+            }
+        }
+
+        return $runtime->name();
+    }
+
+    protected function runWasStopped(AIAgentRun $run): bool
+    {
+        return in_array($run->status, [AIAgentRun::STATUS_CANCELLED, AIAgentRun::STATUS_EXPIRED], true);
+    }
+
+    /**
+     * Close the step of a run that was cancelled or expired while the runtime
+     * was processing. The run keeps its stopped status and no terminal event is
+     * emitted here: the cancellation already emitted run.cancelled.
+     */
+    protected function recordStoppedRun(
+        AgentRunStepRepository $steps,
+        AIAgentRun $run,
+        AIAgentRunStep $step,
+        ?AgentResponse $response,
+        ?\Throwable $error = null
+    ): void {
+        $steps->transition($step, $run->status, array_filter([
+            'output' => $response !== null
+                ? app(AgentRunRetentionService::class)->protectResponse($response->toArray())
+                : null,
+            'error' => $error?->getMessage(),
+            'metadata' => array_merge(($step->fresh()?->metadata ?? $step->metadata ?? []), [
+                'stopped_during_runtime' => true,
+                'run_status' => $run->status,
+                'duration_ms' => $this->durationMs($step),
+            ]),
+            'completed_at' => now(),
+        ], static fn (mixed $value): bool => $value !== null));
     }
 
     protected function assertPolicyAllowsRun(AIAgentRun $run): void

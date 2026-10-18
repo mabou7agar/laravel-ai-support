@@ -58,7 +58,21 @@ Laravel ships an official `laravel/ai` SDK. The two are not competitors for the 
 - Use `laravel/ai` directly when you need provider access, agents, tools, and standard retrieval.
 - Choose Laravel AI Engine when you need persisted run ownership, approval and recovery workflows, execution budgets, tenant-scoped retrieval, billing integration, or federation across apps.
 
-An SDK-backed runtime is planned behind `AgentRuntimeContract`. It will register through `ai-agent.runtime.drivers` like any other runtime, so adopting it will be an opt-in config change rather than a migration. The package does not depend on `laravel/ai` today.
+You can also have both. The package ships an optional `laravel_ai` runtime that runs agent turns through `laravel/ai` behind `AgentRuntimeContract`. Run ownership, approvals, cancellation, event streaming and token accounting stay on the package side. It is off by default and the package does not depend on `laravel/ai`. It needs PHP 8.3+ and Laravel 12+:
+
+```bash
+composer require laravel/ai
+php artisan vendor:publish --provider="Laravel\Ai\AiServiceProvider"
+php artisan migrate
+```
+
+```dotenv
+AI_AGENT_LARAVEL_AI_ENABLED=true
+# Make it the default, or pass agent_runtime=laravel_ai per request.
+AI_AGENT_RUNTIME=laravel_ai
+```
+
+The built-in runtime stays the default. [ADR 0002](docs/decisions/0002-laravel-ai-runtime.md) lists what is at parity, what is not yet (package tools, credit billing), and the conditions for ever making the SDK runtime the default.
 
 ## Breaking Upgrade Note
 

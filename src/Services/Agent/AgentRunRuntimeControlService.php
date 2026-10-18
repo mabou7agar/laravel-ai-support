@@ -33,6 +33,7 @@ class AgentRunRuntimeControlService
             'agent_runtime' => $record->runtime === 'langgraph' || $langGraphRunId !== null ? 'langgraph' : $record->runtime,
             'langgraph_resume_run_id' => $langGraphRunId,
             'langgraph_resume_payload' => $payload,
+            'resume_payload' => $payload,
             'fallback_to_laravel' => false,
             '_idempotency_key' => $payload['idempotency_key'] ?? 'agent-run-resume:' . $record->uuid . ':' . sha1(json_encode($payload)),
         ]);

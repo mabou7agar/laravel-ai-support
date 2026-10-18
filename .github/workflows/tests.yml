@@ -64,3 +64,53 @@ jobs:
           fi
 
           exit "$status"
+
+  laravel-ai:
+    # Optional laravel/ai-backed agent runtime (`laravel_ai`). laravel/ai needs PHP 8.3+
+    # and Laravel 12+, while the default jobs test the package floor on Laravel 11, so
+    # this job lifts the test harness to Laravel 12, installs the SDK, and runs the whole
+    # suite. LaravelAiSdkGatewayTest (the runtime against the real SDK) only runs here;
+    # everywhere else it is skipped. The package itself never requires laravel/ai.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: mbstring, dom, curl, sqlite3, pdo_sqlite
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Configure composer (do not block dev deps on advisories)
+        # Same reasoning as the phpunit job above.
+        run: composer config --no-plugins policy.advisories.block false
+
+      - name: Install dependencies with laravel/ai on Laravel 12
+        run: |
+          composer require --dev --no-update \
+            "laravel/ai:^1.2" \
+            "orchestra/testbench:^10.6" \
+            "phpunit/phpunit:^11.5" \
+            "pestphp/pest:^3.8" \
+            "pestphp/pest-plugin-laravel:^3.2"
+          composer update --prefer-dist --no-interaction -W
+
+      - name: Run tests
+        run: |
+          set +e
+          vendor/bin/phpunit --testsuite Unit,Feature --order-by=default --display-errors --display-warnings --display-deprecations --display-notices 2>&1 | tee /tmp/phpunit.log
+          status=${PIPESTATUS[0]}
+
+          if [ "$status" -ne 0 ]; then
+            tail -n 120 /tmp/phpunit.log
+            message=$(tail -n 40 /tmp/phpunit.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=PHPUnit failed (laravel/ai)::$message"
+          fi
+
+          exit "$status"
