@@ -146,6 +146,35 @@ Register it by name in `ai-agent.runtime.drivers` and select it with `agent_runt
 ],
 ```
 
+## laravel/ai Runtime (Optional)
+
+The `laravel_ai` runtime runs turns through the official `laravel/ai` SDK while the package keeps the run lifecycle. It registers only when `laravel/ai` is installed and `ai-agent.runtime.laravel_ai.enabled` is true, and it runs only when selected with `agent_runtime` or `ai-agent.runtime.default`.
+
+```php
+'runtime' => [
+    'default' => 'laravel_ai',
+    'laravel_ai' => [
+        'enabled' => true,
+        // A Laravel\Ai\Contracts\Agent; null uses the package EngineAgent.
+        'agent' => \App\Ai\Agents\SupportAgent::class,
+        // laravel/ai Tool classes for the default EngineAgent.
+        'tools' => [],
+        'provider' => null, // defaults to the SDK's ai.default
+        'model' => null,
+        'stream' => true,
+    ],
+],
+```
+
+What the runtime maps:
+
+- **Streaming.** SDK stream events become `final_response.token_streamed`, `tool.started`, `tool.completed` / `tool.failed` and `final_response.stream_completed` on the run.
+- **Approvals.** An SDK tool approval pauses the run as `waiting_approval` with a package approval record. Approving or rejecting it and calling resume replays the decision into the SDK conversation. Resume state is read from the approval record, never from the request.
+- **Cancellation.** Cancelling a run stops the SDK stream at the next event boundary. A queued job never restarts a cancelled or expired run.
+- **Usage.** SDK token usage is recorded on the run budget. Provider failures are thrown, so the job fails the run and the queue retries it.
+
+The agent must remember conversations (the default `EngineAgent` does) for approvals to resume, and the SDK's conversation migrations must be run. The SDK makes one extra model call to title each new conversation, which the run budget does not see; set `ai.conversations.generate_title` to `false` if that matters. Package tools, skills and sub-agents are not available to this runtime yet. See [ADR 0002](decisions/0002-laravel-ai-runtime.md).
+
 ## Routing Model
 
 > The earlier v2 `RoutingStageContract` / `ai-agent.routing_pipeline` mechanism has been
