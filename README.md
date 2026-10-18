@@ -72,7 +72,7 @@ AI_AGENT_LARAVEL_AI_ENABLED=true
 AI_AGENT_RUNTIME=laravel_ai
 ```
 
-The built-in runtime stays the default. [ADR 0002](docs/decisions/0002-laravel-ai-runtime.md) lists what is at parity, what is not yet (package tools, credit billing), and the conditions for ever making the SDK runtime the default.
+Set `AI_AGENT_LARAVEL_AI_PACKAGE_TOOLS=true` to give the SDK agent the package's own tools, skills and sub-agents. Turns are billed through the package's credit system. The built-in runtime stays the default. [ADR 0002](docs/decisions/0002-laravel-ai-runtime.md) records the parity evidence and why making the SDK runtime the default is left to a major release.
 
 ## Breaking Upgrade Note
 

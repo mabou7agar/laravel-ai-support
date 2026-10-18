@@ -159,6 +159,8 @@ The `laravel_ai` runtime runs turns through the official `laravel/ai` SDK while 
         'agent' => \App\Ai\Agents\SupportAgent::class,
         // laravel/ai Tool classes for the default EngineAgent.
         'tools' => [],
+        // Package agent tools for the default EngineAgent: true or a list of names.
+        'package_tools' => ['run_skill', 'search_knowledge'],
         'provider' => null, // defaults to the SDK's ai.default
         'model' => null,
         'stream' => true,
@@ -173,7 +175,10 @@ What the runtime maps:
 - **Cancellation.** Cancelling a run stops the SDK stream at the next event boundary. A queued job never restarts a cancelled or expired run.
 - **Usage.** SDK token usage is recorded on the run budget. Provider failures are thrown, so the job fails the run and the queue retries it.
 
-The agent must remember conversations (the default `EngineAgent` does) for approvals to resume, and the SDK's conversation migrations must be run. The SDK makes one extra model call to title each new conversation, which the run budget does not see; set `ai.conversations.generate_title` to `false` if that matters. Package tools, skills and sub-agents are not available to this runtime yet. See [ADR 0002](decisions/0002-laravel-ai-runtime.md).
+- **Package tools.** Set `package_tools` to `true` or a list of tool names to give the default `EngineAgent` the package's own agent tools, including `run_skill`, `run_sub_agent`, `search_knowledge` and `data_query`. They run through the package executor, so execution policy and the run's tenant scope apply. Tools that require confirmation pause the run for approval.
+- **Billing.** Each turn is priced like an engine call from its token usage and the model's catalog credit index. Credits are recorded on the run and, with `ai-engine.credits.enabled`, deducted from the user after a balance check.
+
+The agent must remember conversations (the default `EngineAgent` does) for approvals to resume, and the SDK's conversation migrations must be run. The runtime opens new SDK conversations itself, so the SDK makes no extra title-generation model call; set `generate_titles` to `true` to restore the SDK's own titling. See [ADR 0002](decisions/0002-laravel-ai-runtime.md).
 
 ## Routing Model
 
