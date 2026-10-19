@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Extensible agent runtime registration. `ai-agent.runtime.drivers` maps a runtime name to any `AgentRuntimeContract` implementation. Registered runtimes are resolved lazily, listed in the capability report and the orchestration inspector, and checked by `ai:validate-runtime-config`. The built-in `laravel` and `langgraph` runtimes are always registered and `laravel` stays the default.
+- Optional `laravel_ai` runtime backed by the official `laravel/ai` SDK. It registers only when `laravel/ai` is installed and `AI_AGENT_LARAVEL_AI_ENABLED=true`, and `laravel/ai` is a composer suggestion only. The package keeps run ownership: SDK stream events are mirrored into the run event stream, SDK tool approvals become step approvals that resume through `AgentRunRuntimeControlService`, cancellation stops the SDK stream, and token usage is recorded on the run.
+- `ai-agent.runtime.laravel_ai.package_tools` exposes the package's own agent tools, including skills, sub-agents, `search_knowledge` and `data_query`, to the SDK agent. They run through the package executor, so execution policy and tenant scope apply, and tools that need confirmation pause the run for approval.
+- `laravel_ai` turns are billed through the package credit system, priced from token usage and the model's catalog credit index.
+- Opt-in live-provider smoke test (`AI_ENGINE_LIVE_LARAVEL_AI=1`) and a `laravel-ai` CI job that runs the suite on Laravel 12 with the SDK installed.
+- ADR 0002 documents the staged `laravel/ai` adoption, the parity evidence, and why making the SDK runtime the default is left to a major release.
+
+### Fixed
+
+- A cancelled or expired agent run is no longer restarted by a queued or retried job, and a cancellation made while the runtime is working is kept instead of being overwritten with `completed`.
+- A request that selects a registered runtime with `agent_runtime` is recorded under that runtime, so its approvals resume on the runtime that paused them. Setups that use only the built-in runtimes record runs exactly as before.
+- Selecting a misconfigured runtime now fails the run instead of leaving it pending.
+
+### Upgrade notes
+
+- No action is needed. The `laravel_ai` runtime needs PHP 8.3+, Laravel 12+, `composer require laravel/ai` and the SDK's conversation migrations, and is used only when selected.
+
 ## [3.7.0] — 2026-09-16
 
 ### Changed
