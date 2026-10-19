@@ -462,6 +462,40 @@ class LaravelAiRuntimeParityTest extends TestCase
         );
     }
 
+    public function test_sdk_citations_and_provider_tool_files_are_recorded_as_run_artifacts(): void
+    {
+        config()->set('ai-engine.provider_tools.artifacts.persist_remote_files', false);
+        $this->gateway->push(new LaravelAiTurn(
+            text: 'Here is the chart and my source.',
+            usage: ['input_tokens' => 3, 'output_tokens' => 3],
+            invocationId: 'inv-art',
+            provider: 'openai',
+            model: 'gpt-test',
+            providerOutputs: [
+                'citations' => [['url' => 'https://example.com/report', 'title' => 'Q3 report', 'start_index' => 0, 'end_index' => 10]],
+                'provider_tools' => [['type' => 'code_execution', 'data' => ['output_file_id' => 'file_chart', 'container_id' => 'cntr_1']]],
+            ]
+        ));
+
+        $run = $this->createRun('artifact-session');
+        $this->handle(new RunAgentJob($run->id, 'Chart Q3 and cite it', 'artifact-session', '9'));
+
+        $run->refresh();
+        $artifacts = \LaravelAIEngine\Models\AIProviderToolArtifact::query()
+            ->where('owner_type', 'agent_run')
+            ->where('owner_id', (string) $run->id)
+            ->get();
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->status);
+        $this->assertEqualsCanonicalizing(['citation', 'provider_file', 'provider_container'], $artifacts->pluck('artifact_type')->all());
+        $this->assertSame('Q3 report', $artifacts->firstWhere('artifact_type', 'citation')->citation_title);
+        $this->assertSame('file_chart', $artifacts->firstWhere('artifact_type', 'provider_file')->provider_file_id);
+        $this->assertSame('laravel_ai', $artifacts->first()->provider);
+        $this->assertSame($run->steps()->first()->id, $artifacts->first()->agent_run_step_id);
+        $this->assertSame(3, $run->final_response['metadata']['hosted_artifact_count']);
+        $this->assertContains(AgentRunEventStreamService::ARTIFACT_CREATED, $this->eventNames($run));
+    }
+
     private function turn(string $text, array $overrides = []): LaravelAiTurn
     {
         return new LaravelAiTurn(

@@ -13,6 +13,8 @@ use LaravelAIEngine\Models\AIAgentRun;
 use LaravelAIEngine\Models\AIProviderToolApproval;
 use LaravelAIEngine\Repositories\AgentRunStepRepository;
 use LaravelAIEngine\Repositories\ProviderToolApprovalRepository;
+use LaravelAIEngine\Repositories\ProviderToolRunRepository;
+use LaravelAIEngine\Services\ProviderTools\HostedArtifactService;
 use LaravelAIEngine\Services\Agent\AgentRunApprovalService;
 use LaravelAIEngine\Services\Agent\AgentRunEventStreamService;
 use LaravelAIEngine\Services\Agent\ContextManager;
@@ -57,7 +59,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             streaming: $available && $this->streamingEnabled(),
             interrupts: $available,
             tools: $available,
-            artifacts: false,
+            artifacts: $available,
             humanApprovals: $available,
             subAgents: $available && $this->packageToolEnabled('run_sub_agent'),
             remoteCallbacks: false,
@@ -137,9 +139,13 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
         }
 
         $this->rememberTurn($context, $invocation, $turn);
+        $artifactIds = array_map(
+            static fn ($artifact): int => (int) $artifact->id,
+            $this->recordArtifacts($turn, $options, $userId)
+        );
 
         if ($turn->hasPendingApprovals() && !$turn->cancelled) {
-            return $this->approvalResponse($turn, $invocation, $context, $options, $billing);
+            return $this->approvalResponse($turn, $invocation, $context, $options, $billing, $artifactIds);
         }
 
         $response = AgentResponse::success(
@@ -149,9 +155,66 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             ], static fn (mixed $value): bool => $value !== null),
             context: $context
         );
-        $response->metadata = $this->metadata($turn, $invocation, $options, $billing);
+        $response->metadata = $this->metadata($turn, $invocation, $options, $billing, $artifactIds);
 
         return $response;
+    }
+
+    /**
+     * Record SDK citations and provider tool outputs (files, containers, URLs)
+     * as hosted artifacts owned by the agent run, the same way LangGraph runs
+     * record generated artifacts. Best-effort: a failure here never fails the turn.
+     *
+     * @return array<int, \LaravelAIEngine\Models\AIProviderToolArtifact>
+     */
+    protected function recordArtifacts(LaravelAiTurn $turn, array $options, mixed $userId): array
+    {
+        $runId = $options['agent_run_id'] ?? null;
+        if (!$turn->hasProviderOutputs() || $runId === null) {
+            return [];
+        }
+
+        try {
+            $toolRun = app(ProviderToolRunRepository::class)->create([
+                'uuid' => (string) \Illuminate\Support\Str::uuid(),
+                'agent_run_id' => $runId,
+                'agent_run_step_id' => $options['agent_run_step_id'] ?? null,
+                'provider' => $this->name(),
+                'engine' => $turn->provider ?? $this->name(),
+                'ai_model' => $turn->model ?? $this->name(),
+                'status' => 'completed',
+                'provider_request_id' => $turn->invocationId,
+                'user_id' => is_int($userId) || is_string($userId) ? (string) $userId : null,
+                'tool_names' => array_values(array_unique(array_filter(array_map(
+                    static fn (array $tool): string => (string) ($tool['type'] ?? ''),
+                    $turn->providerOutputs['provider_tools'] ?? []
+                )))) ?: [$this->name()],
+                'request_payload' => [],
+                'response_payload' => $turn->providerOutputs,
+                'metadata' => array_filter([
+                    'trace_id' => $options['trace_id'] ?? null,
+                    'source' => $this->name(),
+                    'owner_type' => 'agent_run',
+                    'owner_id' => $runId,
+                ], static fn (mixed $value): bool => $value !== null && $value !== ''),
+                'completed_at' => now(),
+            ]);
+
+            return app(HostedArtifactService::class)->recordFromProviderResponse($toolRun, $turn->providerOutputs, array_filter([
+                'source' => $this->name(),
+                'owner_type' => 'agent_run',
+                'owner_id' => $runId,
+                'agent_run_step_id' => $options['agent_run_step_id'] ?? null,
+                'trace_id' => $options['trace_id'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::channel('ai-engine')->warning('laravel_ai artifacts could not be recorded', [
+                'run_id' => $runId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
     }
 
     protected function insufficientCredits(InsufficientCreditsException $e, ?UnifiedActionContext $context): AgentResponse
@@ -171,7 +234,8 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
         LaravelAiInvocation $invocation,
         ?UnifiedActionContext $context,
         array $options,
-        array $billing = []
+        array $billing = [],
+        array $artifactIds = []
     ): AgentResponse {
         $pending = $turn->pendingApprovals;
         $tools = array_values(array_unique(array_map(static fn (array $approval): string => (string) $approval['tool'], $pending)));
@@ -197,7 +261,7 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
             needsUserInput: true,
             isComplete: false
         );
-        $metadata = $this->metadata($turn, $invocation, $options, $billing);
+        $metadata = $this->metadata($turn, $invocation, $options, $billing, $artifactIds);
 
         $step = isset($options['agent_run_step_id'])
             ? $this->steps()->find($options['agent_run_step_id'])
@@ -298,8 +362,13 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
     /**
      * @return array<string, mixed>
      */
-    protected function metadata(LaravelAiTurn $turn, LaravelAiInvocation $invocation, array $options, array $billing = []): array
-    {
+    protected function metadata(
+        LaravelAiTurn $turn,
+        LaravelAiInvocation $invocation,
+        array $options,
+        array $billing = [],
+        array $artifactIds = []
+    ): array {
         $usage = array_filter([
             'input_tokens' => $turn->inputTokens(),
             'output_tokens' => $turn->outputTokens(),
@@ -327,6 +396,11 @@ class LaravelAiAgentRuntime implements AgentRuntimeContract
                 'billing' => $billing !== [] ? $billing : null,
             ], static fn (mixed $value): bool => $value !== null),
         ];
+
+        if ($artifactIds !== []) {
+            $metadata['hosted_artifact_ids'] = $artifactIds;
+            $metadata['hosted_artifact_count'] = count($artifactIds);
+        }
 
         if ($turn->cancelled) {
             $metadata['agent_run_cancelled'] = true;

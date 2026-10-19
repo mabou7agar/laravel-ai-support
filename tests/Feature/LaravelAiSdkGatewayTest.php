@@ -364,6 +364,56 @@ class LaravelAiSdkGatewayTest extends TestCase
         $this->assertSame('Refund issued.', $run->final_response['message']);
     }
 
+    public function test_sdk_citations_reach_the_turn_in_both_prompt_and_stream_modes(): void
+    {
+        $response = fn (): \Laravel\Ai\Responses\TextResponse => new \Laravel\Ai\Responses\TextResponse(
+            'Per the report, revenue grew.',
+            new \Laravel\Ai\Responses\Data\TextUsage(5, 5),
+            new \Laravel\Ai\Responses\Data\Meta('openai', 'gpt-fake', collect([
+                new \Laravel\Ai\Responses\Data\UrlCitation('https://example.com/report', 'Q3 report', 0, 10),
+            ]))
+        );
+        EngineAgent::fake([$response(), $response()]);
+        $gateway = app(SdkLaravelAiGateway::class);
+
+        foreach ([false, true] as $stream) {
+            $turn = $gateway->run($this->invocation('Summarise the report', stream: $stream));
+
+            $this->assertSame('https://example.com/report', $turn->providerOutputs['citations'][0]['url'], $stream ? 'stream' : 'prompt');
+            $this->assertSame('Q3 report', $turn->providerOutputs['citations'][0]['title']);
+        }
+    }
+
+    public function test_sdk_citations_become_run_artifacts_end_to_end(): void
+    {
+        config()->set('ai-agent.runtime.default', 'laravel_ai');
+        config()->set('ai-engine.provider_tools.artifacts.persist_remote_files', false);
+        EngineAgent::fake([
+            new \Laravel\Ai\Responses\TextResponse(
+                'Revenue grew 12%.',
+                new \Laravel\Ai\Responses\Data\TextUsage(5, 5),
+                new \Laravel\Ai\Responses\Data\Meta('openai', 'gpt-fake', collect([
+                    new \Laravel\Ai\Responses\Data\UrlCitation('https://example.com/report', 'Q3 report', 0, 10),
+                ]))
+            ),
+        ]);
+
+        $run = app(AgentRunRepository::class)->create([
+            'session_id' => 'sdk-artifacts',
+            'user_id' => '9',
+            'status' => AIAgentRun::STATUS_PENDING,
+        ]);
+        $this->handle(new RunAgentJob($run->id, 'How did revenue do?', 'sdk-artifacts', '9'));
+
+        $citation = \LaravelAIEngine\Models\AIProviderToolArtifact::query()
+            ->where('owner_type', 'agent_run')->where('owner_id', (string) $run->id)->first();
+
+        $this->assertSame(AIAgentRun::STATUS_COMPLETED, $run->refresh()->status);
+        $this->assertSame('citation', $citation?->artifact_type);
+        $this->assertSame('https://example.com/report', $citation->citation_url);
+        $this->assertSame(1, $run->final_response['metadata']['hosted_artifact_count']);
+    }
+
     private function registerPackageTool(RecordingAgentTool $tool): void
     {
         app(ToolRegistry::class)->register($tool->getName(), $tool);

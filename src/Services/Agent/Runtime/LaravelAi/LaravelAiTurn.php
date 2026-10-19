@@ -14,6 +14,9 @@ final class LaravelAiTurn
      * @param array<int, array{id:string,name:string,arguments:array<string,mixed>}> $toolCalls
      * @param array<int, array{id:string,name:string,result:mixed,successful:bool,denied:bool}> $toolResults
      * @param array<int, array{id:string,tool:string,arguments:array<string,mixed>,reason:?string}> $pendingApprovals
+     * @param array{citations?:array<int,array<string,mixed>>,provider_tools?:array<int,array<string,mixed>>} $providerOutputs
+     *        SDK outputs that may carry artifacts: URL citations and provider tool
+     *        results (code execution, web search/fetch, file search)
      */
     public function __construct(
         public readonly string $text,
@@ -26,13 +29,20 @@ final class LaravelAiTurn
         public readonly array $toolResults = [],
         public readonly array $pendingApprovals = [],
         public readonly string $reasoning = '',
-        public readonly bool $cancelled = false
+        public readonly bool $cancelled = false,
+        public readonly array $providerOutputs = []
     ) {
     }
 
     public function hasPendingApprovals(): bool
     {
         return $this->pendingApprovals !== [];
+    }
+
+    public function hasProviderOutputs(): bool
+    {
+        return ($this->providerOutputs['citations'] ?? []) !== []
+            || ($this->providerOutputs['provider_tools'] ?? []) !== [];
     }
 
     public function inputTokens(): int

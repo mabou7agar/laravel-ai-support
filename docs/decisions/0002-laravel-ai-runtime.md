@@ -56,15 +56,15 @@ The split of responsibilities: `laravel/ai` covers provider access, agents, tool
 
 ## Step 4 — default or required?
 
-First evaluation (2026-10-19, at the merge of steps 1–3): **not yet**. Six blockers were found. Five of them were then closed on the same day:
+First evaluation (2026-10-19, at the merge of steps 1–3): **not yet**. Six blockers were found. Five of them were then closed:
 
 | Blocker | Status | How |
 | --- | --- | --- |
 | Package tools not bridged | Closed | `PackageAgentTool` exposes package `AgentTool`s to the SDK agent, selected with `ai-agent.runtime.laravel_ai.package_tools`. Calls run through `AiNativeToolExecutor`, so the execution policy applies. The run's tenant and workspace scope reach the tool. Tools that require confirmation become SDK approvals and so package step approvals. Skills (`run_skill`), sub-agents (`run_sub_agent`), `search_knowledge`, `data_query` and federation routing are themselves package tools, so they come across the same way. |
 | Credit billing not integrated | Closed | `LaravelAiCreditBiller` prices each turn like an engine call: units × the model's catalog credit index × the engine rate. Units come from the SDK's token usage. Credits are accumulated on the run as `credits_used` and, with `ai-engine.credits.enabled`, deducted from the user after a balance check before the SDK is called. |
 | Hidden title-generation calls | Closed | The runtime opens new SDK conversations itself, titled from the first message, so the SDK makes no extra model call. `generate_titles` restores the SDK behaviour. |
-| Narrower capabilities | Mostly closed | `sub_agents` is reported when `run_sub_agent` is bridged. `artifacts` is still `false`. |
-| Live providers unverified | Closed | `LaravelAiLiveProviderSmokeTest` runs a streamed turn and a confirm-then-approve package tool against a live provider. It passed on OpenRouter with `anthropic/claude-haiku-4.5`. It is opt-in because it spends provider usage. |
+| Narrower capabilities | Closed | `sub_agents` is reported when `run_sub_agent` is bridged. SDK URL citations and provider tool outputs (files, containers, URLs from code execution, web search, web fetch and file search) are recorded as hosted artifacts owned by the run, so `artifacts` is reported too. |
+| Live providers unverified | Closed | `LaravelAiLiveProviderSmokeTest` runs a streamed turn and a confirm-then-approve package tool against a live provider. It passed on OpenRouter with `anthropic/claude-haiku-4.5` and on xAI with `grok-4.20-non-reasoning`. It is opt-in because it spends provider usage. OpenAI is not yet verified live. |
 | Requiring the SDK is a breaking change | Open, by nature | Requiring `laravel/ai` raises the package floor from PHP ^8.1 and Laravel 8–13 to PHP ^8.3 and Laravel 12–13. |
 
 ### Verdict
@@ -74,4 +74,4 @@ The runtime is ready for production use **as an opt-in**. It should not become t
 - Making `laravel_ai` the default without requiring the SDK would break every install that has not installed `laravel/ai`.
 - Requiring the SDK is a semver-major change. It belongs in a 4.0 release that deliberately drops PHP < 8.3 and Laravel < 12, which is a maintainer decision, not an engineering one.
 
-If 4.0 takes that step, the remaining work is: an `artifacts` mapping for SDK file outputs, a decision about retiring the built-in provider drivers that duplicate the SDK, and running the live smoke test on each provider the project supports.
+If 4.0 takes that step, the remaining work is a decision about retiring the built-in provider drivers that duplicate the SDK, and running the live smoke test on each provider the project supports, starting with OpenAI.

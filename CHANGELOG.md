@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional `laravel_ai` runtime backed by the official `laravel/ai` SDK. It registers only when `laravel/ai` is installed and `AI_AGENT_LARAVEL_AI_ENABLED=true`, and `laravel/ai` is a composer suggestion only. The package keeps run ownership: SDK stream events are mirrored into the run event stream, SDK tool approvals become step approvals that resume through `AgentRunRuntimeControlService`, cancellation stops the SDK stream, and token usage is recorded on the run.
 - `ai-agent.runtime.laravel_ai.package_tools` exposes the package's own agent tools, including skills, sub-agents, `search_knowledge` and `data_query`, to the SDK agent. They run through the package executor, so execution policy and tenant scope apply, and tools that need confirmation pause the run for approval.
 - `laravel_ai` turns are billed through the package credit system, priced from token usage and the model's catalog credit index.
+- SDK URL citations and provider tool outputs from `laravel_ai` turns are recorded as hosted artifacts owned by the agent run.
 - Opt-in live-provider smoke test (`AI_ENGINE_LIVE_LARAVEL_AI=1`) and a `laravel-ai` CI job that runs the suite on Laravel 12 with the SDK installed.
 - ADR 0002 documents the staged `laravel/ai` adoption, the parity evidence, and why making the SDK runtime the default is left to a major release.
 

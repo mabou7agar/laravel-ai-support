@@ -16,6 +16,8 @@ use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Responses\AgentResponse as SdkAgentResponse;
 use Laravel\Ai\Responses\Data\ToolCall as ToolCallData;
 use Laravel\Ai\Responses\Data\ToolResult as ToolResultData;
+use Laravel\Ai\Streaming\Events\Citation as CitationEvent;
+use Laravel\Ai\Streaming\Events\ProviderToolEvent;
 use Laravel\Ai\Streaming\Events\ReasoningDelta;
 use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\StreamStart;
@@ -110,7 +112,15 @@ class SdkLaravelAiGateway implements LaravelAiGateway
                 ->values()
                 ->all(),
             reasoning: ReasoningDelta::combine($events),
-            cancelled: $cancelled
+            cancelled: $cancelled,
+            providerOutputs: $this->providerOutputs(
+                $events->filter(static fn (object $event): bool => $event instanceof CitationEvent)
+                    ->map(static fn (CitationEvent $event): mixed => $event->citation)
+                    ->all(),
+                $events->filter(static fn (object $event): bool => $event instanceof ProviderToolEvent)
+                    ->map(static fn (ProviderToolEvent $event): array => $event->toArray())
+                    ->all()
+            )
         );
     }
 
@@ -126,8 +136,34 @@ class SdkLaravelAiGateway implements LaravelAiGateway
             toolCalls: $response->toolCalls->map(fn (ToolCallData $call): array => $this->toolCall($call))->values()->all(),
             toolResults: $response->toolResults->map(fn (ToolResultData $result): array => $this->toolResult($result))->values()->all(),
             pendingApprovals: $response->pendingApprovals->map(fn (PendingApproval $approval): array => $this->pendingApproval($approval))->values()->all(),
-            reasoning: $response->reasoning
+            reasoning: $response->reasoning,
+            providerOutputs: $this->providerOutputs(
+                $response->meta->citations->all(),
+                $response->steps->flatMap(static fn (object $step): array => (array) ($step->providerToolCalls ?? []))->all()
+            )
         );
+    }
+
+    /**
+     * Normalise SDK citations and provider tool results into plain arrays the
+     * package's hosted-artifact extraction understands.
+     *
+     * @param array<int, mixed> $citations
+     * @param array<int, mixed> $providerTools
+     * @return array{citations?:array<int,array<string,mixed>>,provider_tools?:array<int,array<string,mixed>>}
+     */
+    protected function providerOutputs(array $citations, array $providerTools): array
+    {
+        $toArray = static fn (mixed $value): ?array => match (true) {
+            is_array($value) => $value,
+            $value instanceof \Illuminate\Contracts\Support\Arrayable => $value->toArray(),
+            default => null,
+        };
+
+        return array_filter([
+            'citations' => array_values(array_filter(array_map($toArray, $citations))),
+            'provider_tools' => array_values(array_filter(array_map($toArray, $providerTools))),
+        ], static fn (array $values): bool => $values !== []);
     }
 
     protected function agent(LaravelAiInvocation $invocation): Agent

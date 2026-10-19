@@ -177,6 +177,7 @@ What the runtime maps:
 
 - **Package tools.** Set `package_tools` to `true` or a list of tool names to give the default `EngineAgent` the package's own agent tools, including `run_skill`, `run_sub_agent`, `search_knowledge` and `data_query`. They run through the package executor, so execution policy and the run's tenant scope apply. Tools that require confirmation pause the run for approval.
 - **Billing.** Each turn is priced like an engine call from its token usage and the model's catalog credit index. Credits are recorded on the run and, with `ai-engine.credits.enabled`, deducted from the user after a balance check.
+- **Artifacts.** SDK URL citations and provider tool outputs, such as code-execution files and web search results, are recorded as hosted artifacts owned by the run and emit `artifact.created`.
 
 The agent must remember conversations (the default `EngineAgent` does) for approvals to resume, and the SDK's conversation migrations must be run. The runtime opens new SDK conversations itself, so the SDK makes no extra title-generation model call; set `generate_titles` to `true` to restore the SDK's own titling. See [ADR 0002](decisions/0002-laravel-ai-runtime.md).
 

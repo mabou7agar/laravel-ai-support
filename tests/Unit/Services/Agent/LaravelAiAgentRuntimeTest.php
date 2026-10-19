@@ -92,7 +92,7 @@ class LaravelAiAgentRuntimeTest extends UnitTestCase
         $this->assertTrue($capabilities->humanApprovals);
         $this->assertTrue($capabilities->interrupts);
         $this->assertFalse($capabilities->subAgents);
-        $this->assertFalse($capabilities->artifacts);
+        $this->assertTrue($capabilities->artifacts);
 
         config()->set('ai-agent.runtime.laravel_ai.stream', false);
 
